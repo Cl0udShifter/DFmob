@@ -1,11 +1,9 @@
 package com.dfmob.ui.home.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,7 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +44,7 @@ fun QuickNavButtons(
     ) {
         TransitModePill(
             title = "Linhas",
+            icon = Icons.Rounded.DirectionsBus,
             accentColor = TransitGreen,
             modifier = Modifier.weight(1f),
             onClick = onLinesClick
@@ -48,6 +52,7 @@ fun QuickNavButtons(
 
         TransitModePill(
             title = "Paradas",
+            icon = Icons.Rounded.Place,
             accentColor = TransitBlue,
             modifier = Modifier.weight(1f),
             onClick = onStopsClick
@@ -58,6 +63,7 @@ fun QuickNavButtons(
 @Composable
 private fun TransitModePill(
     title: String,
+    icon: ImageVector,
     accentColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -84,14 +90,14 @@ private fun TransitModePill(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 14.dp, horizontal = 14.dp),
+                .padding(vertical = 13.dp, horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(accentColor)
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = accentColor,
+                modifier = Modifier.size(20.dp)
             )
 
             Spacer(modifier = Modifier.width(10.dp))

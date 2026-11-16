@@ -26,10 +26,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.ui.theme.TransitBlue
+import com.dfmob.ui.theme.TransitGreen
 
 @Composable
 fun FrequentPlacesRow(
@@ -45,6 +48,7 @@ fun FrequentPlacesRow(
             title = "Casa",
             subtitle = "Clique para editar",
             icon = Icons.Rounded.Home,
+            iconColor = TransitGreen,
             modifier = Modifier.weight(1f),
             onClick = onHomeClick
         )
@@ -53,6 +57,7 @@ fun FrequentPlacesRow(
             title = "Trabalho",
             subtitle = "Clique para editar",
             icon = Icons.Rounded.Work,
+            iconColor = TransitBlue,
             modifier = Modifier.weight(1f),
             onClick = onWorkClick
         )
@@ -64,6 +69,7 @@ private fun PlaceCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    iconColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -95,7 +101,7 @@ private fun PlaceCard(
             Icon(
                 imageVector = icon,
                 contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = iconColor,
                 modifier = Modifier.size(22.dp)
             )
 
