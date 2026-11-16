@@ -13,9 +13,15 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,12 +40,15 @@ import com.dfmob.data.model.TransitLine
 @Composable
 fun LineCardItem(
     line: TransitLine,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
     val cardShape = RoundedCornerShape(16.dp)
     val badgeShape = RoundedCornerShape(10.dp)
     val interactionSource = remember { MutableInteractionSource() }
+    val starInteractionSource = remember { MutableInteractionSource() }
 
     val badgeBgColor = remember(line.colorHex) {
         parseColorSafely(line.colorHex, Color(0xFF00D26A))
@@ -68,7 +77,7 @@ fun LineCardItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 13.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Badge com a cor oficial da linha
@@ -89,7 +98,7 @@ fun LineCardItem(
                 )
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             // Informacoes da rota e operadora
             Column(
@@ -122,7 +131,7 @@ fun LineCardItem(
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Tarifa oficial
             Surface(
@@ -136,7 +145,29 @@ fun LineCardItem(
                         fontWeight = FontWeight.Bold
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Botao de estrela para favoritar
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = starInteractionSource,
+                        indication = rememberRipple(bounded = false, radius = 18.dp),
+                        onClick = onToggleFavorite
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                    contentDescription = if (isFavorite) "Remover dos favoritos" else "Adicionar aos favoritos",
+                    tint = if (isFavorite) Color(0xFFEAB308) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }

@@ -35,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.data.model.TransitLine
+import com.dfmob.data.repository.FavoritesRepository
+import com.dfmob.data.repository.LinesRepository
 import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
@@ -55,15 +58,21 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updateManager = remember { AppUpdateManager(context) }
+    val linesRepository = remember { LinesRepository(context) }
+    val favoritesRepository = remember { FavoritesRepository(context) }
+
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+    var favoriteLines by remember { mutableStateOf<List<TransitLine>>(emptyList()) }
 
     val scrollState = rememberScrollState()
 
-    // Verificacao silenciosa em segundo plano ao abrir o app
+    // Verificacao de atualizacao e carga de linhas favoritas
     LaunchedEffect(Unit) {
         val result = updateManager.checkForUpdates()
         updateState = result
+        val allLines = linesRepository.loadLines()
+        favoriteLines = favoritesRepository.getFavoriteLines(allLines)
     }
 
     Scaffold(
@@ -177,8 +186,10 @@ fun HomeScreen(
                 onWorkClick = {}
             )
 
-            // Componente 3: Cards estilo painel de partidas (sem retangulo interno)
-            RecentAndFavoritesSection()
+            // Componente 3: Cards estilo painel de partidas com linhas favoritas dinamicas
+            RecentAndFavoritesSection(
+                favoriteLines = favoriteLines
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
         }

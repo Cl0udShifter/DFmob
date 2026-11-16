@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitModeFilter
+import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.LinesRepository
 import com.dfmob.ui.lines.components.LineCardItem
 import com.dfmob.ui.lines.components.ModeSelector
@@ -73,8 +74,10 @@ fun LinesScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val repository = remember { LinesRepository(context) }
+    val favoritesRepository = remember { FavoritesRepository(context) }
 
     var allLines by remember { mutableStateOf<List<TransitLine>>(emptyList()) }
+    var favoriteIds by remember { mutableStateOf(favoritesRepository.getFavoriteRouteIds()) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedMode by remember { mutableStateOf(TransitModeFilter.BUS) }
@@ -283,6 +286,11 @@ fun LinesScreen(
                     ) { line ->
                         LineCardItem(
                             line = line,
+                            isFavorite = favoriteIds.contains(line.routeId),
+                            onToggleFavorite = {
+                                favoritesRepository.toggleFavorite(line.routeId)
+                                favoriteIds = favoritesRepository.getFavoriteRouteIds()
+                            },
                             onClick = {
                                 // Acao silenciosa conforme especificacao
                             }
