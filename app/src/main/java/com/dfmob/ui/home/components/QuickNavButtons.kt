@@ -68,7 +68,7 @@ private fun TransitModePill(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(16.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
     Surface(
@@ -76,7 +76,7 @@ private fun TransitModePill(
             .clip(shape)
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
+                color = MaterialTheme.colorScheme.outline,
                 shape = shape
             )
             .clickable(
@@ -84,20 +84,20 @@ private fun TransitModePill(
                 indication = rememberRipple(bounded = true),
                 onClick = onClick
             ),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = MaterialTheme.colorScheme.surface,
         shape = shape
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 13.dp, horizontal = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = title,
                 tint = accentColor,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(22.dp)
             )
 
             Spacer(modifier = Modifier.width(10.dp))
