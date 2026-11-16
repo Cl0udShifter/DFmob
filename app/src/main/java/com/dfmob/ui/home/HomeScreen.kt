@@ -49,7 +49,8 @@ import java.io.File
 
 @Composable
 fun HomeScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNavigateToLines: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -166,7 +167,7 @@ fun HomeScreen(
 
             // Componente 2: Botoes de modo Linhas e Paradas
             QuickNavButtons(
-                onLinesClick = {},
+                onLinesClick = onNavigateToLines,
                 onStopsClick = {}
             )
 

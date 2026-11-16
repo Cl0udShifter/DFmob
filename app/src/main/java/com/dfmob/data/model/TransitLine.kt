@@ -1,0 +1,28 @@
+package com.dfmob.data.model
+
+data class TransitLine(
+    val routeId: String,
+    val agencyId: String,
+    val agencyName: String,
+    val lineNumber: String,
+    val routeName: String,
+    val transitType: Int, // 3 = Onibus, 1 = Metro
+    val colorHex: String,
+    val textColorHex: String,
+    val price: Double?
+) {
+    val isBus: Boolean get() = transitType == 3
+    val isMetro: Boolean get() = transitType == 1
+
+    val formattedPrice: String
+        get() = if (price != null && price > 0.0) {
+            String.format(java.util.Locale("pt", "BR"), "R$ %.2f", price)
+        } else {
+            "Tarifa GDF"
+        }
+}
+
+enum class TransitModeFilter {
+    BUS,
+    METRO
+}
