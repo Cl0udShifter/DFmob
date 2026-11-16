@@ -1,13 +1,19 @@
 package com.dfmob.ui.home
 
-import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +36,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.ui.home.components.AppUpdateModule
+import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
 import com.dfmob.ui.home.components.RecentAndFavoritesSection
 import com.dfmob.ui.home.components.SearchPill
@@ -48,15 +56,74 @@ fun HomeScreen(
     val updateManager = remember { AppUpdateManager(context) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
-    val currentVersion = remember { updateManager.getCurrentVersion() }
 
     val scrollState = rememberScrollState()
+
+    // Verificacao silenciosa em segundo plano ao abrir o app
+    LaunchedEffect(Unit) {
+        val result = updateManager.checkForUpdates()
+        updateState = result
+    }
 
     Scaffold(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            // Modulo fixo na parte inferior, visivel exclusivamente quando ha update disponivel
+            val isUpdateVisible = updateState is UpdateState.UpdateAvailable ||
+                    updateState is UpdateState.Downloading ||
+                    updateState is UpdateState.ReadyToInstall
+
+            AnimatedVisibility(
+                visible = isUpdateVisible,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                ) {
+                    AppUpdateModule(
+                        updateState = updateState,
+                        onInstallUpdate = {
+                            when (val state = updateState) {
+                                is UpdateState.ReadyToInstall -> {
+                                    downloadedApkFile?.let { apk ->
+                                        updateManager.installApk(apk)
+                                    }
+                                }
+
+                                is UpdateState.UpdateAvailable -> {
+                                    scope.launch {
+                                        updateState = UpdateState.Downloading(progressPercent = 0)
+                                        val apk = updateManager.downloadApk(
+                                            downloadUrl = state.releaseInfo.downloadUrl,
+                                            targetFileName = state.releaseInfo.apkFileName,
+                                            onProgress = { progress ->
+                                                updateState = UpdateState.Downloading(progressPercent = progress)
+                                            }
+                                        )
+                                        if (apk != null && apk.exists()) {
+                                            downloadedApkFile = apk
+                                            updateState = UpdateState.ReadyToInstall(apk.absolutePath)
+                                            updateManager.installApk(apk)
+                                        } else {
+                                            updateState = UpdateState.Error("Falha ao baixar arquivo APK.")
+                                        }
+                                    }
+                                }
+
+                                else -> {}
+                            }
+                        }
+                    )
+                }
+            }
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -94,88 +161,25 @@ fun HomeScreen(
 
             // Componente 1: Caixa de busca expansivel (Transit style)
             SearchPill(
-                onClick = {
-                    Toast.makeText(
-                        context,
-                        "Busca completa sera ativada na Fase 2 com o banco offline FTS5",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                onClick = {}
             )
 
             // Componente 2: Botoes de modo Linhas e Paradas
             QuickNavButtons(
-                onLinesClick = {
-                    Toast.makeText(
-                        context,
-                        "Catalogo de linhas (Fase 2)",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                onStopsClick = {
-                    Toast.makeText(
-                        context,
-                        "Catalogo de paradas (Fase 2)",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                onLinesClick = {},
+                onStopsClick = {}
+            )
+
+            // Novo Componente: Casa e Trabalho
+            FrequentPlacesRow(
+                onHomeClick = {},
+                onWorkClick = {}
             )
 
             // Componente 3: Cards estilo painel de partidas (sem retangulo interno)
             RecentAndFavoritesSection()
 
-            Spacer(modifier = Modifier.weight(1f, fill = false))
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Componente 4: Modulo de atualizacao do aplicativo (GitHub In-App Updater)
-            AppUpdateModule(
-                updateState = updateState,
-                currentVersion = currentVersion,
-                onCheckOrInstallUpdate = {
-                    when (val state = updateState) {
-                        is UpdateState.ReadyToInstall -> {
-                            downloadedApkFile?.let { apk ->
-                                updateManager.installApk(apk)
-                            }
-                        }
-
-                        is UpdateState.UpdateAvailable -> {
-                            scope.launch {
-                                updateState = UpdateState.Downloading(progressPercent = 0)
-                                val apk = updateManager.downloadApk(
-                                    downloadUrl = state.releaseInfo.downloadUrl,
-                                    targetFileName = state.releaseInfo.apkFileName,
-                                    onProgress = { progress ->
-                                        updateState = UpdateState.Downloading(progressPercent = progress)
-                                    }
-                                )
-                                if (apk != null && apk.exists()) {
-                                    downloadedApkFile = apk
-                                    updateState = UpdateState.ReadyToInstall(apk.absolutePath)
-                                    updateManager.installApk(apk)
-                                } else {
-                                    updateState = UpdateState.Error("Falha ao baixar arquivo APK.")
-                                }
-                            }
-                        }
-
-                        else -> {
-                            scope.launch {
-                                updateState = UpdateState.Checking
-                                val result = updateManager.checkForUpdates()
-                                updateState = result
-                                if (result is UpdateState.UpToDate) {
-                                    Toast.makeText(
-                                        context,
-                                        "Voce ja esta usando a versao mais recente (v$currentVersion)",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        }
-                    }
-                }
-            )
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
