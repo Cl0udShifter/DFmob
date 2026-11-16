@@ -25,7 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.ripple.rememberRipple
@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,17 +68,21 @@ import com.dfmob.ui.theme.TransitGreen
 @Composable
 fun LinesScreen(
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    favoritesRepository: FavoritesRepository? = null
 ) {
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val focusManager = LocalFocusManager.current
     val repository = remember { LinesRepository(context) }
-    val favoritesRepository = remember { FavoritesRepository(context) }
 
     var allLines by remember { mutableStateOf<List<TransitLine>>(emptyList()) }
-    var favoriteIds by remember { mutableStateOf(favoritesRepository.getFavoriteRouteIds()) }
+    val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
+    val favoriteIds by remember {
+        derivedStateOf { favoriteLines.map { it.routeId }.toSet() }
+    }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedMode by remember { mutableStateOf(TransitModeFilter.BUS) }
@@ -85,6 +90,7 @@ fun LinesScreen(
     LaunchedEffect(Unit) {
         val lines = repository.loadLines()
         allLines = lines
+        favoritesRepo.syncWithAllLines(lines)
         isLoading = false
     }
 
@@ -143,7 +149,7 @@ fun LinesScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = "Voltar",
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(20.dp)
@@ -288,8 +294,7 @@ fun LinesScreen(
                             line = line,
                             isFavorite = favoriteIds.contains(line.routeId),
                             onToggleFavorite = {
-                                favoritesRepository.toggleFavorite(line.routeId)
-                                favoriteIds = favoritesRepository.getFavoriteRouteIds()
+                                favoritesRepo.toggleFavorite(line)
                             },
                             onClick = {
                                 // Acao silenciosa conforme especificacao

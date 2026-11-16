@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.repository.FavoritesRepository
-import com.dfmob.data.repository.LinesRepository
 import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
@@ -53,26 +53,24 @@ import java.io.File
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
+    favoritesRepository: FavoritesRepository? = null,
     onNavigateToLines: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val scope = rememberCoroutineScope()
     val updateManager = remember { AppUpdateManager(context) }
-    val linesRepository = remember { LinesRepository(context) }
-    val favoritesRepository = remember { FavoritesRepository(context) }
 
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
-    var favoriteLines by remember { mutableStateOf<List<TransitLine>>(emptyList()) }
+    val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
 
     val scrollState = rememberScrollState()
 
-    // Verificacao de atualizacao e carga de linhas favoritas
+    // Verificacao de atualizacao em background, sem bloquear o carregamento imediato dos favoritos
     LaunchedEffect(Unit) {
         val result = updateManager.checkForUpdates()
         updateState = result
-        val allLines = linesRepository.loadLines()
-        favoriteLines = favoritesRepository.getFavoriteLines(allLines)
     }
 
     Scaffold(
