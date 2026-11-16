@@ -1,6 +1,5 @@
 package com.dfmob.ui.home.components
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,8 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.dfmob.ui.theme.DFGreen
+import androidx.compose.ui.unit.sp
+import com.dfmob.ui.theme.TransitGreen
 import com.dfmob.updater.UpdateState
 
 @Composable
@@ -41,19 +42,20 @@ fun AppUpdateModule(
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(14.dp)
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Surface(
             modifier = Modifier
-                .clip(CircleShape)
+                .fillMaxWidth()
+                .clip(shape)
                 .border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outline,
-                    shape = CircleShape
+                    shape = shape
                 )
                 .clickable(
                     interactionSource = interactionSource,
@@ -62,142 +64,107 @@ fun AppUpdateModule(
                     onClick = onCheckOrInstallUpdate
                 ),
             color = MaterialTheme.colorScheme.surface,
-            shape = CircleShape
+            shape = shape
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                when (updateState) {
-                    is UpdateState.Checking -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Verificando no repositório...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when (updateState) {
+                        is UpdateState.Checking -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                strokeWidth = 2.dp,
+                                color = TransitGreen
+                            )
+                        }
+
+                        is UpdateState.Downloading -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(TransitGreen)
+                            )
+                        }
+
+                        is UpdateState.UpdateAvailable -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFEAB308))
+                            )
+                        }
+
+                        is UpdateState.ReadyToInstall -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(TransitGreen)
+                            )
+                        }
+
+                        is UpdateState.Error -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFEF4444))
+                            )
+                        }
+
+                        else -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(TransitGreen)
+                            )
+                        }
                     }
 
-                    is UpdateState.Downloading -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Baixando atualização: ${updateState.progressPercent}%",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(10.dp))
 
-                    is UpdateState.UpdateAvailable -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFEAB308))
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Nova versão ${updateState.releaseInfo.tagName}: Baixar",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    is UpdateState.ReadyToInstall -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(DFGreen)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "APK pronto: Toque para instalar",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    is UpdateState.Error -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFEF4444))
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Verificação falhou: Tentar novamente",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    is UpdateState.UpToDate -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(DFGreen)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "DFmob v$currentVersion atualizado",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Verificar",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    is UpdateState.Idle -> {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(DFGreen)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "DFmob atualizado",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Verificar",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = when (updateState) {
+                            is UpdateState.Checking -> "Consultando repositório..."
+                            is UpdateState.Downloading -> "Baixando: ${updateState.progressPercent}%"
+                            is UpdateState.UpdateAvailable -> "Nova versão ${updateState.releaseInfo.tagName}"
+                            is UpdateState.ReadyToInstall -> "APK pronto"
+                            is UpdateState.Error -> "Falha na conexão"
+                            else -> "DFmob v$currentVersion"
+                        },
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+
+                Text(
+                    text = when (updateState) {
+                        is UpdateState.Checking -> "Aguarde"
+                        is UpdateState.Downloading -> "${updateState.progressPercent}%"
+                        is UpdateState.UpdateAvailable -> "Baixar"
+                        is UpdateState.ReadyToInstall -> "Instalar"
+                        is UpdateState.Error -> "Tentar de novo"
+                        else -> "Verificar atualizações"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    color = TransitGreen
+                )
             }
         }
 
@@ -205,18 +172,12 @@ fun AppUpdateModule(
             LinearProgressIndicator(
                 progress = { updateState.progressPercent / 100f },
                 modifier = Modifier
-                    .fillMaxWidth(0.6f)
-                    .height(4.dp)
+                    .fillMaxWidth()
+                    .height(3.dp)
                     .clip(CircleShape),
-                color = MaterialTheme.colorScheme.primary,
+                color = TransitGreen,
                 trackColor = MaterialTheme.colorScheme.outline
             )
         }
-
-        Text(
-            text = "Versão $currentVersion (build 1) • GTFS Semob-DF",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }

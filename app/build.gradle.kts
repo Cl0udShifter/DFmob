@@ -11,8 +11,8 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -22,7 +22,7 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            // Usa a chave debug nativa para permitir instalacao imediata
+            // Chave debug padrao para instalacao direta de builds
         }
     }
 

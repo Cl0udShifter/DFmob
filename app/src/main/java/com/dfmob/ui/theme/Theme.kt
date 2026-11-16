@@ -12,22 +12,22 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DFGreen,
-    onPrimary = DarkTextPrimary,
-    primaryContainer = DarkSurface,
-    onPrimaryContainer = DarkTextPrimary,
-    background = DarkBackground,
-    onBackground = DarkTextPrimary,
-    surface = DarkSurface,
-    onSurface = DarkTextPrimary,
-    surfaceVariant = DarkSurfaceCard,
-    onSurfaceVariant = DarkTextSecondary,
-    outline = DarkBorder,
-    outlineVariant = DarkBorder
+    primary = TransitGreen,
+    onPrimary = TransitBlack,
+    primaryContainer = TransitSurfaceDark,
+    onPrimaryContainer = TransitTextPrimary,
+    background = TransitBlack,
+    onBackground = TransitTextPrimary,
+    surface = TransitSurfaceDark,
+    onSurface = TransitTextPrimary,
+    surfaceVariant = TransitCardDark,
+    onSurfaceVariant = TransitTextSecondary,
+    outline = TransitBorderDark,
+    outlineVariant = TransitBorderLight
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = DFGreen,
+    primary = TransitGreen,
     onPrimary = LightSurface,
     primaryContainer = LightSurface,
     onPrimaryContainer = LightTextPrimary,

@@ -1,9 +1,7 @@
 package com.dfmob.ui.home
 
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,15 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,8 +23,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -40,8 +32,8 @@ import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.QuickNavButtons
 import com.dfmob.ui.home.components.RecentAndFavoritesSection
 import com.dfmob.ui.home.components.SearchPill
-import com.dfmob.ui.theme.DFGreen
 import com.dfmob.ui.theme.DFmobTheme
+import com.dfmob.ui.theme.TransitGreen
 import com.dfmob.updater.AppUpdateManager
 import com.dfmob.updater.UpdateState
 import kotlinx.coroutines.launch
@@ -71,42 +63,36 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // Cabecalho limpo com logo e nome do app (sem badge de terceiros)
+            // Cabecalho Transit Pure Blocks
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(top = 4.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(DFGreen),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "DF",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
                 Text(
                     text = "DFmob",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 28.sp,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = ".",
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 28.sp
+                    ),
+                    color = TransitGreen
                 )
             }
 
-            // Componente 1: Pilula de pesquisa expansivel
+            // Componente 1: Caixa de busca expansivel (Transit style)
             SearchPill(
                 onClick = {
                     Toast.makeText(
@@ -117,7 +103,7 @@ fun HomeScreen(
                 }
             )
 
-            // Componente 2: Botoes Linhas e Paradas lado a lado
+            // Componente 2: Botoes de modo Linhas e Paradas
             QuickNavButtons(
                 onLinesClick = {
                     Toast.makeText(
@@ -135,11 +121,11 @@ fun HomeScreen(
                 }
             )
 
-            // Componente 3: Cards de Ultimas Pesquisas e Linhas Favoritas
+            // Componente 3: Cards estilo painel de partidas (sem retangulo interno)
             RecentAndFavoritesSection()
 
             Spacer(modifier = Modifier.weight(1f, fill = false))
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Componente 4: Modulo de atualizacao do aplicativo (GitHub In-App Updater)
             AppUpdateModule(
@@ -194,18 +180,10 @@ fun HomeScreen(
     }
 }
 
-@Preview(name = "Home Screen - Dark Mode", showBackground = true)
+@Preview(name = "Home Screen - Transit Pure Blocks", showBackground = true)
 @Composable
-fun HomeScreenDarkPreview() {
+fun HomeScreenTransitPreview() {
     DFmobTheme(darkTheme = true) {
-        HomeScreen()
-    }
-}
-
-@Preview(name = "Home Screen - Light Mode", showBackground = true)
-@Composable
-fun HomeScreenLightPreview() {
-    DFmobTheme(darkTheme = false) {
         HomeScreen()
     }
 }
