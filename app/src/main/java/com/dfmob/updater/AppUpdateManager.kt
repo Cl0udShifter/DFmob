@@ -19,8 +19,8 @@ class AppUpdateManager(private val context: Context) {
         private const val GITHUB_REPO = "Cl0udShifter/DFmob"
         private const val RELEASES_API_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
         private const val FILE_PROVIDER_AUTHORITY = "com.dfmob.fileprovider"
-        private const val CURRENT_VERSION_NAME = "1.0.9"
-        private const val CURRENT_VERSION_CODE = 10
+        private const val CURRENT_VERSION_NAME = "1.1.0"
+        private const val CURRENT_VERSION_CODE = 11
     }
 
     fun getCurrentVersion(): String = CURRENT_VERSION_NAME

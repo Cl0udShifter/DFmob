@@ -3,6 +3,7 @@ package com.dfmob.ui.stops.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,17 +47,22 @@ fun FloatingArrivalsDeck(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDarkTheme = isSystemInDarkTheme()
     val deckShape = RoundedCornerShape(24.dp)
+
+    val deckBackground = if (isDarkTheme) Color(0xF2141519) else Color(0xF8FFFFFF)
+    val deckBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
+    val closeBtnBg = if (isDarkTheme) Color(0xFF23252C) else Color(0xFFEAECEF)
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 12.dp)
             .clip(deckShape)
-            .border(1.dp, MaterialTheme.colorScheme.outline, deckShape),
-        color = Color(0xF0141519), // Dark translúcido Transit
+            .border(1.dp, deckBorder, deckShape),
+        color = deckBackground,
         shape = deckShape,
-        shadowElevation = 18.dp
+        shadowElevation = if (isDarkTheme) 18.dp else 10.dp
     ) {
         Column(
             modifier = Modifier
@@ -93,16 +99,16 @@ fun FloatingArrivalsDeck(
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         ),
-                        color = if (stop.isMetro) Color(0xFFFFB800) else TransitGreen
+                        color = if (stop.isMetro) Color(0xFFE6A100) else if (isDarkTheme) TransitGreen else Color(0xFF00883E)
                     )
                 }
 
-                // Botao fechar centralizado
+                // Botao fechar perfeitamente centralizado no circulo
                 Box(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF23252C))
+                        .background(closeBtnBg)
                         .clickable(onClick = onClose),
                     contentAlignment = Alignment.Center
                 ) {
@@ -115,7 +121,7 @@ fun FloatingArrivalsDeck(
                 }
             }
 
-            // Lista de Linhas ou Loading
+            // Lista de Linhas ou Indicador de Carga
             if (isLoading) {
                 Box(
                     modifier = Modifier
@@ -124,7 +130,7 @@ fun FloatingArrivalsDeck(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
-                        color = TransitGreen,
+                        color = if (isDarkTheme) TransitGreen else Color(0xFF00883E),
                         strokeWidth = 2.5.dp,
                         modifier = Modifier.size(28.dp)
                     )
@@ -146,7 +152,7 @@ fun FloatingArrivalsDeck(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(190.dp),
+                        .height(200.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
@@ -154,7 +160,10 @@ fun FloatingArrivalsDeck(
                         items = arrivals,
                         key = { "${it.lineNumber}_${it.destination}" }
                     ) { arrival ->
-                        StopArrivalLineCard(arrival = arrival)
+                        StopArrivalLineCard(
+                            arrival = arrival,
+                            isDarkTheme = isDarkTheme
+                        )
                     }
                 }
             }
@@ -165,6 +174,7 @@ fun FloatingArrivalsDeck(
 @Composable
 fun StopArrivalLineCard(
     arrival: StopArrival,
+    isDarkTheme: Boolean,
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(14.dp)
@@ -174,13 +184,17 @@ fun StopArrivalLineCard(
         if (arrival.isMetro) Color(0xFF008037) else TransitGreen
     }
 
+    val cardBg = if (isDarkTheme) Color(0xFF16171C) else Color(0xFFF3F4F7)
+    val cardBorder = if (isDarkTheme) Color(0xFF262830) else Color(0xFFE2E4EB)
+    val chipBg = if (isDarkTheme) Color(0xFF22242B) else Color(0xFFE5E7EB)
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
-            .border(1.dp, Color(0xFF262830), cardShape)
+            .border(1.dp, cardBorder, cardShape)
             .clickable { /* Acao silenciosa conforme especificacao */ },
-        color = Color(0xFF16171C),
+        color = cardBg,
         shape = cardShape
     ) {
         Column(
@@ -245,8 +259,9 @@ fun StopArrivalLineCard(
                     "${arrival.minutesAway} min"
                 }
 
-                // Se for GPS ao vivo, cor verde (#00DC64); senao cor padrao onSurface
-                val etaColor = if (arrival.isRealtime) TransitGreen else MaterialTheme.colorScheme.onSurface
+                // Se for GPS ao vivo, cor verde; se for fallback programado, cor padrao onSurface
+                val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+                val etaColor = if (arrival.isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
 
                 Text(
                     text = etaText,
@@ -259,7 +274,7 @@ fun StopArrivalLineCard(
                 )
             }
 
-            // Proximos horarios
+            // Proximos horarios da linha
             if (arrival.nextDepartures.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -274,13 +289,13 @@ fun StopArrivalLineCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp
                         ),
-                        color = Color(0xFF757885)
+                        color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
                     )
                     arrival.nextDepartures.take(3).forEach { timeStr ->
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(5.dp))
-                                .background(Color(0xFF22242B))
+                                .background(chipBg)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -289,7 +304,7 @@ fun StopArrivalLineCard(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 10.sp
                                 ),
-                                color = Color(0xFFC0C2CC)
+                                color = if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
                             )
                         }
                     }

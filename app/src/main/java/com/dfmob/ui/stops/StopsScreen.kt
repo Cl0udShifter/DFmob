@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,8 +63,8 @@ import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.repository.StopsRepository
-import com.dfmob.ui.stops.components.BrasiliaMapCanvas
 import com.dfmob.ui.stops.components.FloatingArrivalsDeck
+import com.dfmob.ui.stops.components.RealOpenStreetMap
 import com.dfmob.ui.theme.TransitGreen
 
 @Composable
@@ -74,6 +75,7 @@ fun StopsScreen(
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
+    val isDarkTheme = isSystemInDarkTheme()
     val focusManager = LocalFocusManager.current
     val repository = remember { StopsRepository(context) }
 
@@ -112,17 +114,27 @@ fun StopsScreen(
         }
     }
 
+    // Cores adaptativas ao tema Claro / Escuro do celular
+    val scaffoldBg = if (isDarkTheme) Color(0xFF090B10) else Color(0xFFF7F8FA)
+    val searchBarBg = if (isDarkTheme) Color(0xF215161A) else Color(0xF8FFFFFF)
+    val searchBarBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
+    val backBtnBg = if (isDarkTheme) Color(0xFF22242B) else Color(0xFFF0F2F5)
+    val dropdownBg = if (isDarkTheme) Color(0xF8181A20) else Color(0xFAFFFFFF)
+    val dropdownBorder = if (isDarkTheme) Color(0xFF2C2E38) else Color(0xFFE2E4EB)
+    val itemBg = if (isDarkTheme) Color(0xFF20222A) else Color(0xFFF3F4F7)
+    val iconAccent = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = Color(0xFF090B10)
+        containerColor = scaffoldBg
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 1. Mapa Interativo com Culling e Zoom Threshold (Moovit pattern)
-            BrasiliaMapCanvas(
+            // 1. Mapa Real OpenStreetMap (osmdroid) com Zoom Culling e suporte Claro/Escuro
+            RealOpenStreetMap(
                 stops = allStops,
                 selectedStop = selectedStop,
                 focusLocation = focusLocation,
@@ -145,15 +157,15 @@ fun StopsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(searchShape)
-                        .border(1.dp, Color(0xFF282A33), searchShape),
-                    color = Color(0xF215161A),
+                        .border(1.dp, searchBarBorder, searchShape),
+                    color = searchBarBg,
                     shape = searchShape,
-                    shadowElevation = 8.dp
+                    shadowElevation = if (isDarkTheme) 8.dp else 4.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 8.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Botao Voltar com seta perfeitamente centralizada no circulo
@@ -161,7 +173,7 @@ fun StopsScreen(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF22242B))
+                                .background(backBtnBg)
                                 .clickable(onClick = onBack),
                             contentAlignment = Alignment.Center
                         ) {
@@ -183,7 +195,7 @@ fun StopsScreen(
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         fontSize = 13.5.sp
                                     ),
-                                    color = Color(0xFF888B96)
+                                    color = if (isDarkTheme) Color(0xFF888B96) else Color(0xFF6B7280)
                                 )
                             }
 
@@ -197,7 +209,7 @@ fun StopsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 ),
                                 singleLine = true,
-                                cursorBrush = SolidColor(TransitGreen),
+                                cursorBrush = SolidColor(iconAccent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
                             )
@@ -225,7 +237,7 @@ fun StopsScreen(
                             Icon(
                                 imageVector = Icons.Rounded.Place,
                                 contentDescription = "Localizacao",
-                                tint = TransitGreen,
+                                tint = iconAccent,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -240,10 +252,10 @@ fun StopsScreen(
                             .fillMaxWidth()
                             .heightIn(max = 240.dp)
                             .clip(dropdownShape)
-                            .border(1.dp, Color(0xFF2C2E38), dropdownShape),
-                        color = Color(0xF8181A20),
+                            .border(1.dp, dropdownBorder, dropdownShape),
+                        color = dropdownBg,
                         shape = dropdownShape,
-                        shadowElevation = 14.dp
+                        shadowElevation = if (isDarkTheme) 14.dp else 8.dp
                     ) {
                         LazyColumn(
                             modifier = Modifier.fillMaxWidth(),
@@ -258,7 +270,7 @@ fun StopsScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF20222A))
+                                        .background(itemBg)
                                         .clickable {
                                             focusLocation = loc
                                             searchQuery = loc.name
@@ -271,7 +283,7 @@ fun StopsScreen(
                                     Icon(
                                         imageVector = Icons.Rounded.Place,
                                         contentDescription = null,
-                                        tint = TransitGreen,
+                                        tint = iconAccent,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -291,7 +303,7 @@ fun StopsScreen(
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontSize = 11.sp
                                             ),
-                                            color = Color(0xFF8C90A0),
+                                            color = if (isDarkTheme) Color(0xFF8C90A0) else Color(0xFF6B7280),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -310,8 +322,8 @@ fun StopsScreen(
                     .padding(end = 16.dp)
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(Color(0xE6181A20))
-                    .border(1.dp, Color(0xFF2C2E38), CircleShape)
+                    .background(if (isDarkTheme) Color(0xE6181A20) else Color(0xF2FFFFFF))
+                    .border(1.dp, searchBarBorder, CircleShape)
                     .clickable {
                         focusLocation = DFLocation(
                             name = "Rodoviária do Plano Piloto",
@@ -325,7 +337,7 @@ fun StopsScreen(
                 Icon(
                     imageVector = Icons.Rounded.MyLocation,
                     contentDescription = "Centralizar mapa",
-                    tint = TransitGreen,
+                    tint = iconAccent,
                     modifier = Modifier.size(20.dp)
                 )
             }
