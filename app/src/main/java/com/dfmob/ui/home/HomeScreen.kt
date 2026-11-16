@@ -54,7 +54,8 @@ import java.io.File
 fun HomeScreen(
     modifier: Modifier = Modifier,
     favoritesRepository: FavoritesRepository? = null,
-    onNavigateToLines: () -> Unit = {}
+    onNavigateToLines: () -> Unit = {},
+    onNavigateToStops: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
@@ -175,7 +176,7 @@ fun HomeScreen(
             // Componente 2: Botoes de modo Linhas e Paradas
             QuickNavButtons(
                 onLinesClick = onNavigateToLines,
-                onStopsClick = {}
+                onStopsClick = onNavigateToStops
             )
 
             // Novo Componente: Casa e Trabalho

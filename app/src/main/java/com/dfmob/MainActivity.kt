@@ -13,11 +13,13 @@ import androidx.compose.ui.platform.LocalContext
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
+import com.dfmob.ui.stops.StopsScreen
 import com.dfmob.ui.theme.DFmobTheme
 
 enum class AppScreen {
     HOME,
-    LINES
+    LINES,
+    STOPS
 }
 
 class MainActivity : ComponentActivity() {
@@ -34,10 +36,14 @@ class MainActivity : ComponentActivity() {
                     when (screen) {
                         AppScreen.HOME -> HomeScreen(
                             favoritesRepository = favoritesRepository,
-                            onNavigateToLines = { currentScreen = AppScreen.LINES }
+                            onNavigateToLines = { currentScreen = AppScreen.LINES },
+                            onNavigateToStops = { currentScreen = AppScreen.STOPS }
                         )
                         AppScreen.LINES -> LinesScreen(
                             favoritesRepository = favoritesRepository,
+                            onBack = { currentScreen = AppScreen.HOME }
+                        )
+                        AppScreen.STOPS -> StopsScreen(
                             onBack = { currentScreen = AppScreen.HOME }
                         )
                     }
