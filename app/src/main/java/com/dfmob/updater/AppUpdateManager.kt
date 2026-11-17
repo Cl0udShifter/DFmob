@@ -13,19 +13,32 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+import com.dfmob.BuildConfig
+
 class AppUpdateManager(private val context: Context) {
 
     companion object {
         private const val GITHUB_REPO = "Cl0udShifter/DFmob"
         private const val RELEASES_API_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
         private const val FILE_PROVIDER_AUTHORITY = "com.dfmob.fileprovider"
-        private const val CURRENT_VERSION_NAME = "1.1.5"
-        private const val CURRENT_VERSION_CODE = 16
     }
 
-    fun getCurrentVersion(): String = CURRENT_VERSION_NAME
+    fun getCurrentVersion(): String {
+        return try {
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            pInfo.versionName ?: BuildConfig.VERSION_NAME
+        } catch (_: Exception) {
+            BuildConfig.VERSION_NAME
+        }
+    }
 
     suspend fun checkForUpdates(): UpdateState = withContext(Dispatchers.IO) {
+        val currentVersion = getCurrentVersion()
         var connection: HttpURLConnection? = null
         try {
             val url = URL(RELEASES_API_URL)
@@ -39,7 +52,7 @@ class AppUpdateManager(private val context: Context) {
 
             val responseCode = connection.responseCode
             if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
-                return@withContext UpdateState.UpToDate(CURRENT_VERSION_NAME)
+                return@withContext UpdateState.UpToDate(currentVersion)
             }
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 return@withContext UpdateState.Error("Servidor GitHub retornou codigo $responseCode")
@@ -71,7 +84,7 @@ class AppUpdateManager(private val context: Context) {
                 }
             }
 
-            if (isNewerVersion(tagName, CURRENT_VERSION_NAME)) {
+            if (isNewerVersion(tagName, currentVersion)) {
                 if (downloadUrl.isNullOrBlank()) {
                     return@withContext UpdateState.Error("Nova versao encontrada ($tagName), mas o arquivo APK ainda nao foi anexado a release.")
                 }
@@ -85,7 +98,7 @@ class AppUpdateManager(private val context: Context) {
                 )
                 UpdateState.UpdateAvailable(releaseInfo)
             } else {
-                UpdateState.UpToDate(CURRENT_VERSION_NAME)
+                UpdateState.UpToDate(currentVersion)
             }
         } catch (e: Exception) {
             UpdateState.Error(e.localizedMessage ?: "Falha ao verificar atualizacoes")

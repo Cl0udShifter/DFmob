@@ -64,9 +64,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.stops.components.FloatingArrivalsDeck
 import com.dfmob.ui.stops.components.RealOpenStreetMap
@@ -75,6 +79,7 @@ import com.dfmob.ui.theme.TransitGreen
 @Composable
 fun StopsScreen(
     onBack: () -> Unit,
+    favoritesRepository: FavoritesRepository? = null,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
@@ -83,6 +88,8 @@ fun StopsScreen(
     val isDarkTheme = isSystemInDarkTheme()
     val focusManager = LocalFocusManager.current
     val repository = remember { StopsRepository(context) }
+    val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
+    val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
 
     var allStops by remember { mutableStateOf<List<TransitStop>>(emptyList()) }
     var selectedStop by remember { mutableStateOf<TransitStop?>(null) }
@@ -117,6 +124,9 @@ fun StopsScreen(
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
             )
+        } else {
+            // Se permissao ja estiver concedida, centraliza imediatamente na localizacao GPS atual
+            recenterTrigger = System.currentTimeMillis()
         }
     }
 
@@ -129,17 +139,17 @@ fun StopsScreen(
         }
     }
 
-    // Carregamento de chegadas (Padrao Moovit: Instantaneo local sem delay + Telemetria assincrona em segundo plano)
+    // Carregamento de chegadas (Padrao Moovit: Instantaneo local sem delay + Telemetria assincrona em segundo plano e polling continuo)
     LaunchedEffect(selectedStop) {
         val stop = selectedStop
         if (stop != null) {
-            if (arrivals.isEmpty()) {
-                arrivals = repository.getStaticArrivalsForStop(stop)
-            }
+            arrivals = repository.getStaticArrivalsForStop(stop)
             isLoadingArrivals = false
-            // Atualizacao em segundo plano assincrona (nao-bloqueante)
-            val updated = repository.fetchLiveTelemetryUpdates(stop, arrivals)
-            arrivals = updated
+            while (isActive) {
+                val updated = repository.fetchLiveTelemetryUpdates(stop, arrivals)
+                arrivals = updated
+                delay(15_000L) // Atualiza telemetria a cada 15 segundos estilo Moovit
+            }
         } else {
             arrivals = emptyList()
             isLoadingArrivals = false
@@ -398,6 +408,10 @@ fun StopsScreen(
                         stop = stop,
                         arrivals = arrivals,
                         isLoading = isLoadingArrivals,
+                        isFavorite = favoriteStops.any { it.stopId == stop.stopId },
+                        onToggleFavorite = {
+                            favoritesRepo.toggleFavoriteStop(stop)
+                        },
                         onClose = {
                             selectedStop = null
                         }

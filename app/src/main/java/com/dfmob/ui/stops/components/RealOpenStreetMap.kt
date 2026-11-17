@@ -126,9 +126,16 @@ fun RealOpenStreetMap(
             isTilesScaledToDpi = true
             minZoomLevel = 9.0
             maxZoomLevel = 20.0
-            controller.setZoom(14.2)
-            // Centro em Brasilia: Rodoviaria do Plano Piloto
-            controller.setCenter(GeoPoint(-15.794167, -47.882778))
+            controller.setZoom(15.5)
+            val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+            val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+            val initialLoc = lastGps ?: lastNet
+            if (initialLoc != null) {
+                controller.setCenter(GeoPoint(initialLoc.latitude, initialLoc.longitude))
+            } else {
+                controller.setCenter(GeoPoint(-15.794167, -47.882778))
+            }
         }
     }
 

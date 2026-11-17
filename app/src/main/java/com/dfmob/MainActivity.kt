@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { currentScreen = AppScreen.HOME }
                         )
                         AppScreen.STOPS -> StopsScreen(
+                            favoritesRepository = favoritesRepository,
                             onBack = { currentScreen = AppScreen.HOME }
                         )
                     }

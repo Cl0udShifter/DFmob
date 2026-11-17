@@ -65,6 +65,7 @@ fun HomeScreen(
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
+    val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -185,9 +186,12 @@ fun HomeScreen(
                 onWorkClick = {}
             )
 
-            // Componente 3: Cards estilo painel de partidas com linhas favoritas dinamicas
+            // Componente 3: Cards estilo painel de partidas com favoritos dinamicos (linhas e paradas)
             RecentAndFavoritesSection(
-                favoriteLines = favoriteLines
+                favoriteLines = favoriteLines,
+                favoriteStops = favoriteStops,
+                onLineClick = { onNavigateToLines() },
+                onStopClick = { onNavigateToStops() }
             )
 
             Spacer(modifier = Modifier.height(20.dp))

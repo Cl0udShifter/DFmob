@@ -3,6 +3,7 @@ package com.dfmob.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.dfmob.data.model.TransitLine
+import com.dfmob.data.model.TransitStop
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,10 +18,92 @@ class FavoritesRepository(context: Context) {
     companion object {
         private const val KEY_FAVORITES = "favorite_route_ids"
         private const val KEY_FAVORITE_LINES_JSON = "favorite_lines_json"
+        private const val KEY_FAVORITE_STOPS = "favorite_stop_ids"
+        private const val KEY_FAVORITE_STOPS_JSON = "favorite_stops_json"
     }
 
     private val _favoriteLines = MutableStateFlow<List<TransitLine>>(loadFavoriteLinesFromPrefs())
     val favoriteLines: StateFlow<List<TransitLine>> = _favoriteLines.asStateFlow()
+
+    private val _favoriteStops = MutableStateFlow<List<TransitStop>>(loadFavoriteStopsFromPrefs())
+    val favoriteStops: StateFlow<List<TransitStop>> = _favoriteStops.asStateFlow()
+
+    private fun loadFavoriteStopsFromPrefs(): List<TransitStop> {
+        val rawJson = prefs.getString(KEY_FAVORITE_STOPS_JSON, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(rawJson)
+            val list = mutableListOf<TransitStop>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    TransitStop(
+                        stopId = obj.getInt("stopId"),
+                        stopName = obj.getString("stopName"),
+                        stopCode = if (obj.has("stopCode") && !obj.isNull("stopCode")) obj.getString("stopCode") else null,
+                        latE6 = obj.getInt("latE6"),
+                        lonE6 = obj.getInt("lonE6"),
+                        isMetro = obj.optBoolean("isMetro", false),
+                        platformCode = if (obj.has("platformCode") && !obj.isNull("platformCode")) obj.getString("platformCode") else null
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun getFavoriteStopIds(): Set<Int> {
+        val stringSet = prefs.getStringSet(KEY_FAVORITE_STOPS, emptySet()) ?: emptySet()
+        return stringSet.mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    fun isFavoriteStop(stopId: Int): Boolean {
+        return getFavoriteStopIds().contains(stopId)
+    }
+
+    fun toggleFavoriteStop(stop: TransitStop): Boolean {
+        val currentIds = prefs.getStringSet(KEY_FAVORITE_STOPS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        val currentStops = _favoriteStops.value.toMutableList()
+        val stopIdStr = stop.stopId.toString()
+        val isNowFavorite: Boolean
+
+        if (currentIds.contains(stopIdStr)) {
+            currentIds.remove(stopIdStr)
+            currentStops.removeAll { it.stopId == stop.stopId }
+            isNowFavorite = false
+        } else {
+            currentIds.add(stopIdStr)
+            currentStops.removeAll { it.stopId == stop.stopId }
+            currentStops.add(stop)
+            isNowFavorite = true
+        }
+
+        val editor = prefs.edit()
+        editor.putStringSet(KEY_FAVORITE_STOPS, currentIds)
+
+        val array = JSONArray()
+        for (item in currentStops) {
+            val obj = JSONObject()
+            obj.put("stopId", item.stopId)
+            obj.put("stopName", item.stopName)
+            if (item.stopCode != null) obj.put("stopCode", item.stopCode)
+            obj.put("latE6", item.latE6)
+            obj.put("lonE6", item.lonE6)
+            obj.put("isMetro", item.isMetro)
+            if (item.platformCode != null) obj.put("platformCode", item.platformCode)
+            array.put(obj)
+        }
+        editor.putString(KEY_FAVORITE_STOPS_JSON, array.toString())
+        editor.apply()
+
+        _favoriteStops.value = currentStops
+        return isNowFavorite
+    }
+
+    fun getFavoriteStopsSync(): List<TransitStop> {
+        return _favoriteStops.value
+    }
 
     private fun loadFavoriteLinesFromPrefs(): List<TransitLine> {
         val rawJson = prefs.getString(KEY_FAVORITE_LINES_JSON, null) ?: return emptyList()

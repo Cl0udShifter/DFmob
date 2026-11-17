@@ -47,12 +47,16 @@ import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
 import com.dfmob.ui.theme.TransitGreen
 
+import androidx.compose.foundation.lazy.itemsIndexed
+
 @Composable
 fun FloatingArrivalsDeck(
     stop: TransitStop,
     arrivals: List<StopArrival>,
     isLoading: Boolean,
     onClose: () -> Unit,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isDarkTheme = isSystemInDarkTheme()
@@ -116,19 +120,18 @@ fun FloatingArrivalsDeck(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    var isFavoriteStop by remember(stop.stopId) { mutableStateOf(false) }
                     Box(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
                             .background(closeBtnBg)
-                            .clickable { isFavoriteStop = !isFavoriteStop },
+                            .clickable(onClick = onToggleFavorite),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isFavoriteStop) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                             contentDescription = "Favoritar parada",
-                            tint = if (isFavoriteStop) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -186,10 +189,10 @@ fun FloatingArrivalsDeck(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = arrivals,
-                        key = { "${it.lineNumber}_${it.destination}" }
-                    ) { arrival ->
+                        key = { index, it -> "${it.lineNumber}_${it.destination}_${it.minutesAway}_${it.scheduledTimeFormatted}_$index" }
+                    ) { _, arrival ->
                         StopArrivalLineCard(
                             arrival = arrival,
                             isDarkTheme = isDarkTheme

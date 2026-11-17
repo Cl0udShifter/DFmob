@@ -119,10 +119,7 @@ class StopsRepository(context: Context) {
                     scheduledFormatted = formatSecondsToHHMM(nextDep)
                     // Partidas subsequentes (sem repetir o horario atual)
                     nextTimesList = scheduledTimes.drop(1).take(2).map { formatSecondsToHHMM(it) }
-                    // Apenas linhas em operacao na janela de ate 35 minutos recebem status de GPS ao vivo
-                    val isCorujao = line.lineNumber.contains("035") || line.lineName.contains("CORUJ", ignoreCase = true)
-                    val isOperatingHour = currentSeconds >= 18000 || isCorujao
-                    isLive = (etaMinutes <= 35) && isOperatingHour
+                    isLive = false
                 } else {
                     etaMinutes = 25
                     scheduledFormatted = formatSecondsToHHMM(currentSeconds + 1500)
@@ -196,9 +193,6 @@ class StopsRepository(context: Context) {
         val updated = currentArrivals.map { arrival ->
             if (arrival.isMetro) {
                 arrival
-            } else if (!arrival.isRealtime) {
-                // Linhas com partidas agendadas sem operacao iminente permanecem como agendadas (sem falso GPS)
-                arrival
             } else {
                 val vehicles = liveVehiclesMap[arrival.lineNumber]
                 if (!vehicles.isNullOrEmpty()) {
@@ -210,13 +204,17 @@ class StopsRepository(context: Context) {
                         } else null
                     }
                     if (candidateEtas.isNotEmpty()) {
-                        val minEta = minOf(arrival.minutesAway, candidateEtas.minOrNull() ?: arrival.minutesAway)
+                        val minEta = candidateEtas.minOrNull() ?: arrival.minutesAway
                         arrival.copy(
                             minutesAway = minEta,
                             isRealtime = true
                         )
-                    } else arrival
-                } else arrival
+                    } else {
+                        arrival.copy(isRealtime = false)
+                    }
+                } else {
+                    arrival.copy(isRealtime = false)
+                }
             }
         }
 

@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 class DatabaseHelper(private val context: Context) {
 
     private val dbName = "dfmob.db"
-    private val targetRevision = 20261128
+    private val targetRevision = 20261129
     private var database: SQLiteDatabase? = null
 
     init {
@@ -83,7 +83,7 @@ class DatabaseHelper(private val context: Context) {
     fun getLinesPassingAtStop(stopId: Int): List<StopLineInfo> {
         val db = database ?: return emptyList()
         val sql = """
-            SELECT DISTINCT l.line_id, g.line_number, g.line_name, l.origin_name, l.destination_name, a.agency_name, a.color_hex, g.is_metro
+            SELECT DISTINCT l.line_id, g.line_number, g.line_name, l.origin_name, l.destination_name, a.agency_name, g.color_hex, g.is_metro
             FROM stop_sequences sq
             JOIN lines l ON sq.line_id = l.line_id
             JOIN line_groups g ON l.group_id = g.group_id
@@ -94,20 +94,26 @@ class DatabaseHelper(private val context: Context) {
 
         val cursor = db.rawQuery(sql, arrayOf(stopId.toString()))
         val list = mutableListOf<StopLineInfo>()
+        val seen = mutableSetOf<String>()
         cursor.use { c ->
             while (c.moveToNext()) {
-                list.add(
-                    StopLineInfo(
-                        lineId = c.getInt(0),
-                        lineNumber = c.getString(1),
-                        lineName = c.getString(2),
-                        originName = c.getString(3),
-                        destinationName = c.getString(4),
-                        agencyName = c.getString(5),
-                        colorHex = c.getString(6),
-                        isMetro = c.getInt(7) == 1
+                val lineNum = c.getString(1)
+                val dest = c.getString(4)
+                val key = "${lineNum}_$dest"
+                if (seen.add(key)) {
+                    list.add(
+                        StopLineInfo(
+                            lineId = c.getInt(0),
+                            lineNumber = lineNum,
+                            lineName = c.getString(2),
+                            originName = c.getString(3),
+                            destinationName = dest,
+                            agencyName = c.getString(5),
+                            colorHex = c.getString(6),
+                            isMetro = c.getInt(7) == 1
+                        )
                     )
-                )
+                }
             }
         }
         return list
