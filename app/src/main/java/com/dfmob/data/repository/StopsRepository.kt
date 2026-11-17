@@ -126,11 +126,32 @@ class StopsRepository(context: Context) {
                 )
             }
 
+            // Fallback para itinerario programado quando nao ha sinal de GPS ao vivo
+            if (!liveFound) {
+                val nextDep = scheduledTimes.firstOrNull()
+                if (nextDep != null) {
+                    val diffSec = nextDep - currentSeconds
+                    etaMinutes = if (diffSec > 0) {
+                        maxOf(1, (diffSec + 30) / 60)
+                    } else {
+                        1
+                    }
+                } else {
+                    // Sem partidas adicionais hoje, proxima programada
+                    etaMinutes = 65
+                }
+            }
+
             // 3. Regra de formatacao:
             // Se minutos <= 60: exibe minutos. Se liveFound for verdadeiro, texto verde.
             // Se minutos > 60: exibe o horario padrao HH:MM.
             val isLive = liveFound && etaMinutes <= 60
-            val scheduledFormatted = formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
+            val scheduledFormatted = if (liveFound) {
+                formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
+            } else {
+                scheduledTimes.firstOrNull()?.let { formatSecondsToHHMM(it) }
+                    ?: formatSecondsToHHMM(currentSeconds + 900)
+            }
 
             arrivals.add(
                 StopArrival(

@@ -340,7 +340,7 @@ private fun createLocationPuckBitmap(context: Context): Bitmap {
 }
 
 /**
- * Cria o marcador visual para Paradas de Onibus (Abrigo de Onibus com cobertura e banco).
+ * Cria o marcador visual para Paradas de Onibus no padrao Variante A (Frente de Onibus Transit).
  */
 private fun createBusStopDrawable(
     context: Context,
@@ -379,47 +379,57 @@ private fun createBusStopDrawable(
         canvas.drawCircle(center, center, center * 0.80f, paint)
     }
 
-    drawBusShelterIcon(canvas, center, density, isSelected)
+    drawBusFrontTransitIcon(canvas, center, density, isSelected)
     return BitmapDrawable(context.resources, bitmap)
 }
 
 /**
- * Desenha o icone de Abrigo de Onibus (cobertura + pilar + banco de espera) em branco.
+ * Desenha o icone frontal estilizado de onibus Transit (Variante A) em vetor branco com recortes limpos.
  */
-private fun drawBusShelterIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
+private fun drawBusFrontTransitIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
     val scale = if (isSelected) 1.25f else 1.0f
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        style = Paint.Style.FILL
-    }
+    val iconWidth = 12f * density * scale
+    val iconHeight = 12f * density * scale
 
-    // 1. Cobertura / Teto do Abrigo (Canopy com cantos arredondados)
-    val canopyLeft = center - (8.5f * density * scale)
-    val canopyTop = center - (6.5f * density * scale)
-    val canopyRight = center + (8.5f * density * scale)
-    val canopyBottom = center - (4.0f * density * scale)
-    canvas.drawRoundRect(canopyLeft, canopyTop, canopyRight, canopyBottom, 1.2f * density * scale, 1.2f * density * scale, paint)
+    val left = center - iconWidth / 2f
+    val top = center - iconHeight / 2f
+    val right = center + iconWidth / 2f
+    val bottom = center + iconHeight / 2f
 
-    // 2. Pilar vertical traseiro
-    val postLeft = center - (7.0f * density * scale)
-    val postTop = canopyBottom
-    val postRight = center - (5.0f * density * scale)
-    val postBottom = center + (6.5f * density * scale)
-    canvas.drawRect(postLeft, postTop, postRight, postBottom, paint)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    // 3. Assento do banco de espera
-    val benchLeft = center - (5.5f * density * scale)
-    val benchTop = center + (1.2f * density * scale)
-    val benchRight = center + (7.0f * density * scale)
-    val benchBottom = center + (3.0f * density * scale)
-    canvas.drawRoundRect(benchLeft, benchTop, benchRight, benchBottom, 0.8f * density * scale, 0.8f * density * scale, paint)
+    // 1. Corpo principal do onibus (Branco solido com cantos arredondados)
+    paint.color = android.graphics.Color.WHITE
+    paint.style = Paint.Style.FILL
+    val bodyHeight = iconHeight - (2.2f * density * scale)
+    canvas.drawRoundRect(left, top, right, top + bodyHeight, 2.5f * density * scale, 2.5f * density * scale, paint)
 
-    // 4. Perna do banco de apoio
-    val legLeft = center + (4.0f * density * scale)
-    val legTop = benchBottom
-    val legRight = center + (5.5f * density * scale)
-    val legBottom = postBottom
-    canvas.drawRect(legLeft, legTop, legRight, legBottom, paint)
+    // 2. Para-brisa frontal panoramico (recorte verde Transit)
+    paint.color = android.graphics.Color.parseColor("#00C853")
+    val winPadH = 1.4f * density * scale
+    val winPadTop = 1.6f * density * scale
+    val winH = 4.0f * density * scale
+    canvas.drawRoundRect(
+        left + winPadH,
+        top + winPadTop,
+        right - winPadH,
+        top + winPadTop + winH,
+        1.2f * density * scale,
+        1.2f * density * scale,
+        paint
+    )
+
+    // 3. Farois dianteiros circulares (recorte verde)
+    val headlightRadius = 0.9f * density * scale
+    val headlightY = top + bodyHeight - (2.5f * density * scale)
+    canvas.drawCircle(left + (2.5f * density * scale), headlightY, headlightRadius, paint)
+    canvas.drawCircle(right - (2.5f * density * scale), headlightY, headlightRadius, paint)
+
+    // 4. Rodas dianteiras (Branco solido)
+    paint.color = android.graphics.Color.WHITE
+    val wheelW = 1.6f * density * scale
+    canvas.drawRect(left + (1.5f * density * scale), top + bodyHeight, left + (1.5f * density * scale) + wheelW, bottom, paint)
+    canvas.drawRect(right - (1.5f * density * scale) - wheelW, top + bodyHeight, right - (1.5f * density * scale), bottom, paint)
 }
 
 /**
