@@ -129,15 +129,20 @@ fun StopsScreen(
         }
     }
 
-    // Busca chegadas ao vivo quando uma parada e selecionada
+    // Carregamento de chegadas (Padrao Moovit: Instantaneo local sem delay + Telemetria assincrona em segundo plano)
     LaunchedEffect(selectedStop) {
         val stop = selectedStop
         if (stop != null) {
-            isLoadingArrivals = true
-            arrivals = repository.getArrivalsForStop(stop)
+            if (arrivals.isEmpty()) {
+                arrivals = repository.getStaticArrivalsForStop(stop)
+            }
             isLoadingArrivals = false
+            // Atualizacao em segundo plano assincrona (nao-bloqueante)
+            val updated = repository.fetchLiveTelemetryUpdates(stop, arrivals)
+            arrivals = updated
         } else {
             arrivals = emptyList()
+            isLoadingArrivals = false
         }
     }
 
@@ -168,6 +173,9 @@ fun StopsScreen(
                 recenterTrigger = recenterTrigger,
                 onStopSelected = { stop ->
                     selectedStop = stop
+                    // Emissao imediata instantanea (< 1ms) sem nenhum loading spinner bloqueante
+                    arrivals = repository.getStaticArrivalsForStop(stop)
+                    isLoadingArrivals = false
                 },
                 modifier = Modifier.fillMaxSize()
             )

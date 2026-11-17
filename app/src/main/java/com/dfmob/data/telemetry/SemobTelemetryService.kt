@@ -33,8 +33,8 @@ class SemobTelemetryService {
             val url = URL(urlString)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 3000
-                readTimeout = 3500
+                connectTimeout = 1500
+                readTimeout = 2000
                 setRequestProperty("User-Agent", "DFmob-Android")
                 setRequestProperty("Accept", "application/json")
             }

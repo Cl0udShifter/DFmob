@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 class DatabaseHelper(private val context: Context) {
 
     private val dbName = "dfmob.db"
-    private val targetRevision = 20261119
+    private val targetRevision = 20261120
     private var database: SQLiteDatabase? = null
 
     init {

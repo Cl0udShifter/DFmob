@@ -7,7 +7,11 @@ import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.telemetry.SemobTelemetryService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.atan2
@@ -77,44 +81,17 @@ class StopsRepository(context: Context) {
         }
     }
 
-    suspend fun getArrivalsForStop(stop: TransitStop): List<StopArrival> = withContext(Dispatchers.IO) {
+    /**
+     * Carregamento IMEDIATO das chegadas programadas a partir do SQLite local (Padrao Moovit / Transit).
+     * Executa em < 1ms sem tocar na rede, permitindo que a tela de paradas abra instantaneamente.
+     */
+    fun getStaticArrivalsForStop(stop: TransitStop): List<StopArrival> {
         val lines = dbHelper.getLinesPassingAtStop(stop.stopId)
         val cal = Calendar.getInstance()
         val currentSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
 
-        val arrivals = mutableListOf<StopArrival>()
-
-        for (line in lines) {
-            var liveFound = false
-            var etaMinutes = 0
-
-            // 1. Verificar GPS ao vivo na telemetria oficial da Semob
-            if (!line.isMetro) {
-                val liveVehicles = telemetryService.getLiveVehiclePositions(line.lineNumber)
-                if (liveVehicles.isNotEmpty()) {
-                    val candidateEtas = liveVehicles.mapNotNull { v ->
-                        val distMeters = calculateDistanceMeters(v.latE6, v.lonE6, stop.latE6, stop.lonE6)
-                        if (distMeters >= 50.0 && distMeters <= 25000.0) {
-                            val travelTimeSec = (distMeters / 6.1).toInt() + 45
-                            maxOf(1, Math.round(travelTimeSec / 60.0).toInt())
-                        } else null
-                    }
-                    if (candidateEtas.isNotEmpty()) {
-                        etaMinutes = candidateEtas.minOrNull() ?: 1
-                        liveFound = true
-                    }
-                }
-            } else {
-                // Intervalo operacional do Metro-DF (4 a 8 minutos no pico)
-                val baseMins = when (line.lineId) {
-                    1001, 1002 -> 4 // Linha Verde
-                    else -> 7 // Linha Laranja
-                }
-                etaMinutes = baseMins
-                liveFound = true
-            }
-
-            // 2. Horarios programados seguintes (trips_schedule da linha)
+        return lines.map { line ->
+            val isMetro = line.isMetro
             val scheduledTimes = dbHelper.getNextScheduledDepartures(line.lineId, currentSeconds, 3)
             val nextTimesList = if (scheduledTimes.isNotEmpty()) {
                 scheduledTimes.map { formatSecondsToHHMM(it) }
@@ -126,50 +103,109 @@ class StopsRepository(context: Context) {
                 )
             }
 
-            // Fallback para itinerario programado quando nao ha sinal de GPS ao vivo
-            if (!liveFound) {
+            val etaMinutes: Int
+            val isLive: Boolean
+            if (isMetro) {
+                // Headway fixo de alta frequencia do Metro-DF
+                etaMinutes = when (line.lineId) {
+                    1001, 1002 -> 4
+                    else -> 7
+                }
+                isLive = true
+            } else {
                 val nextDep = scheduledTimes.firstOrNull()
                 if (nextDep != null) {
                     val diffSec = nextDep - currentSeconds
-                    etaMinutes = if (diffSec > 0) {
-                        maxOf(1, (diffSec + 30) / 60)
-                    } else {
-                        1
-                    }
+                    etaMinutes = if (diffSec > 0) maxOf(1, (diffSec + 30) / 60) else 1
                 } else {
-                    // Sem partidas adicionais hoje, proxima programada
                     etaMinutes = 65
                 }
+                isLive = false
             }
 
-            // 3. Regra de formatacao:
-            // Se minutos <= 60: exibe minutos. Se liveFound for verdadeiro, texto verde.
-            // Se minutos > 60: exibe o horario padrao HH:MM.
-            val isLive = liveFound && etaMinutes <= 60
-            val scheduledFormatted = if (liveFound) {
-                formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
-            } else {
-                scheduledTimes.firstOrNull()?.let { formatSecondsToHHMM(it) }
-                    ?: formatSecondsToHHMM(currentSeconds + 900)
-            }
+            val scheduledFormatted = scheduledTimes.firstOrNull()?.let { formatSecondsToHHMM(it) }
+                ?: formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
 
-            arrivals.add(
-                StopArrival(
-                    lineNumber = line.lineNumber,
-                    lineName = line.lineName,
-                    destination = line.destinationName,
-                    colorHex = line.colorHex,
-                    textColorHex = if (line.isMetro) "#FFFFFF" else "#000000",
-                    isMetro = line.isMetro,
-                    minutesAway = etaMinutes,
-                    isRealtime = isLive,
-                    scheduledTimeFormatted = scheduledFormatted,
-                    nextDepartures = nextTimesList
-                )
+            StopArrival(
+                lineNumber = line.lineNumber,
+                lineName = line.lineName,
+                destination = line.destinationName,
+                colorHex = line.colorHex,
+                textColorHex = if (isMetro) "#FFFFFF" else "#000000",
+                isMetro = isMetro,
+                minutesAway = etaMinutes,
+                isRealtime = isLive,
+                scheduledTimeFormatted = scheduledFormatted,
+                nextDepartures = nextTimesList
             )
         }
+    }
 
-        arrivals
+    /**
+     * Atualizacao assincrona em segundo plano de telemetria GPS ao vivo (Padrao Moovit).
+     * Nao bloqueia a interface e roda em paralelo com timeout estrito de 2s.
+     */
+    suspend fun fetchLiveTelemetryUpdates(
+        stop: TransitStop,
+        currentArrivals: List<StopArrival>
+    ): List<StopArrival> = withContext(Dispatchers.IO) {
+        val busLines = currentArrivals.filter { !it.isMetro }
+        if (busLines.isEmpty()) return@withContext currentArrivals
+
+        val distinctLineNumbers = busLines.map { it.lineNumber }.distinct()
+        val liveVehiclesMap = mutableMapOf<String, List<SemobTelemetryService.LiveVehicle>>()
+
+        withTimeoutOrNull(2000L) {
+            coroutineScope {
+                distinctLineNumbers.map { lineNum ->
+                    async {
+                        try {
+                            val vehicles = telemetryService.getLiveVehiclePositions(lineNum)
+                            lineNum to vehicles
+                        } catch (_: Exception) {
+                            lineNum to emptyList()
+                        }
+                    }
+                }.awaitAll().forEach { (lineNum, vehicles) ->
+                    if (vehicles.isNotEmpty()) {
+                        liveVehiclesMap[lineNum] = vehicles
+                    }
+                }
+            }
+        }
+
+        if (liveVehiclesMap.isEmpty()) return@withContext currentArrivals
+
+        currentArrivals.map { arrival ->
+            if (arrival.isMetro) {
+                arrival
+            } else {
+                val vehicles = liveVehiclesMap[arrival.lineNumber]
+                if (!vehicles.isNullOrEmpty()) {
+                    val candidateEtas = vehicles.mapNotNull { v ->
+                        val distMeters = calculateDistanceMeters(v.latE6, v.lonE6, stop.latE6, stop.lonE6)
+                        if (distMeters in 50.0..25000.0) {
+                            val travelTimeSec = (distMeters / 6.1).toInt() + 45
+                            maxOf(1, Math.round(travelTimeSec / 60.0).toInt())
+                        } else null
+                    }
+                    if (candidateEtas.isNotEmpty()) {
+                        val minEta = candidateEtas.minOrNull() ?: 1
+                        if (minEta <= 60) {
+                            arrival.copy(
+                                minutesAway = minEta,
+                                isRealtime = true
+                            )
+                        } else arrival
+                    } else arrival
+                } else arrival
+            }
+        }
+    }
+
+    suspend fun getArrivalsForStop(stop: TransitStop): List<StopArrival> {
+        val static = getStaticArrivalsForStop(stop)
+        return fetchLiveTelemetryUpdates(stop, static)
     }
 
     private fun calculateDistanceMeters(lat1E6: Int, lon1E6: Int, lat2E6: Int, lon2E6: Int): Double {
