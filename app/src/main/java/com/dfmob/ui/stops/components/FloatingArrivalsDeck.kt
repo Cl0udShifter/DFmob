@@ -20,14 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Accessible
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DirectionsBus
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
-import androidx.compose.material.icons.rounded.Subway
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +54,7 @@ fun FloatingArrivalsDeck(
     modifier: Modifier = Modifier
 ) {
     val isDarkTheme = isSystemInDarkTheme()
-    val deckShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+    val deckShape = RoundedCornerShape(24.dp)
 
     val deckBackground = if (isDarkTheme) Color(0xF2141519) else Color(0xF8FFFFFF)
     val deckBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
@@ -68,7 +63,7 @@ fun FloatingArrivalsDeck(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
             .clip(deckShape)
             .border(1.dp, deckBorder, deckShape),
         color = deckBackground,
@@ -79,13 +74,13 @@ fun FloatingArrivalsDeck(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Cabecalho da Parada (Padrao Oficial Moovit)
+            // Cabecalho da Parada
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -96,75 +91,62 @@ fun FloatingArrivalsDeck(
                             letterSpacing = (-0.3).sp
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    val subtitle = if (stop.isMetro) {
+                        "METRÔ-DF • ${stop.platformCode ?: "PLATAFORMA PRINCIPAL"}"
+                    } else {
+                        "PARADA DE ÔNIBUS • ${stop.stopCode ?: "PONTO OFICIAL SEMOB"}"
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        ),
+                        color = if (stop.isMetro) Color(0xFFE6A100) else if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+                    )
+                }
+
+                // Botoes de Acao: Favoritar Parada (Padrao Moovit) e Fechar
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    var isFavoriteStop by remember(stop.stopId) { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(closeBtnBg)
+                            .clickable { isFavoriteStop = !isFavoriteStop },
+                        contentAlignment = Alignment.Center
                     ) {
-                        val codeText = if (!stop.stopCode.isNullOrBlank()) {
-                            "Código ${stop.stopCode}"
-                        } else {
-                            "Código ${stop.stopId}"
-                        }
-                        Text(
-                            text = codeText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.Accessible,
-                            contentDescription = "Acessivel para cadeirantes",
+                            imageVector = if (isFavoriteStop) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            contentDescription = "Favoritar parada",
+                            tint = if (isFavoriteStop) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(closeBtnBg)
+                            .clickable(onClick = onClose),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Fechar chegadas",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(closeBtnBg)
-                        .clickable(onClick = onClose),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Fechar chegadas",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            // Subtitulo de secao Moovit: Proximas chegadas
-            Column(modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)) {
-                Text(
-                    text = "Próximas chegadas",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Próximas chegadas de linhas para esta estação",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 11.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             // Lista de Linhas ou Indicador de Carga
@@ -172,7 +154,7 @@ fun FloatingArrivalsDeck(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(110.dp),
+                        .height(100.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
@@ -189,7 +171,7 @@ fun FloatingArrivalsDeck(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Nenhuma linha em operação no momento",
+                        text = "Nenhuma linha em operacao no momento",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -198,94 +180,17 @@ fun FloatingArrivalsDeck(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(210.dp),
+                        .height(200.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
                     items(
                         items = arrivals,
-                        key = { "${it.lineNumber}_${it.destination}_${it.isMetro}" }
+                        key = { "${it.lineNumber}_${it.destination}" }
                     ) { arrival ->
                         StopArrivalLineCard(
                             arrival = arrival,
                             isDarkTheme = isDarkTheme
-                        )
-                    }
-                }
-            }
-
-            // Barra inferior com botoes de acao Moovit: Localizacao em tempo real e Favorito
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Botao azul "Localizacao em tempo real"
-                val blueBg = Color(0xFF1976D2)
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(19.dp))
-                        .clickable { /* Abre rastreamento ao vivo */ },
-                    color = blueBg,
-                    shape = RoundedCornerShape(19.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.DirectionsBus,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Localização em tempo real",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            ),
-                            color = Color.White
-                        )
-                    }
-                }
-
-                // Botao Favorito
-                var isFavoriteStop by remember(stop.stopId) { mutableStateOf(false) }
-                Surface(
-                    modifier = Modifier
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(19.dp))
-                        .border(1.dp, deckBorder, RoundedCornerShape(19.dp))
-                        .clickable { isFavoriteStop = !isFavoriteStop },
-                    color = if (isDarkTheme) Color(0xFF1E2028) else Color(0xFFF0F2F5),
-                    shape = RoundedCornerShape(19.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isFavoriteStop) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                            contentDescription = "Favorito",
-                            tint = if (isFavoriteStop) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Favorito",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -300,163 +205,137 @@ fun StopArrivalLineCard(
     isDarkTheme: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val cardShape = RoundedCornerShape(12.dp)
-    val cardBg = if (isDarkTheme) Color(0xFF181920) else Color(0xFFFAFAFB)
-    val cardBorder = if (isDarkTheme) Color(0xFF272932) else Color(0xFFE5E7EB)
+    val cardShape = RoundedCornerShape(14.dp)
+    val parsedColor = try {
+        Color(android.graphics.Color.parseColor(arrival.colorHex))
+    } catch (_: Exception) {
+        if (arrival.isMetro) Color(0xFF008037) else TransitGreen
+    }
 
-    val liveGreen = if (isDarkTheme) Color(0xFF10B981) else Color(0xFF059669)
-    val liveGreenBg = if (isDarkTheme) Color(0x1A10B981) else Color(0x14059669)
+    val cardBg = if (isDarkTheme) Color(0xFF16171C) else Color(0xFFF3F4F7)
+    val cardBorder = if (isDarkTheme) Color(0xFF262830) else Color(0xFFE2E4EB)
+    val chipBg = if (isDarkTheme) Color(0xFF22242B) else Color(0xFFE5E7EB)
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
             .border(1.dp, cardBorder, cardShape)
-            .clickable { /* Acao silenciosa */ },
+            .clickable { /* Acao silenciosa conforme especificacao */ },
         color = cardBg,
         shape = cardShape
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // 1. Badge do número da linha com ícone de ônibus ou metrô (Padrao Moovit)
-            val badgeBorder = if (isDarkTheme) Color(0xFF3F424E) else Color(0xFFD1D5DB)
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = if (isDarkTheme) Color(0xFF22242D) else Color.White,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .border(1.dp, badgeBorder, RoundedCornerShape(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                // Badge com numero da linha
+                val badgeShape = RoundedCornerShape(7.dp)
+                Surface(
+                    shape = badgeShape,
+                    color = parsedColor,
+                    modifier = Modifier.clip(badgeShape)
                 ) {
-                    Icon(
-                        imageVector = if (arrival.isMetro) Icons.Rounded.Subway else Icons.Rounded.DirectionsBus,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(13.dp)
-                    )
                     Text(
                         text = arrival.lineNumber,
                         style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = if (arrival.isMetro) Color.White else Color.Black,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-            // 2. Destino e Subtexto (Moovit: "A hora de chegada e pontual" ou "Baseado em chegadas anteriores")
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = arrival.destination,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.5.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(1.dp))
-                val subtext = if (arrival.isRealtime) {
-                    "A hora de chegada é pontual"
-                } else {
-                    "Baseado em chegadas anteriores"
-                }
-                Text(
-                    text = subtext,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = if (arrival.isRealtime) FontWeight.Medium else FontWeight.Normal
-                    ),
-                    color = if (arrival.isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // 3. Coluna de ETA e Próximos horários
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                if (arrival.isRealtime) {
-                    // Badge Verde com Ícone de Sinal Wi-Fi / GPS
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = liveGreenBg,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(0.8.dp, liveGreen.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Wifi,
-                                contentDescription = "GPS ao vivo",
-                                tint = liveGreen,
-                                modifier = Modifier.size(11.dp)
-                            )
-                            Text(
-                                text = "${arrival.minutesAway} min",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                ),
-                                color = liveGreen
-                            )
-                        }
-                    }
-                } else {
-                    // Badge com Ícone de Relógio e Horário Programado
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Schedule,
-                            contentDescription = "Horário agendado",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        val etaDisplay = if (arrival.minutesAway <= 60) {
-                            "${arrival.minutesAway} min"
-                        } else {
-                            arrival.scheduledTimeFormatted
-                        }
-                        Text(
-                            text = etaDisplay,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-
-                // Proximas partidas (Seguintes)
-                if (arrival.nextDepartures.isNotEmpty()) {
+                // Nome da Linha e Destino
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = arrival.nextDepartures.take(2).joinToString(", "),
+                        text = arrival.lineName,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Sentido ${arrival.destination}",
                         style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Minutos ate a chegada
+                val etaText = if (arrival.minutesAway > 60) {
+                    arrival.scheduledTimeFormatted
+                } else {
+                    "${arrival.minutesAway} min"
+                }
+
+                // Se for GPS ao vivo, cor verde; se for fallback programado, cor padrao onSurface
+                val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+                val etaColor = if (arrival.isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
+
+                Text(
+                    text = etaText,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 17.sp,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = etaColor
+                )
+            }
+
+            // Proximos horarios da linha
+            if (arrival.nextDepartures.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Seguintes:",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
                             fontSize = 10.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
                     )
+                    arrival.nextDepartures.take(3).forEach { timeStr ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(chipBg)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = timeStr,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 10.sp
+                                ),
+                                color = if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
+                            )
+                        }
+                    }
                 }
             }
         }
