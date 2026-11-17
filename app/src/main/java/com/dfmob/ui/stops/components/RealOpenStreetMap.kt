@@ -4,9 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.location.LocationManager
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -58,6 +60,40 @@ private class CartoTileSource(
 private val CARTO_POSITRON = CartoTileSource("CartoPositronV2", "light_all")
 private val CARTO_DARK_MATTER = CartoTileSource("CartoDarkMatterV2", "dark_all")
 
+/**
+ * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.
+ */
+private class DFLocationOverlay(
+    provider: GpsMyLocationProvider,
+    mapView: MapView,
+    context: Context
+) : MyLocationNewOverlay(provider, mapView) {
+    init {
+        val puckBitmap = createLocationPuckBitmap(context)
+        setPersonIcon(puckBitmap)
+        setDirectionIcon(puckBitmap)
+        setPersonAnchor(0.5f, 0.5f)
+        setDirectionAnchor(0.5f, 0.5f)
+        enableMyLocation()
+        setDrawAccuracyEnabled(true)
+        mCirclePaint.apply {
+            color = android.graphics.Color.parseColor("#221A73E8")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+    }
+}
+
+/**
+ * Cache em memoria dos 4 BitmapDrawables reutilizaveis para evitar alocacoes a 60 FPS.
+ */
+private class StopPinCache(context: Context) {
+    val busNormal: BitmapDrawable = createBusStopDrawable(context, isSelected = false)
+    val busSelected: BitmapDrawable = createBusStopDrawable(context, isSelected = true)
+    val metroNormal: BitmapDrawable = createMetroStopDrawable(context, isSelected = false)
+    val metroSelected: BitmapDrawable = createMetroStopDrawable(context, isSelected = true)
+}
+
 @Composable
 fun RealOpenStreetMap(
     stops: List<TransitStop>,
@@ -70,6 +106,9 @@ fun RealOpenStreetMap(
     val context = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val pinCache = remember(context) { StopPinCache(context) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     // Configuracao inicial do osmdroid com persistencia em cache local
     val mapView = remember {
@@ -85,7 +124,7 @@ fun RealOpenStreetMap(
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             isTilesScaledToDpi = true
-            minZoomLevel = 10.0
+            minZoomLevel = 9.0
             maxZoomLevel = 20.0
             controller.setZoom(14.2)
             // Centro em Brasilia: Rodoviaria do Plano Piloto
@@ -93,16 +132,22 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Overlay de localizacao atual do usuario com precisao e ponto pulsante
+    // Overlay de localizacao atual do usuario
     val locationOverlay = remember {
         val provider = GpsMyLocationProvider(context).apply {
-            locationUpdateMinDistance = 5.0f
-            locationUpdateMinTime = 2000L
+            locationUpdateMinDistance = 3.0f
+            locationUpdateMinTime = 1500L
         }
-        MyLocationNewOverlay(provider, mapView).apply {
-            enableMyLocation()
-            setDrawAccuracyEnabled(true)
+        val overlay = DFLocationOverlay(provider, mapView, context)
+
+        // Seed imediato do ultimo ponto GPS/Rede conhecido para evitar atraso ou sumico inicial
+        val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+        val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+        (lastGps ?: lastNet)?.let { loc ->
+            overlay.onLocationChanged(loc, provider)
         }
+        overlay
     }
 
     // Adiciona o overlay de localizacao se ainda nao estiver presente
@@ -160,8 +205,8 @@ fun RealOpenStreetMap(
                 mapView.controller.animateTo(myLoc, 16.0, 1000L)
             } else {
                 val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (e: SecurityException) { null }
-                val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (e: SecurityException) { null }
+                val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+                val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
                 val best = lastGps ?: lastNet
                 if (best != null) {
                     mapView.controller.animateTo(GeoPoint(best.latitude, best.longitude), 16.0, 1000L)
@@ -172,41 +217,56 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Marcadores de paradas e estacoes com icones visuais claros e Viewport Culling
+    // Gerenciador de marcadores com Viewport Culling, debouncing e Zoom Threshold estrito
     LaunchedEffect(stops, selectedStop) {
         fun updateMarkers() {
             val currentZoom = mapView.zoomLevelDouble
             val bounds = mapView.boundingBox
 
-            // Remove marcadores anteriores mantendo o locationOverlay
             val existingMarkers = mapView.overlays.filterIsInstance<Marker>()
+
+            // 1. Zoom out total (< 11.5): esconde todas as paradas para manter visual limpo e fluido
+            if (currentZoom < 11.5) {
+                if (existingMarkers.isNotEmpty()) {
+                    mapView.overlays.removeAll(existingMarkers)
+                    mapView.invalidate()
+                }
+                return
+            }
+
+            // 2. Zoom intermediario (11.5 a 13.5): exibe apenas as estacoes de metrô
+            val isIntermediateZoom = currentZoom < 13.5
+            val visibleStops = stops.filter { stop ->
+                if (isIntermediateZoom && !stop.isMetro) {
+                    return@filter false
+                }
+                // Viewport culling com margem de segurança de 0.008 graus (~800m)
+                if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
+                    if (stop.latitude < bounds.latSouth - 0.008 || stop.latitude > bounds.latNorth + 0.008 ||
+                        stop.longitude < bounds.lonWest - 0.008 || stop.longitude > bounds.lonEast + 0.008
+                    ) {
+                        return@filter false
+                    }
+                }
+                true
+            }
+
             mapView.overlays.removeAll(existingMarkers)
 
-            for (stop in stops) {
-                // Zoom threshold: em visualizacao panoramica (< 11.5), exibe apenas metrô para evitar poluicao
-                if (currentZoom < 11.5 && !stop.isMetro) continue
-
-                // Viewport culling: descarta pontos fora da regiao visivel caso bounds seja valido
-                if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
-                    if (stop.latitude < bounds.latSouth || stop.latitude > bounds.latNorth ||
-                        stop.longitude < bounds.lonWest || stop.longitude > bounds.lonEast
-                    ) {
-                        continue
-                    }
+            for (stop in visibleStops) {
+                val isSelected = selectedStop?.stopId == stop.stopId
+                val iconDrawable = when {
+                    stop.isMetro && isSelected -> pinCache.metroSelected
+                    stop.isMetro -> pinCache.metroNormal
+                    isSelected -> pinCache.busSelected
+                    else -> pinCache.busNormal
                 }
 
                 val marker = Marker(mapView).apply {
                     position = GeoPoint(stop.latitude, stop.longitude)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     title = stop.stopName
-
-                    val isSelected = selectedStop?.stopId == stop.stopId
-                    icon = createStopPinDrawable(
-                        context = context,
-                        isMetro = stop.isMetro,
-                        isSelected = isSelected
-                    )
-
+                    icon = iconDrawable
                     setOnMarkerClickListener { _, _ ->
                         onStopSelected(stop)
                         true
@@ -217,15 +277,23 @@ fun RealOpenStreetMap(
             mapView.invalidate()
         }
 
-        // Listener para recarregar markers quando o usuario da zoom ou move o mapa
+        // Listener com debouncing para evitar alocacoes e processamento desnecessario a 60 FPS
+        var pendingUpdate: Runnable? = null
+        fun scheduleDebouncedUpdate(delayMs: Long) {
+            pendingUpdate?.let { mainHandler.removeCallbacks(it) }
+            val task = Runnable { updateMarkers() }
+            pendingUpdate = task
+            mainHandler.postDelayed(task, delayMs)
+        }
+
         val mapListener = object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
-                updateMarkers()
+                scheduleDebouncedUpdate(100L)
                 return false
             }
 
             override fun onZoom(event: ZoomEvent?): Boolean {
-                updateMarkers()
+                scheduleDebouncedUpdate(80L)
                 return false
             }
         }
@@ -240,15 +308,46 @@ fun RealOpenStreetMap(
 }
 
 /**
- * Cria pin em alta resolucao com iconografia distinta para paradas de onibus e estacoes de metro.
+ * Cria o puck moderno de localizacao do usuario com disco azul, borda branca e sombra.
  */
-private fun createStopPinDrawable(
+private fun createLocationPuckBitmap(context: Context): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (24 * density).toInt()
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // 1. Sombra suave (Drop Shadow)
+    paint.color = android.graphics.Color.argb(45, 0, 0, 0)
+    paint.style = Paint.Style.FILL
+    canvas.drawCircle(center, center + (1f * density), 10.5f * density, paint)
+
+    // 2. Anel branco solido de alto contraste
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(center, center, 10f * density, paint)
+
+    // 3. Disco azul vibrante (Google / Transit Blue)
+    paint.color = android.graphics.Color.parseColor("#1A73E8")
+    canvas.drawCircle(center, center, 7.5f * density, paint)
+
+    // 4. Ponto central branco
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(center, center, 2.5f * density, paint)
+
+    return bitmap
+}
+
+/**
+ * Cria o marcador visual para Paradas de Onibus (Abrigo de Onibus com cobertura e banco).
+ */
+private fun createBusStopDrawable(
     context: Context,
-    isMetro: Boolean,
     isSelected: Boolean
 ): BitmapDrawable {
     val density = context.resources.displayMetrics.density
-    val sizePx = ((if (isSelected) 36 else if (isMetro) 28 else 26) * density).toInt()
+    val sizePx = ((if (isSelected) 36 else 26) * density).toInt()
 
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
@@ -259,20 +358,105 @@ private fun createStopPinDrawable(
     }
 
     if (isSelected) {
-        // Aura externa luminosa
-        val auraColor = if (isMetro) android.graphics.Color.parseColor("#55FFB800") else android.graphics.Color.parseColor("#5500DC64")
-        paint.color = auraColor
+        // Aura externa luminosa verde
+        paint.color = android.graphics.Color.parseColor("#5500DC64")
         canvas.drawCircle(center, center, center * 0.98f, paint)
 
         // Borda branca solida
         paint.color = android.graphics.Color.WHITE
-        canvas.drawCircle(center, center, center * 0.74f, paint)
+        canvas.drawCircle(center, center, center * 0.76f, paint)
 
-        // Circulo de preenchimento
-        val fillColor = if (isMetro) android.graphics.Color.parseColor("#006837") else android.graphics.Color.parseColor("#00C853")
-        paint.color = fillColor
+        // Preenchimento verde Transit oficial
+        paint.color = android.graphics.Color.parseColor("#00C853")
+        canvas.drawCircle(center, center, center * 0.62f, paint)
+    } else {
+        // Borda branca solida
+        paint.color = android.graphics.Color.WHITE
+        canvas.drawCircle(center, center, center * 0.95f, paint)
+
+        // Preenchimento verde Transit oficial
+        paint.color = android.graphics.Color.parseColor("#00C853")
+        canvas.drawCircle(center, center, center * 0.80f, paint)
+    }
+
+    drawBusShelterIcon(canvas, center, density, isSelected)
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+/**
+ * Desenha o icone de Abrigo de Onibus (cobertura + pilar + banco de espera) em branco.
+ */
+private fun drawBusShelterIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
+    val scale = if (isSelected) 1.25f else 1.0f
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+
+    // 1. Cobertura / Teto do Abrigo (Canopy com cantos arredondados)
+    val canopyLeft = center - (8.5f * density * scale)
+    val canopyTop = center - (6.5f * density * scale)
+    val canopyRight = center + (8.5f * density * scale)
+    val canopyBottom = center - (4.0f * density * scale)
+    canvas.drawRoundRect(canopyLeft, canopyTop, canopyRight, canopyBottom, 1.2f * density * scale, 1.2f * density * scale, paint)
+
+    // 2. Pilar vertical traseiro
+    val postLeft = center - (7.0f * density * scale)
+    val postTop = canopyBottom
+    val postRight = center - (5.0f * density * scale)
+    val postBottom = center + (6.5f * density * scale)
+    canvas.drawRect(postLeft, postTop, postRight, postBottom, paint)
+
+    // 3. Assento do banco de espera
+    val benchLeft = center - (5.5f * density * scale)
+    val benchTop = center + (1.2f * density * scale)
+    val benchRight = center + (7.0f * density * scale)
+    val benchBottom = center + (3.0f * density * scale)
+    canvas.drawRoundRect(benchLeft, benchTop, benchRight, benchBottom, 0.8f * density * scale, 0.8f * density * scale, paint)
+
+    // 4. Perna do banco de apoio
+    val legLeft = center + (4.0f * density * scale)
+    val legTop = benchBottom
+    val legRight = center + (5.5f * density * scale)
+    val legBottom = postBottom
+    canvas.drawRect(legLeft, legTop, legRight, legBottom, paint)
+}
+
+/**
+ * Cria o marcador visual para Estacoes de Metro (Totem "M" com anel dourado).
+ */
+private fun createMetroStopDrawable(
+    context: Context,
+    isSelected: Boolean
+): BitmapDrawable {
+    val density = context.resources.displayMetrics.density
+    val sizePx = ((if (isSelected) 38 else 28) * density).toInt()
+
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+
+    if (isSelected) {
+        // Aura externa luminosa dourada
+        paint.color = android.graphics.Color.parseColor("#55FFB800")
+        canvas.drawCircle(center, center, center * 0.98f, paint)
+
+        // Borda dourada
+        paint.color = android.graphics.Color.parseColor("#FFB800")
+        canvas.drawCircle(center, center, center * 0.78f, paint)
+
+        // Borda branca intermediaria
+        paint.color = android.graphics.Color.WHITE
+        canvas.drawCircle(center, center, center * 0.70f, paint)
+
+        // Preenchimento verde escuro oficial do Metro-DF
+        paint.color = android.graphics.Color.parseColor("#006837")
         canvas.drawCircle(center, center, center * 0.60f, paint)
-    } else if (isMetro) {
+    } else {
         // Borda dourada caracteristica do Metro-DF
         paint.color = android.graphics.Color.parseColor("#FFB800")
         canvas.drawCircle(center, center, center * 0.95f, paint)
@@ -284,114 +468,43 @@ private fun createStopPinDrawable(
         // Preenchimento verde escuro oficial do Metro-DF
         paint.color = android.graphics.Color.parseColor("#006837")
         canvas.drawCircle(center, center, center * 0.70f, paint)
-    } else {
-        // Parada de Onibus Oficial: Borda branca + Verde Transit
-        paint.color = android.graphics.Color.WHITE
-        canvas.drawCircle(center, center, center * 0.95f, paint)
-
-        paint.color = android.graphics.Color.parseColor("#00C853")
-        canvas.drawCircle(center, center, center * 0.80f, paint)
     }
 
-    // Desenho dos icones internos em vetor
-    if (isMetro) {
-        drawMetroIcon(canvas, center, density, isSelected)
-    } else {
-        drawBusIcon(canvas, center, density, isSelected)
-    }
-
+    drawMetroIcon(canvas, center, density, isSelected)
     return BitmapDrawable(context.resources, bitmap)
 }
 
 /**
- * Desenha silhueta de onibus com vidro dianteiro, farois e rodas.
- */
-private fun drawBusIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
-    val scale = if (isSelected) 1.25f else 1.0f
-    val iconWidth = 11f * density * scale
-    val iconHeight = 11f * density * scale
-
-    val left = center - iconWidth / 2f
-    val top = center - iconHeight / 2f
-    val right = center + iconWidth / 2f
-    val bottom = center + iconHeight / 2f
-
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    // Corpo do Onibus (Branco)
-    paint.color = android.graphics.Color.WHITE
-    paint.style = Paint.Style.FILL
-    val bodyRect = RectF(left, top, right, bottom - (2f * density * scale))
-    canvas.drawRoundRect(bodyRect, 2.5f * density * scale, 2.5f * density * scale, paint)
-
-    // Parabrisa dianteiro (recorte verde)
-    paint.color = android.graphics.Color.parseColor("#00C853")
-    val winLeft = left + (1.2f * density * scale)
-    val winTop = top + (1.5f * density * scale)
-    val winRight = right - (1.2f * density * scale)
-    val winBottom = top + (4.5f * density * scale)
-    canvas.drawRect(RectF(winLeft, winTop, winRight, winBottom), paint)
-
-    // Farois dianteiros
-    val headlightRadius = 0.85f * density * scale
-    val headlightY = bottom - (3.5f * density * scale)
-    canvas.drawCircle(left + (2.4f * density * scale), headlightY, headlightRadius, paint)
-    canvas.drawCircle(right - (2.4f * density * scale), headlightY, headlightRadius, paint)
-
-    // Rodas (Brancas)
-    paint.color = android.graphics.Color.WHITE
-    val wheelW = 1.6f * density * scale
-    val wheelH = 1.6f * density * scale
-    canvas.drawRect(left + (1.8f * density * scale), bottom - wheelH, left + (1.8f * density * scale) + wheelW, bottom, paint)
-    canvas.drawRect(right - (1.8f * density * scale) - wheelW, bottom - wheelH, right - (1.8f * density * scale), bottom, paint)
-}
-
-/**
- * Desenha silhueta de trem/metro com janela panoramica, farol dourado e trilhos.
+ * Desenha o icone oficial "M" do Metro-DF em vetor.
  */
 private fun drawMetroIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
     val scale = if (isSelected) 1.25f else 1.0f
-    val iconWidth = 11f * density * scale
-    val iconHeight = 11f * density * scale
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
 
-    val left = center - iconWidth / 2f
-    val top = center - iconHeight / 2f
-    val right = center + iconWidth / 2f
-    val bottom = center + iconHeight / 2f
+    val halfW = 7.0f * density * scale
+    val topY = center - (5.5f * density * scale)
+    val bottomY = center + (6.0f * density * scale)
+    val midVTop = center - (1.0f * density * scale)
+    val midVBottom = center + (2.5f * density * scale)
+    val colW = 2.4f * density * scale
 
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    // Cabine do Metro (Branco)
-    paint.color = android.graphics.Color.WHITE
-    paint.style = Paint.Style.FILL
-    val cabinRect = RectF(left, top, right, bottom - (2f * density * scale))
-    canvas.drawRoundRect(cabinRect, 3.5f * density * scale, 3.5f * density * scale, paint)
-
-    // Vidro panoramico do Metro (recorte verde escuro)
-    paint.color = android.graphics.Color.parseColor("#006837")
-    val winLeft = left + (1.3f * density * scale)
-    val winTop = top + (1.6f * density * scale)
-    val winRight = right - (1.3f * density * scale)
-    val winBottom = top + (4.8f * density * scale)
-    canvas.drawRect(RectF(winLeft, winTop, winRight, winBottom), paint)
-
-    // Luz central dourada do Metro
-    paint.color = android.graphics.Color.parseColor("#FFB800")
-    val lightRadius = 1.0f * density * scale
-    val lightY = top + (6.2f * density * scale)
-    canvas.drawCircle(center, lightY, lightRadius, paint)
-
-    // Farois inferiores
-    paint.color = android.graphics.Color.parseColor("#006837")
-    val headlightRadius = 0.8f * density * scale
-    val headlightY = bottom - (3.4f * density * scale)
-    canvas.drawCircle(left + (2.2f * density * scale), headlightY, headlightRadius, paint)
-    canvas.drawCircle(right - (2.2f * density * scale), headlightY, headlightRadius, paint)
-
-    // Suportes / Trilhos
-    paint.color = android.graphics.Color.WHITE
-    val trackW = 1.6f * density * scale
-    val trackH = 1.6f * density * scale
-    canvas.drawRect(left + (1.6f * density * scale), bottom - trackH, left + (1.6f * density * scale) + trackW, bottom, paint)
-    canvas.drawRect(right - (1.6f * density * scale) - trackW, bottom - trackH, right - (1.6f * density * scale), bottom, paint)
+    val path = Path().apply {
+        moveTo(center - halfW, bottomY)
+        lineTo(center - halfW, topY)
+        lineTo(center - halfW + colW, topY)
+        lineTo(center, midVBottom)
+        lineTo(center + halfW - colW, topY)
+        lineTo(center + halfW, topY)
+        lineTo(center + halfW, bottomY)
+        lineTo(center + halfW - colW, bottomY)
+        lineTo(center + halfW - colW, midVTop)
+        lineTo(center, midVBottom + (2.0f * density * scale))
+        lineTo(center - halfW + colW, midVTop)
+        lineTo(center - halfW + colW, bottomY)
+        close()
+    }
+    canvas.drawPath(path, paint)
 }
