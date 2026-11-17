@@ -531,18 +531,30 @@ fun StopsScreen(
                     LineItineraryDeck(
                         activeRoute = currentRoute,
                         onSelectStop = { stop ->
+                            val staticArrival = repository.getStaticArrivalForLineAtStop(currentRoute.activeLineId, stop)
+                            activeRouteState = activeRouteState?.copy(
+                                selectedStop = stop,
+                                selectedStopArrival = staticArrival
+                            )
                             coroutineScope.launch {
                                 val arrival = repository.fetchArrivalForLineAtStop(currentRoute.activeLineId, stop)
-                                activeRouteState = activeRouteState?.copy(
-                                    selectedStop = stop,
-                                    selectedStopArrival = arrival
-                                )
+                                if (arrival != null && activeRouteState?.selectedStop?.stopId == stop.stopId) {
+                                    activeRouteState = activeRouteState?.copy(
+                                        selectedStopArrival = arrival
+                                    )
+                                }
                             }
                         },
                         onSwitchDirection = {
                             coroutineScope.launch {
                                 val newIndex = if (currentRoute.currentDirectionIndex == 0) 1 else 0
-                                val switched = repository.changeLineRouteDirection(currentRoute, newIndex)
+                                val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                                val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+                                val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+                                val best = lastGps ?: lastNet
+                                val uLat = best?.let { (it.latitude * 1_000_000).toInt() }
+                                val uLon = best?.let { (it.longitude * 1_000_000).toInt() }
+                                val switched = repository.changeLineRouteDirection(currentRoute, newIndex, uLat, uLon)
                                 activeRouteState = switched
                             }
                         },

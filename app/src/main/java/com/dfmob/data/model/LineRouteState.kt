@@ -34,6 +34,7 @@ data class LineRouteState(
     val stops: List<TransitStop>,
     val selectedStop: TransitStop?,
     val liveVehicles: List<LiveVehicleMarker> = emptyList(),
+    val shapeCoordinates: List<Pair<Double, Double>> = emptyList(),
     val selectedStopArrival: StopArrival? = null
 ) {
     val activeLineId: Int get() = directions.getOrNull(currentDirectionIndex)?.lineId ?: 0

@@ -474,6 +474,9 @@ class StopsRepository(private val context: Context) {
         }
 
         val liveVehicles = fetchLiveVehiclesForRoute(detail.lineNumber, activeDirId)
+        val allShapes = telemetryService.fetchRealRouteShapes(detail.lineNumber)
+        val shapeCoordinates = matchShapeToDirection(allShapes, stops)
+
         val arrival = if (initialStop != null) {
             fetchArrivalForLineAtStop(activeLineId, initialStop)
         } else null
@@ -492,6 +495,7 @@ class StopsRepository(private val context: Context) {
             stops = stops,
             selectedStop = initialStop,
             liveVehicles = liveVehicles,
+            shapeCoordinates = shapeCoordinates,
             selectedStopArrival = arrival
         )
     }
@@ -516,6 +520,9 @@ class StopsRepository(private val context: Context) {
         }
 
         val liveVehicles = fetchLiveVehiclesForRoute(currentState.lineNumber, activeDirId)
+        val allShapes = telemetryService.fetchRealRouteShapes(currentState.lineNumber)
+        val shapeCoordinates = matchShapeToDirection(allShapes, newStops)
+
         val arrival = if (newSelectedStop != null) {
             fetchArrivalForLineAtStop(activeLineId, newSelectedStop)
         } else null
@@ -525,8 +532,40 @@ class StopsRepository(private val context: Context) {
             stops = newStops,
             selectedStop = newSelectedStop,
             liveVehicles = liveVehicles,
+            shapeCoordinates = shapeCoordinates,
             selectedStopArrival = arrival
         )
+    }
+
+    private fun matchShapeToDirection(
+        shapes: Map<String, List<Pair<Double, Double>>>,
+        stops: List<TransitStop>
+    ): List<Pair<Double, Double>> {
+        if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
+        val firstStop = stops.first()
+        var bestShape: List<Pair<Double, Double>>? = null
+        var bestDist = Double.MAX_VALUE
+        for ((_, pts) in shapes) {
+            if (pts.isEmpty()) continue
+            val fPt = pts.first()
+            val d = calculateDistanceMeters(
+                (fPt.first * 1_000_000).toInt(),
+                (fPt.second * 1_000_000).toInt(),
+                firstStop.latE6,
+                firstStop.lonE6
+            )
+            if (d < bestDist) {
+                bestDist = d
+                bestShape = pts
+            }
+        }
+        return bestShape ?: shapes.values.firstOrNull() ?: emptyList()
+    }
+
+    fun getStaticArrivalForLineAtStop(lineId: Int, stop: TransitStop): StopArrival? {
+        val lineInfo = dbHelper.getLineInfoById(lineId) ?: return null
+        val staticArrivals = getStaticArrivalsForStop(stop)
+        return staticArrivals.firstOrNull { it.lineNumber == lineInfo.lineNumber }
     }
 
     suspend fun fetchLiveVehiclesForRoute(lineNumber: String, directionId: Int): List<LiveVehicleMarker> = withContext(Dispatchers.IO) {

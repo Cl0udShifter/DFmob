@@ -246,25 +246,35 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Atualizacao da Linha da Rota (Polyline) no mapa com a cor oficial da linha
-    LaunchedEffect(activeRoute?.activeLineId, activeRoute?.currentDirectionIndex) {
+    // Atualizacao da Linha da Rota (Polyline) no mapa com o tracado oficial das ruas (SEMOB percurso)
+    LaunchedEffect(activeRoute?.activeLineId, activeRoute?.currentDirectionIndex, activeRoute?.shapeCoordinates) {
         val route = activeRoute
-        if (route != null && route.stops.isNotEmpty()) {
-            val geoPoints = route.stops.map { GeoPoint(it.latitude, it.longitude) }
-            val strokeColor = try {
-                android.graphics.Color.parseColor(route.colorHex)
-            } catch (_: Exception) {
-                android.graphics.Color.parseColor("#00C853")
+        if (route != null) {
+            val geoPoints = if (route.shapeCoordinates.isNotEmpty()) {
+                route.shapeCoordinates.map { GeoPoint(it.first, it.second) }
+            } else {
+                route.stops.map { GeoPoint(it.latitude, it.longitude) }
             }
-            routePolyline.outlinePaint.apply {
-                color = strokeColor
-                strokeWidth = 6f * context.resources.displayMetrics.density
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-                isAntiAlias = true
+
+            if (geoPoints.isNotEmpty()) {
+                val strokeColor = try {
+                    android.graphics.Color.parseColor(route.colorHex)
+                } catch (_: Exception) {
+                    android.graphics.Color.parseColor("#1A73E8")
+                }
+                routePolyline.outlinePaint.apply {
+                    color = strokeColor
+                    strokeWidth = 6.5f * context.resources.displayMetrics.density
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    isAntiAlias = true
+                }
+                routePolyline.setPoints(geoPoints)
+                routePolyline.isEnabled = true
+            } else {
+                routePolyline.setPoints(emptyList())
+                routePolyline.isEnabled = false
             }
-            routePolyline.setPoints(geoPoints)
-            routePolyline.isEnabled = true
         } else {
             routePolyline.setPoints(emptyList())
             routePolyline.isEnabled = false
@@ -272,7 +282,7 @@ fun RealOpenStreetMap(
         mapView.invalidate()
     }
 
-    // Atualizacao dos Veiculos Reais em Tempo Real (Pucks azuis com direcao e sem prefixo)
+    // Atualizacao dos Veiculos Reais em Tempo Real (Pucks verdes vibrantes com rumo direcional e sem prefixo)
     LaunchedEffect(activeRoute?.liveVehicles) {
         vehiclesFolder.items.clear()
         val vehicles = activeRoute?.liveVehicles ?: emptyList()
@@ -300,12 +310,32 @@ fun RealOpenStreetMap(
     LaunchedEffect(stops, selectedStop, activeRoute) {
         suspend fun updateMarkers() {
             if (activeRoute != null) {
-                // Modo ROTA DA LINHA: todas as outras paradas somem, apenas as da linha sao exibidas
+                // Modo ROTA DA LINHA:
+                val currentZoom = mapView.zoomLevelDouble
+                val bounds = mapView.boundingBox
                 val routeStops = activeRoute.stops
                 val currentSelectedStopId = activeRoute.selectedStop?.stopId
 
+                // Zoom out total (< 14.0): exibe estritamente a parada selecionada, mantendo o mapa limpo
+                // Zoom aproximado (>= 14.0): exibe as paradas da rota dentro do campo de visao da tela
+                val visibleRouteStops = if (currentZoom < 14.0) {
+                    routeStops.filter { it.stopId == currentSelectedStopId }
+                } else {
+                    routeStops.filter { stop ->
+                        if (stop.stopId == currentSelectedStopId) return@filter true
+                        if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
+                            if (stop.latitude < bounds.latSouth - 0.004 || stop.latitude > bounds.latNorth + 0.004 ||
+                                stop.longitude < bounds.lonWest - 0.004 || stop.longitude > bounds.lonEast + 0.004
+                            ) {
+                                return@filter false
+                            }
+                        }
+                        true
+                    }
+                }
+
                 withContext(Dispatchers.Main) {
-                    val targetIds = routeStops.map { it.stopId }.toSet()
+                    val targetIds = visibleRouteStops.map { it.stopId }.toSet()
                     val iterator = markerMap.entries.iterator()
                     while (iterator.hasNext()) {
                         val entry = iterator.next()
@@ -315,7 +345,7 @@ fun RealOpenStreetMap(
                         }
                     }
 
-                    for (stop in routeStops) {
+                    for (stop in visibleRouteStops) {
                         val isSelected = (currentSelectedStopId == stop.stopId)
                         val iconDrawable = when {
                             stop.isMetro && isSelected -> pinCache.metroSelected
@@ -450,16 +480,12 @@ fun RealOpenStreetMap(
 
         val mapListener = object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
-                if (activeRoute == null) {
-                    scheduleDebouncedUpdate(160L)
-                }
+                scheduleDebouncedUpdate(160L)
                 return false
             }
 
             override fun onZoom(event: ZoomEvent?): Boolean {
-                if (activeRoute == null) {
-                    scheduleDebouncedUpdate(100L)
-                }
+                scheduleDebouncedUpdate(100L)
                 return false
             }
         }
@@ -532,24 +558,24 @@ private fun createBusStopDrawable(
     }
 
     if (isSelected) {
-        // Aura externa luminosa verde
-        paint.color = android.graphics.Color.parseColor("#5500DC64")
+        // Aura externa luminosa azul (design do app)
+        paint.color = android.graphics.Color.parseColor("#551A73E8")
         canvas.drawCircle(center, center, center * 0.98f, paint)
 
         // Borda branca solida
         paint.color = android.graphics.Color.WHITE
         canvas.drawCircle(center, center, center * 0.76f, paint)
 
-        // Preenchimento verde Transit oficial
-        paint.color = android.graphics.Color.parseColor("#00C853")
+        // Preenchimento azul design oficial
+        paint.color = android.graphics.Color.parseColor("#1A73E8")
         canvas.drawCircle(center, center, center * 0.62f, paint)
     } else {
         // Borda branca solida
         paint.color = android.graphics.Color.WHITE
         canvas.drawCircle(center, center, center * 0.95f, paint)
 
-        // Preenchimento verde Transit oficial
-        paint.color = android.graphics.Color.parseColor("#00C853")
+        // Preenchimento azul design oficial
+        paint.color = android.graphics.Color.parseColor("#1A73E8")
         canvas.drawCircle(center, center, center * 0.80f, paint)
     }
 
@@ -558,7 +584,7 @@ private fun createBusStopDrawable(
 }
 
 /**
- * Desenha o icone frontal estilizado de onibus Transit (Variante A) em vetor branco com recortes limpos.
+ * Desenha o icone frontal estilizado de onibus Transit em vetor branco com recortes azuis.
  */
 private fun drawBusFrontTransitIcon(canvas: Canvas, center: Float, density: Float, isSelected: Boolean) {
     val scale = if (isSelected) 1.25f else 1.0f
@@ -578,8 +604,8 @@ private fun drawBusFrontTransitIcon(canvas: Canvas, center: Float, density: Floa
     val bodyHeight = iconHeight - (2.2f * density * scale)
     canvas.drawRoundRect(left, top, right, top + bodyHeight, 2.5f * density * scale, 2.5f * density * scale, paint)
 
-    // 2. Para-brisa frontal panoramico (recorte verde Transit)
-    paint.color = android.graphics.Color.parseColor("#00C853")
+    // 2. Para-brisa frontal panoramico (recorte azul)
+    paint.color = android.graphics.Color.parseColor("#1A73E8")
     val winPadH = 1.4f * density * scale
     val winPadTop = 1.6f * density * scale
     val winH = 4.0f * density * scale
@@ -593,7 +619,7 @@ private fun drawBusFrontTransitIcon(canvas: Canvas, center: Float, density: Floa
         paint
     )
 
-    // 3. Farois dianteiros circulares (recorte verde)
+    // 3. Farois dianteiros circulares (recorte azul)
     val headlightRadius = 0.9f * density * scale
     val headlightY = top + bodyHeight - (2.5f * density * scale)
     canvas.drawCircle(left + (2.5f * density * scale), headlightY, headlightRadius, paint)
@@ -694,8 +720,8 @@ private fun drawMetroIcon(canvas: Canvas, center: Float, density: Float, isSelec
 }
 
 /**
- * Cria o puck moderno para Veiculos Reais em Transito (Padrao azul royal vibrante com indicador de direcao).
- * Visivelmente distinto do pino de paradas verde para evitar confusao visual.
+ * Cria o puck moderno para Veiculos Reais em Transito (Padrao verde Transit vibrante com indicador de direcao).
+ * Visivelmente distinto do pino de paradas azul para evitar confusao visual.
  * Nao contem texto de prefixo conforme instrucao.
  */
 private fun createVehiclePuckDrawable(
@@ -721,8 +747,8 @@ private fun createVehiclePuckDrawable(
     paint.color = android.graphics.Color.WHITE
     canvas.drawCircle(center, center, 13.0f * density, paint)
 
-    // 3. Preenchimento azul vibrante (distinto do verde de paradas)
-    paint.color = android.graphics.Color.parseColor("#1565C0")
+    // 3. Preenchimento verde vibrante (#00C853)
+    paint.color = android.graphics.Color.parseColor("#00C853")
     canvas.drawCircle(center, center, 10.5f * density, paint)
 
     // 4. Icone de onibus centralizado em vetor branco
@@ -751,8 +777,8 @@ private fun drawVehicleBusIcon(canvas: Canvas, center: Float, density: Float) {
     // Corpo
     canvas.drawRoundRect(left, top, right, top + bodyH, 2.2f * density, 2.2f * density, paint)
 
-    // Para-brisa (recorte azul)
-    paint.color = android.graphics.Color.parseColor("#1565C0")
+    // Para-brisa (recorte verde #00C853)
+    paint.color = android.graphics.Color.parseColor("#00C853")
     canvas.drawRoundRect(left + 1.2f * density, top + 1.4f * density, right - 1.2f * density, top + 4.8f * density, 1f * density, 1f * density, paint)
 
     // Farois
