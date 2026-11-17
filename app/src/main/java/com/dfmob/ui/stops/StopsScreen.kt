@@ -104,6 +104,7 @@ fun StopsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<DFLocation>>(emptyList()) }
     var focusLocation by remember { mutableStateOf<DFLocation?>(null) }
+    var isDropdownDismissed by remember { mutableStateOf(false) }
     var recenterTrigger by remember { mutableStateOf(0L) }
 
     // Gerenciador de permissao de localizacao precisa/aproximada
@@ -135,12 +136,13 @@ fun StopsScreen(
         }
     }
 
-    // Busca de locais do DF em tempo real ao digitar
-    LaunchedEffect(searchQuery) {
-        searchResults = if (searchQuery.isNotBlank()) {
-            repository.searchLocations(searchQuery)
+    // Busca de enderecos, paradas e locais do DF em tempo real estilo Google Maps com debouncing
+    LaunchedEffect(searchQuery, isDropdownDismissed) {
+        if (isDropdownDismissed || searchQuery.isBlank() || searchQuery.trim().length < 2) {
+            searchResults = emptyList()
         } else {
-            emptyList()
+            delay(280L)
+            searchResults = repository.searchLocations(searchQuery)
         }
     }
 
@@ -270,7 +272,10 @@ fun StopsScreen(
 
                             BasicTextField(
                                 value = searchQuery,
-                                onValueChange = { searchQuery = it },
+                                onValueChange = {
+                                    searchQuery = it
+                                    isDropdownDismissed = false
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                                     fontSize = 13.5.sp,
@@ -280,7 +285,10 @@ fun StopsScreen(
                                 singleLine = true,
                                 cursorBrush = SolidColor(iconAccent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                                keyboardActions = KeyboardActions(onSearch = {
+                                    focusManager.clearFocus()
+                                    isDropdownDismissed = true
+                                })
                             )
                         }
 
@@ -292,6 +300,8 @@ fun StopsScreen(
                                     .clickable {
                                         searchQuery = ""
                                         searchResults = emptyList()
+                                        isDropdownDismissed = true
+                                        focusManager.clearFocus()
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -313,8 +323,8 @@ fun StopsScreen(
                     }
                 }
 
-                // Lista Dropdown com locais sugeridos do DF
-                if (searchResults.isNotEmpty()) {
+                // Lista Dropdown com locais sugeridos do DF (desaparece ao selecionar um local)
+                if (searchResults.isNotEmpty() && !isDropdownDismissed) {
                     val dropdownShape = RoundedCornerShape(16.dp)
                     Surface(
                         modifier = Modifier
@@ -333,7 +343,7 @@ fun StopsScreen(
                         ) {
                             items(
                                 items = searchResults,
-                                key = { it.name }
+                                key = { "${it.name}_${it.latE6}_${it.lonE6}" }
                             ) { loc ->
                                 Row(
                                     modifier = Modifier
@@ -343,6 +353,7 @@ fun StopsScreen(
                                         .clickable {
                                             focusLocation = loc
                                             searchQuery = loc.name
+                                            isDropdownDismissed = true
                                             searchResults = emptyList()
                                             focusManager.clearFocus()
                                         }

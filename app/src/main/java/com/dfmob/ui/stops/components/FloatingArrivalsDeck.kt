@@ -89,8 +89,8 @@ fun FloatingArrivalsDeck(
         }
     }
 
-    // Animacao simples e rapida (250ms com FastOutSlowInEasing)
-    val animSpec = tween<Dp>(durationMillis = 250, easing = FastOutSlowInEasing)
+    // Animacao ultra-responsiva (90ms com FastOutSlowInEasing) conforme solicitado
+    val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
 
     val targetHeight = if (isExpanded) {
         if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp

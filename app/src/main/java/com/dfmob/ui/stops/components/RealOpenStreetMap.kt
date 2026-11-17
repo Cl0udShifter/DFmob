@@ -210,7 +210,7 @@ fun RealOpenStreetMap(
     LaunchedEffect(focusLocation) {
         if (focusLocation != null) {
             val target = GeoPoint(focusLocation.latitude, focusLocation.longitude)
-            mapView.controller.animateTo(target, 16.0, 1000L)
+            mapView.controller.animateTo(target, 16.5, 750L)
         }
     }
 
