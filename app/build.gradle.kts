@@ -23,8 +23,8 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.2.0"
+        versionCode = 22
+        versionName = "1.2.1"
 
         buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
 

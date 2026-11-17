@@ -101,35 +101,6 @@ class SemobTelemetryService {
             conn?.disconnect()
         }
 
-        // Fallback deterministico de alta precisao para linhas em operacao quando o WFS Semob estiver offline
-        if (list.isEmpty() && referenceLatE6 != null && referenceLonE6 != null) {
-            val nowSec = System.currentTimeMillis() / 1000
-            val lineHash = abs(cleanLine.hashCode())
-
-            // Apenas linhas corujao noturnas ou corredores expressos confirmados em operacao
-            val isCorujao = cleanLine.contains("035") || cleanLine.contains("35") || cleanLine.contains("coruj", ignoreCase = true)
-            val isLiveActive = isCorujao || cleanLine.contains("373") || cleanLine == "0.373" || cleanLine == "373.2"
-
-            if (isLiveActive) {
-                // Distancia em metros proporcional a velocidade media urbana
-                val distanceOffsetMeters = 900 + (lineHash % 1200)
-                val dLat = (distanceOffsetMeters * 5.0).toInt()
-                val dLon = (distanceOffsetMeters * 5.0).toInt()
-
-                val busPrefixNum = 1000 + (lineHash % 8999)
-                list.add(
-                    LiveVehicle(
-                        vehicleId = "DF-$busPrefixNum",
-                        lineNumber = cleanLine,
-                        latE6 = referenceLatE6 + dLat,
-                        lonE6 = referenceLonE6 + dLon,
-                        speedKmh = 38.5f + (lineHash % 12),
-                        timestampSeconds = nowSec
-                    )
-                )
-            }
-        }
-
         list
     }
 }

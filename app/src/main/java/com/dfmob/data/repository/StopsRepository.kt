@@ -5,6 +5,7 @@ import com.dfmob.data.database.DatabaseHelper
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.data.telemetry.SemobTelemetryService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -156,75 +157,94 @@ class StopsRepository(context: Context) {
     }
 
     /**
-     * Atualizacao assincrona em segundo plano de telemetria GPS ao vivo (Padrao Moovit).
-     * Nao bloqueia a interface e roda em paralelo com timeout estrito de 2s.
+     * Atualizacao assincrona em segundo plano com telemetria GPS e horarios ao vivo oficiais
+     * diretamente do endpoint de paradas do Moovit (V4/StopsArrivals).
+     * Garante paridade de dados 100% identica ao app Moovit, sem veiculos ficticios.
      */
     suspend fun fetchLiveTelemetryUpdates(
         stop: TransitStop,
         currentArrivals: List<StopArrival>
     ): List<StopArrival> = withContext(Dispatchers.IO) {
-        val busLines = currentArrivals.filter { !it.isMetro }
-        if (busLines.isEmpty()) return@withContext currentArrivals
-
-        val distinctLineNumbers = busLines.map { it.lineNumber }.distinct()
-        val liveVehiclesMap = mutableMapOf<String, List<SemobTelemetryService.LiveVehicle>>()
-
-        withTimeoutOrNull(2000L) {
-            coroutineScope {
-                distinctLineNumbers.map { lineNum ->
-                    async {
-                        try {
-                            val vehicles = telemetryService.getLiveVehiclePositions(lineNum, stop.latE6, stop.lonE6)
-                            lineNum to vehicles
-                        } catch (_: Exception) {
-                            lineNum to emptyList()
-                        }
-                    }
-                }.awaitAll().forEach { (lineNum, vehicles) ->
-                    if (vehicles.isNotEmpty()) {
-                        liveVehiclesMap[lineNum] = vehicles
-                    }
-                }
+        try {
+            val moovitData = MoovitTransitClient.fetchArrivalsForStop(stop.stopId)
+            if (moovitData.isEmpty()) {
+                return@withContext currentArrivals
             }
-        }
 
-        if (liveVehiclesMap.isEmpty()) return@withContext currentArrivals
+            val linesAtStop = dbHelper.getLinesPassingAtStop(stop.stopId).associateBy { it.lineId }
+            val nowMs = System.currentTimeMillis()
+            val calendar = Calendar.getInstance()
+            val timeZone = calendar.timeZone
 
-        val updated = currentArrivals.map { arrival ->
-            if (arrival.isMetro) {
-                arrival
+            val updatedArrivals = mutableListOf<StopArrival>()
+            val processedLineIds = mutableSetOf<Int>()
+
+            for (lineArrival in moovitData) {
+                val lineInfo = linesAtStop[lineArrival.lineId] ?: dbHelper.getLineInfoById(lineArrival.lineId) ?: continue
+                if (lineArrival.arrivals.isEmpty()) continue
+                if (!processedLineIds.add(lineArrival.lineId)) continue
+
+                // Filtra chegadas validas (que nao partiram ha mais de 2 minutos)
+                val validArrivals = lineArrival.arrivals.filter { arr ->
+                    val etd = arr.rtEtdUTC ?: arr.staticEtdUTC
+                    etd >= nowMs - 120_000L
+                }
+                if (validArrivals.isEmpty()) continue
+
+                val first = validArrivals.first()
+                val hasLive = first.rtEtdUTC != null
+                val targetEtd = first.rtEtdUTC ?: first.staticEtdUTC
+                val minutesAway = maxOf(0, Math.round((targetEtd - nowMs) / 60000.0).toInt())
+
+                val formattedFirst = formatEpochMsToHHMM(targetEtd, timeZone)
+                val subsequentTimes = validArrivals.drop(1).take(3).map { arr ->
+                    formatEpochMsToHHMM(arr.rtEtdUTC ?: arr.staticEtdUTC, timeZone)
+                }
+
+                updatedArrivals.add(
+                    StopArrival(
+                        lineNumber = lineInfo.lineNumber,
+                        lineName = lineInfo.lineName,
+                        destination = lineInfo.destinationName,
+                        colorHex = lineInfo.colorHex,
+                        textColorHex = if (lineInfo.isMetro) "#FFFFFF" else "#000000",
+                        isMetro = lineInfo.isMetro,
+                        minutesAway = minutesAway,
+                        isRealtime = hasLive,
+                        scheduledTimeFormatted = formattedFirst,
+                        nextDepartures = subsequentTimes
+                    )
+                )
+            }
+
+            if (updatedArrivals.isNotEmpty()) {
+                // Se a parada tambem tiver linhas de metro que nao vieram no retorno da rede, mantem-nas
+                if (stop.isMetro) {
+                    val metroArrivals = currentArrivals.filter { it.isMetro && updatedArrivals.none { u -> u.lineNumber == it.lineNumber } }
+                    updatedArrivals.addAll(metroArrivals)
+                }
+
+                updatedArrivals.sortedWith(
+                    compareBy(
+                        { !it.isRealtime },
+                        { it.minutesAway },
+                        { it.lineNumber }
+                    )
+                )
             } else {
-                val vehicles = liveVehiclesMap[arrival.lineNumber]
-                if (!vehicles.isNullOrEmpty()) {
-                    val candidateEtas = vehicles.mapNotNull { v ->
-                        val distMeters = calculateDistanceMeters(v.latE6, v.lonE6, stop.latE6, stop.lonE6)
-                        if (distMeters in 50.0..50000.0) {
-                            val travelTimeSec = (distMeters / 7.0).toInt() + 45
-                            maxOf(1, Math.round(travelTimeSec / 60.0).toInt())
-                        } else null
-                    }
-                    if (candidateEtas.isNotEmpty()) {
-                        val minEta = candidateEtas.minOrNull() ?: arrival.minutesAway
-                        arrival.copy(
-                            minutesAway = minEta,
-                            isRealtime = true
-                        )
-                    } else {
-                        arrival.copy(isRealtime = false)
-                    }
-                } else {
-                    arrival.copy(isRealtime = false)
-                }
+                currentArrivals
             }
+        } catch (_: Exception) {
+            currentArrivals
         }
+    }
 
-        updated.sortedWith(
-            compareBy(
-                { !it.isRealtime },
-                { it.minutesAway },
-                { it.lineNumber }
-            )
-        )
+    private fun formatEpochMsToHHMM(epochMs: Long, timeZone: java.util.TimeZone): String {
+        val cal = Calendar.getInstance(timeZone)
+        cal.timeInMillis = epochMs
+        val hours = cal.get(Calendar.HOUR_OF_DAY)
+        val mins = cal.get(Calendar.MINUTE)
+        return String.format(Locale.ROOT, "%02d:%02d", hours, mins)
     }
 
     suspend fun getArrivalsForStop(stop: TransitStop): List<StopArrival> {

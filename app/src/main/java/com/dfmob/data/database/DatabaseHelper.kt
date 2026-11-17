@@ -119,6 +119,36 @@ class DatabaseHelper(private val context: Context) {
         return list
     }
 
+    fun getLineInfoById(lineId: Int): StopLineInfo? {
+        val db = database ?: return null
+        val sql = """
+            SELECT l.line_id, g.line_number, g.line_name, l.origin_name, l.destination_name, a.agency_name, g.color_hex, g.is_metro
+            FROM lines l
+            JOIN line_groups g ON l.group_id = g.group_id
+            JOIN agencies a ON g.agency_id = a.agency_id
+            WHERE l.line_id = ?
+            LIMIT 1
+        """.trimIndent()
+        return try {
+            db.rawQuery(sql, arrayOf(lineId.toString())).use { c ->
+                if (c.moveToNext()) {
+                    StopLineInfo(
+                        lineId = c.getInt(0),
+                        lineNumber = c.getString(1),
+                        lineName = c.getString(2),
+                        originName = c.getString(3),
+                        destinationName = c.getString(4),
+                        agencyName = c.getString(5),
+                        colorHex = c.getString(6),
+                        isMetro = c.getInt(7) == 1
+                    )
+                } else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun getNextScheduledDepartures(lineId: Int, stopId: Int, currentSeconds: Int, count: Int): List<Int> {
         val db = database ?: return emptyList()
         val list = mutableListOf<Int>()
