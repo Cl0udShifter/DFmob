@@ -4,6 +4,9 @@ import android.content.Context
 import android.location.Geocoder
 import com.dfmob.data.database.DatabaseHelper
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.LineDirectionOption
+import com.dfmob.data.model.LineRouteState
+import com.dfmob.data.model.LiveVehicleMarker
 import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
@@ -402,6 +405,204 @@ class StopsRepository(private val context: Context) {
             }
         } catch (_: Exception) {
             currentArrivals
+        }
+    }
+
+    suspend fun getLineRouteState(
+        lineNumber: String,
+        preferredLineId: Int? = null,
+        preferredStopId: Int? = null,
+        userLatE6: Int? = null,
+        userLonE6: Int? = null
+    ): LineRouteState? = withContext(Dispatchers.IO) {
+        val detail = dbHelper.getLineDetailByNumber(lineNumber)
+            ?: (if (preferredLineId != null) dbHelper.getLineDetailById(preferredLineId) else null)
+            ?: return@withContext null
+
+        val dirOptions = detail.directions.map { dir ->
+            LineDirectionOption(
+                lineId = dir.lineId,
+                directionId = dir.directionId,
+                originName = dir.originName,
+                destinationName = dir.destinationName
+            )
+        }
+        if (dirOptions.isEmpty()) return@withContext null
+
+        var chosenIndex = 0
+        if (preferredLineId != null) {
+            val idx = dirOptions.indexOfFirst { it.lineId == preferredLineId }
+            if (idx >= 0) chosenIndex = idx
+        } else if (preferredStopId != null) {
+            for ((idx, opt) in dirOptions.withIndex()) {
+                val stps = dbHelper.getStopsForLine(opt.lineId)
+                if (stps.any { it.stopId == preferredStopId }) {
+                    chosenIndex = idx
+                    break
+                }
+            }
+        } else if (userLatE6 != null && userLonE6 != null) {
+            var bestDist = Double.MAX_VALUE
+            var bestIdx = 0
+            for ((idx, opt) in dirOptions.withIndex()) {
+                val stps = dbHelper.getStopsForLine(opt.lineId)
+                for (s in stps) {
+                    val d = calculateDistanceMeters(userLatE6, userLonE6, s.latE6, s.lonE6)
+                    if (d < bestDist) {
+                        bestDist = d
+                        bestIdx = idx
+                    }
+                }
+            }
+            chosenIndex = bestIdx
+        }
+
+        val activeLineId = dirOptions[chosenIndex].lineId
+        val activeDirId = dirOptions[chosenIndex].directionId
+        val stops = dbHelper.getStopsForLine(activeLineId)
+        if (stops.isEmpty()) return@withContext null
+
+        var initialStop: TransitStop? = null
+        if (preferredStopId != null) {
+            initialStop = stops.firstOrNull { it.stopId == preferredStopId }
+        }
+        if (initialStop == null && userLatE6 != null && userLonE6 != null) {
+            initialStop = stops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+        }
+        if (initialStop == null) {
+            initialStop = stops.firstOrNull()
+        }
+
+        val liveVehicles = fetchLiveVehiclesForRoute(detail.lineNumber, activeDirId)
+        val arrival = if (initialStop != null) {
+            fetchArrivalForLineAtStop(activeLineId, initialStop)
+        } else null
+
+        LineRouteState(
+            groupId = detail.groupId,
+            lineNumber = detail.lineNumber,
+            lineName = detail.lineName,
+            agencyName = detail.agencyName,
+            circular = detail.circular,
+            colorHex = detail.colorHex,
+            textColorHex = if (detail.isMetro) "#FFFFFF" else "#000000",
+            isMetro = detail.isMetro,
+            directions = dirOptions,
+            currentDirectionIndex = chosenIndex,
+            stops = stops,
+            selectedStop = initialStop,
+            liveVehicles = liveVehicles,
+            selectedStopArrival = arrival
+        )
+    }
+
+    suspend fun changeLineRouteDirection(
+        currentState: LineRouteState,
+        newDirectionIndex: Int,
+        userLatE6: Int? = null,
+        userLonE6: Int? = null
+    ): LineRouteState = withContext(Dispatchers.IO) {
+        val safeIndex = newDirectionIndex.coerceIn(0, currentState.directions.lastIndex)
+        val activeLineId = currentState.directions[safeIndex].lineId
+        val activeDirId = currentState.directions[safeIndex].directionId
+        val newStops = dbHelper.getStopsForLine(activeLineId)
+
+        var newSelectedStop: TransitStop? = null
+        if (userLatE6 != null && userLonE6 != null) {
+            newSelectedStop = newStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+        }
+        if (newSelectedStop == null) {
+            newSelectedStop = newStops.firstOrNull()
+        }
+
+        val liveVehicles = fetchLiveVehiclesForRoute(currentState.lineNumber, activeDirId)
+        val arrival = if (newSelectedStop != null) {
+            fetchArrivalForLineAtStop(activeLineId, newSelectedStop)
+        } else null
+
+        currentState.copy(
+            currentDirectionIndex = safeIndex,
+            stops = newStops,
+            selectedStop = newSelectedStop,
+            liveVehicles = liveVehicles,
+            selectedStopArrival = arrival
+        )
+    }
+
+    suspend fun fetchLiveVehiclesForRoute(lineNumber: String, directionId: Int): List<LiveVehicleMarker> = withContext(Dispatchers.IO) {
+        try {
+            val vehicles = telemetryService.getLiveVehiclePositions(lineNumber)
+            vehicles.filter { v ->
+                if (v.directionId != null) {
+                    v.directionId == directionId
+                } else {
+                    true
+                }
+            }.map { v ->
+                LiveVehicleMarker(
+                    vehicleId = v.vehicleId,
+                    lineNumber = v.lineNumber,
+                    latE6 = v.latE6,
+                    lonE6 = v.lonE6,
+                    speedKmh = v.speedKmh,
+                    bearing = v.bearing,
+                    directionId = v.directionId
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchArrivalForLineAtStop(lineId: Int, stop: TransitStop): StopArrival? = withContext(Dispatchers.IO) {
+        try {
+            val lineInfo = dbHelper.getLineInfoById(lineId) ?: return@withContext null
+            val staticArrivals = getStaticArrivalsForStop(stop)
+            val staticForThisLine = staticArrivals.firstOrNull { it.lineNumber == lineInfo.lineNumber }
+
+            val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(stop.stopId)
+            val lineMoovit = moovitArrivals.firstOrNull { it.lineId == lineId }
+
+            if (lineMoovit != null && lineMoovit.arrivals.isNotEmpty()) {
+                val nowMs = System.currentTimeMillis()
+                val valid = lineMoovit.arrivals.filter {
+                    val etd = it.rtEtdUTC ?: it.staticEtdUTC
+                    etd >= nowMs - 120_000L
+                }
+                if (valid.isNotEmpty()) {
+                    val first = valid.first()
+                    val targetEtd = first.rtEtdUTC ?: first.staticEtdUTC
+                    val mins = maxOf(0, Math.round((targetEtd - nowMs) / 60000.0).toInt())
+                    val tz = Calendar.getInstance().timeZone
+                    val subsequent = valid.drop(1).take(3).map {
+                        val et = it.rtEtdUTC ?: it.staticEtdUTC
+                        val m = maxOf(0, Math.round((et - nowMs) / 60000.0).toInt())
+                        NextDeparture(
+                            timeFormatted = formatEpochMsToHHMM(et, tz),
+                            minutesAway = m,
+                            isRealtime = it.rtEtdUTC != null,
+                            targetEpochMs = et
+                        )
+                    }
+                    return@withContext StopArrival(
+                        lineNumber = lineInfo.lineNumber,
+                        lineName = lineInfo.lineName,
+                        destination = lineInfo.destinationName,
+                        colorHex = lineInfo.colorHex,
+                        textColorHex = if (lineInfo.isMetro) "#FFFFFF" else "#000000",
+                        isMetro = lineInfo.isMetro,
+                        minutesAway = mins,
+                        isRealtime = first.rtEtdUTC != null,
+                        scheduledTimeFormatted = formatEpochMsToHHMM(targetEtd, tz),
+                        targetEpochMs = targetEtd,
+                        nextDepartures = subsequent
+                    )
+                }
+            }
+
+            staticForThisLine
+        } catch (_: Exception) {
+            null
         }
     }
 

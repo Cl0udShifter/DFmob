@@ -69,7 +69,8 @@ import com.dfmob.ui.theme.TransitGreen
 fun LinesScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    favoritesRepository: FavoritesRepository? = null
+    favoritesRepository: FavoritesRepository? = null,
+    onLineClick: (TransitLine) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
 
@@ -297,7 +298,7 @@ fun LinesScreen(
                                 favoritesRepo.toggleFavorite(line)
                             },
                             onClick = {
-                                // Acao silenciosa conforme especificacao
+                                onLineClick(line)
                             }
                         )
                     }

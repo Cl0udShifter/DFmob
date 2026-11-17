@@ -80,6 +80,24 @@ class DatabaseHelper(private val context: Context) {
         val isMetro: Boolean
     )
 
+    data class LineDetailResult(
+        val groupId: Int,
+        val lineNumber: String,
+        val lineName: String,
+        val agencyName: String,
+        val circular: Boolean,
+        val colorHex: String,
+        val isMetro: Boolean,
+        val directions: List<LineDirectionInfo>
+    )
+
+    data class LineDirectionInfo(
+        val lineId: Int,
+        val directionId: Int,
+        val originName: String,
+        val destinationName: String
+    )
+
     fun getLinesPassingAtStop(stopId: Int): List<StopLineInfo> {
         val db = database ?: return emptyList()
         val sql = """
@@ -146,6 +164,111 @@ class DatabaseHelper(private val context: Context) {
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    fun getLineDetailByNumber(lineNumber: String): LineDetailResult? {
+        val db = database ?: return null
+        val clean = lineNumber.trim()
+        val groupSql = """
+            SELECT g.group_id, g.line_number, g.line_name, a.agency_name, g.circular, g.color_hex, g.is_metro
+            FROM line_groups g
+            JOIN agencies a ON g.agency_id = a.agency_id
+            WHERE g.line_number = ?
+            LIMIT 1
+        """.trimIndent()
+
+        return try {
+            val groupInfo = db.rawQuery(groupSql, arrayOf(clean)).use { c ->
+                if (c.moveToNext()) {
+                    Triple(
+                        c.getInt(0),
+                        listOf(c.getString(1), c.getString(2), c.getString(3), c.getString(5)),
+                        Pair(c.getInt(4) == 1, c.getInt(6) == 1)
+                    )
+                } else null
+            } ?: return null
+
+            val groupId = groupInfo.first
+            val strings = groupInfo.second
+            val flags = groupInfo.third
+
+            val dirSql = """
+                SELECT l.line_id, l.direction_id, l.origin_name, l.destination_name
+                FROM lines l
+                WHERE l.group_id = ?
+                ORDER BY l.direction_id ASC
+            """.trimIndent()
+
+            val dirs = mutableListOf<LineDirectionInfo>()
+            db.rawQuery(dirSql, arrayOf(groupId.toString())).use { c ->
+                while (c.moveToNext()) {
+                    dirs.add(
+                        LineDirectionInfo(
+                            lineId = c.getInt(0),
+                            directionId = c.getInt(1),
+                            originName = c.getString(2),
+                            destinationName = c.getString(3)
+                        )
+                    )
+                }
+            }
+
+            LineDetailResult(
+                groupId = groupId,
+                lineNumber = strings[0],
+                lineName = strings[1],
+                agencyName = strings[2],
+                circular = flags.first,
+                colorHex = strings[3],
+                isMetro = flags.second,
+                directions = dirs
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getLineDetailById(lineId: Int): LineDetailResult? {
+        val db = database ?: return null
+        val sql = "SELECT g.line_number FROM lines l JOIN line_groups g ON l.group_id = g.group_id WHERE l.line_id = ? LIMIT 1"
+        val lineNum = try {
+            db.rawQuery(sql, arrayOf(lineId.toString())).use { c ->
+                if (c.moveToNext()) c.getString(0) else null
+            }
+        } catch (_: Exception) { null } ?: return null
+        return getLineDetailByNumber(lineNum)
+    }
+
+    fun getStopsForLine(lineId: Int): List<TransitStop> {
+        val db = database ?: return emptyList()
+        val sql = """
+            SELECT s.stop_id, s.stop_name, s.stop_code, s.lat_e6, s.lon_e6, s.is_metro, s.platform_code
+            FROM stop_sequences sq
+            JOIN stops s ON sq.stop_id = s.stop_id
+            WHERE sq.line_id = ?
+            ORDER BY sq.stop_sequence ASC
+        """.trimIndent()
+        val list = mutableListOf<TransitStop>()
+        return try {
+            db.rawQuery(sql, arrayOf(lineId.toString())).use { c ->
+                while (c.moveToNext()) {
+                    list.add(
+                        TransitStop(
+                            stopId = c.getInt(0),
+                            stopName = c.getString(1),
+                            stopCode = c.getString(2),
+                            latE6 = c.getInt(3),
+                            lonE6 = c.getInt(4),
+                            isMetro = c.getInt(5) == 1,
+                            platformCode = c.getString(6)
+                        )
+                    )
+                }
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 

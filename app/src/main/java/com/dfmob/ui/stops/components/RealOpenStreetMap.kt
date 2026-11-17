@@ -23,17 +23,20 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.dfmob.BuildConfig
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.LineRouteState
 import com.dfmob.data.model.TransitStop
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +110,7 @@ fun RealOpenStreetMap(
     focusLocation: DFLocation?,
     recenterTrigger: Long,
     onStopSelected: (TransitStop) -> Unit,
+    activeRoute: LineRouteState? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -114,7 +118,9 @@ fun RealOpenStreetMap(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val pinCache = remember(context) { StopPinCache(context) }
+    val routePolyline = remember { Polyline() }
     val stopsFolder = remember { FolderOverlay() }
+    val vehiclesFolder = remember { FolderOverlay() }
     val markerMap = remember { mutableMapOf<Int, Marker>() }
 
     // Configuracao inicial do osmdroid com persistencia em cache local
@@ -164,10 +170,16 @@ fun RealOpenStreetMap(
         overlay
     }
 
-    // Adiciona os overlays de paradas e localizacao se ainda nao estiverem presentes
+    // Adiciona os overlays em ordem hierarquica: Polylines -> Paradas -> Veiculos -> Localizacao Usuario
     LaunchedEffect(mapView) {
+        if (!mapView.overlays.contains(routePolyline)) {
+            mapView.overlays.add(routePolyline)
+        }
         if (!mapView.overlays.contains(stopsFolder)) {
             mapView.overlays.add(stopsFolder)
+        }
+        if (!mapView.overlays.contains(vehiclesFolder)) {
+            mapView.overlays.add(vehiclesFolder)
         }
         if (!mapView.overlays.contains(locationOverlay)) {
             mapView.overlays.add(locationOverlay)
@@ -234,9 +246,109 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Gerenciador de marcadores com Viewport Culling, calculo assincrono e diffing sem recriar objetos
-    LaunchedEffect(stops, selectedStop) {
+    // Atualizacao da Linha da Rota (Polyline) no mapa com a cor oficial da linha
+    LaunchedEffect(activeRoute?.activeLineId, activeRoute?.currentDirectionIndex) {
+        val route = activeRoute
+        if (route != null && route.stops.isNotEmpty()) {
+            val geoPoints = route.stops.map { GeoPoint(it.latitude, it.longitude) }
+            val strokeColor = try {
+                android.graphics.Color.parseColor(route.colorHex)
+            } catch (_: Exception) {
+                android.graphics.Color.parseColor("#00C853")
+            }
+            routePolyline.outlinePaint.apply {
+                color = strokeColor
+                strokeWidth = 6f * context.resources.displayMetrics.density
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                isAntiAlias = true
+            }
+            routePolyline.setPoints(geoPoints)
+            routePolyline.isEnabled = true
+        } else {
+            routePolyline.setPoints(emptyList())
+            routePolyline.isEnabled = false
+        }
+        mapView.invalidate()
+    }
+
+    // Atualizacao dos Veiculos Reais em Tempo Real (Pucks azuis com direcao e sem prefixo)
+    LaunchedEffect(activeRoute?.liveVehicles) {
+        vehiclesFolder.items.clear()
+        val vehicles = activeRoute?.liveVehicles ?: emptyList()
+        for (v in vehicles) {
+            val marker = Marker(mapView).apply {
+                position = GeoPoint(v.latitude, v.longitude)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon = createVehiclePuckDrawable(context, v.bearing)
+                infoWindow = null
+            }
+            vehiclesFolder.add(marker)
+        }
+        mapView.invalidate()
+    }
+
+    // Centraliza na parada selecionada na fita de itinerario da linha
+    LaunchedEffect(activeRoute?.selectedStop?.stopId) {
+        val s = activeRoute?.selectedStop
+        if (s != null) {
+            mapView.controller.animateTo(GeoPoint(s.latitude, s.longitude), 16.0, 500L)
+        }
+    }
+
+    // Gerenciador de marcadores de paradas (filtragem por rota se ativa ou culling geral)
+    LaunchedEffect(stops, selectedStop, activeRoute) {
         suspend fun updateMarkers() {
+            if (activeRoute != null) {
+                // Modo ROTA DA LINHA: todas as outras paradas somem, apenas as da linha sao exibidas
+                val routeStops = activeRoute.stops
+                val currentSelectedStopId = activeRoute.selectedStop?.stopId
+
+                withContext(Dispatchers.Main) {
+                    val targetIds = routeStops.map { it.stopId }.toSet()
+                    val iterator = markerMap.entries.iterator()
+                    while (iterator.hasNext()) {
+                        val entry = iterator.next()
+                        if (entry.key !in targetIds) {
+                            stopsFolder.remove(entry.value)
+                            iterator.remove()
+                        }
+                    }
+
+                    for (stop in routeStops) {
+                        val isSelected = (currentSelectedStopId == stop.stopId)
+                        val iconDrawable = when {
+                            stop.isMetro && isSelected -> pinCache.metroSelected
+                            stop.isMetro -> pinCache.metroNormal
+                            isSelected -> pinCache.busSelected
+                            else -> pinCache.busNormal
+                        }
+
+                        val existingMarker = markerMap[stop.stopId]
+                        if (existingMarker != null) {
+                            if (existingMarker.icon != iconDrawable) {
+                                existingMarker.icon = iconDrawable
+                            }
+                        } else {
+                            val marker = Marker(mapView).apply {
+                                position = GeoPoint(stop.latitude, stop.longitude)
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = stop.stopName
+                                icon = iconDrawable
+                                setOnMarkerClickListener { _, _ ->
+                                    onStopSelected(stop)
+                                    true
+                                }
+                            }
+                            stopsFolder.add(marker)
+                            markerMap[stop.stopId] = marker
+                        }
+                    }
+                    mapView.invalidate()
+                }
+                return
+            }
+
             val currentZoom = mapView.zoomLevelDouble
             val bounds = mapView.boundingBox
 
@@ -338,12 +450,16 @@ fun RealOpenStreetMap(
 
         val mapListener = object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
-                scheduleDebouncedUpdate(160L)
+                if (activeRoute == null) {
+                    scheduleDebouncedUpdate(160L)
+                }
                 return false
             }
 
             override fun onZoom(event: ZoomEvent?): Boolean {
-                scheduleDebouncedUpdate(100L)
+                if (activeRoute == null) {
+                    scheduleDebouncedUpdate(100L)
+                }
                 return false
             }
         }
@@ -575,4 +691,98 @@ private fun drawMetroIcon(canvas: Canvas, center: Float, density: Float, isSelec
         close()
     }
     canvas.drawPath(path, paint)
+}
+
+/**
+ * Cria o puck moderno para Veiculos Reais em Transito (Padrao azul royal vibrante com indicador de direcao).
+ * Visivelmente distinto do pino de paradas verde para evitar confusao visual.
+ * Nao contem texto de prefixo conforme instrucao.
+ */
+private fun createVehiclePuckDrawable(
+    context: Context,
+    bearing: Float
+): BitmapDrawable {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (32 * density).toInt()
+
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+
+    // 1. Sombra externa suave
+    paint.color = android.graphics.Color.argb(55, 0, 0, 0)
+    canvas.drawCircle(center, center + (1.2f * density), 13.5f * density, paint)
+
+    // 2. Anel branco solido de alto contraste
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(center, center, 13.0f * density, paint)
+
+    // 3. Preenchimento azul vibrante (distinto do verde de paradas)
+    paint.color = android.graphics.Color.parseColor("#1565C0")
+    canvas.drawCircle(center, center, 10.5f * density, paint)
+
+    // 4. Icone de onibus centralizado em vetor branco
+    drawVehicleBusIcon(canvas, center, density)
+
+    // 5. Indicador direcional (chevron externo) se houver rumo valido
+    if (bearing > 0f) {
+        drawHeadingChevron(canvas, center, density, bearing)
+    }
+
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+private fun drawVehicleBusIcon(canvas: Canvas, center: Float, density: Float) {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+    val w = 11f * density
+    val h = 11f * density
+    val left = center - w / 2f
+    val top = center - h / 2f
+    val right = center + w / 2f
+    val bodyH = h - 2f * density
+
+    // Corpo
+    canvas.drawRoundRect(left, top, right, top + bodyH, 2.2f * density, 2.2f * density, paint)
+
+    // Para-brisa (recorte azul)
+    paint.color = android.graphics.Color.parseColor("#1565C0")
+    canvas.drawRoundRect(left + 1.2f * density, top + 1.4f * density, right - 1.2f * density, top + 4.8f * density, 1f * density, 1f * density, paint)
+
+    // Farois
+    val r = 0.8f * density
+    canvas.drawCircle(left + 2.2f * density, top + bodyH - 2f * density, r, paint)
+    canvas.drawCircle(right - 2.2f * density, top + bodyH - 2f * density, r, paint)
+
+    // Rodas
+    paint.color = android.graphics.Color.WHITE
+    val bottom = center + h / 2f
+    canvas.drawRect(left + 1.2f * density, top + bodyH, left + 2.8f * density, bottom, paint)
+    canvas.drawRect(right - 2.8f * density, top + bodyH, right - 1.2f * density, bottom, paint)
+}
+
+private fun drawHeadingChevron(canvas: Canvas, center: Float, density: Float, bearing: Float) {
+    canvas.save()
+    canvas.rotate(bearing, center, center)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+    val path = Path().apply {
+        val tipY = center - 14.5f * density
+        val baseY = center - 10.5f * density
+        val halfW = 3.5f * density
+        moveTo(center, tipY)
+        lineTo(center + halfW, baseY)
+        lineTo(center - halfW, baseY)
+        close()
+    }
+    canvas.drawPath(path, paint)
+    canvas.restore()
 }

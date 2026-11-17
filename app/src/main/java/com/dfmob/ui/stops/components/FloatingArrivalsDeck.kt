@@ -65,6 +65,7 @@ fun FloatingArrivalsDeck(
     arrivals: List<StopArrival>,
     isLoading: Boolean,
     onClose: () -> Unit,
+    onLineClick: (StopArrival) -> Unit = {},
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     maxScreenHeight: Dp = 600.dp,
@@ -322,7 +323,8 @@ fun FloatingArrivalsDeck(
                         StopArrivalLineCard(
                             arrival = arrival,
                             currentClockMs = currentClockMs,
-                            isDarkTheme = isDarkTheme
+                            isDarkTheme = isDarkTheme,
+                            onClick = { onLineClick(arrival) }
                         )
                     }
                 }
@@ -336,6 +338,7 @@ fun StopArrivalLineCard(
     arrival: StopArrival,
     currentClockMs: Long,
     isDarkTheme: Boolean,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(14.dp)
@@ -354,7 +357,7 @@ fun StopArrivalLineCard(
             .fillMaxWidth()
             .clip(cardShape)
             .border(1.dp, cardBorder, cardShape)
-            .clickable { /* Acao silenciosa conforme especificacao */ },
+            .clickable(onClick = onClick),
         color = cardBg,
         shape = cardShape
     ) {

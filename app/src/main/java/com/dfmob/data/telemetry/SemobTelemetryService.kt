@@ -16,6 +16,8 @@ class SemobTelemetryService {
         val latE6: Int,
         val lonE6: Int,
         val speedKmh: Float,
+        val bearing: Float = 0f,
+        val directionId: Int? = null,
         val timestampSeconds: Long
     )
 
@@ -34,12 +36,12 @@ class SemobTelemetryService {
         try {
             val cql = "cd_linha='$cleanLine'"
             val encodedCql = URLEncoder.encode(cql, "UTF-8")
-            val urlString = "http://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=15&cql_filter=$encodedCql"
+            val urlString = "http://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=50&cql_filter=$encodedCql"
             val url = URL(urlString)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 400
-                readTimeout = 600
+                connectTimeout = 800
+                readTimeout = 1200
                 setRequestProperty("User-Agent", "DFmob-Android")
                 setRequestProperty("Accept", "application/json")
             }
@@ -79,6 +81,13 @@ class SemobTelemetryService {
                                 val prefixo = props.optString("prefixo", "DF-$i")
                                 val linhaCod = props.optString("cd_linha", cleanLine)
                                 val speed = props.optDouble("velocidade", 0.0).toFloat()
+                                val bearing = props.optDouble("direcao", 0.0).toFloat()
+                                val sentidoRaw = props.optString("sentido", "").trim()
+                                val dirId = when (sentidoRaw) {
+                                    "0" -> 0
+                                    "1" -> 1
+                                    else -> null
+                                }
 
                                 list.add(
                                     LiveVehicle(
@@ -87,6 +96,8 @@ class SemobTelemetryService {
                                         latE6 = (lat * 1_000_000).toInt(),
                                         lonE6 = (lon * 1_000_000).toInt(),
                                         speedKmh = speed,
+                                        bearing = bearing,
+                                        directionId = dirId,
                                         timestampSeconds = now
                                     )
                                 )

@@ -1,7 +1,9 @@
 package com.dfmob.ui.stops
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -72,12 +75,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.LineRouteState
 import com.dfmob.data.model.StopArrival
+import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.stops.components.FloatingArrivalsDeck
+import com.dfmob.ui.stops.components.LineItineraryDeck
 import com.dfmob.ui.stops.components.RealOpenStreetMap
 import com.dfmob.ui.theme.TransitGreen
 
@@ -85,21 +92,33 @@ import com.dfmob.ui.theme.TransitGreen
 fun StopsScreen(
     onBack: () -> Unit,
     favoritesRepository: FavoritesRepository? = null,
+    initialLineNumber: String? = null,
+    initialLineId: Int? = null,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
-
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val isDarkTheme = isSystemInDarkTheme()
     val focusManager = LocalFocusManager.current
     val repository = remember { StopsRepository(context) }
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
+    val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
 
     var allStops by remember { mutableStateOf<List<TransitStop>>(emptyList()) }
     var selectedStop by remember { mutableStateOf<TransitStop?>(null) }
+    var activeRouteState by remember { mutableStateOf<LineRouteState?>(null) }
     var arrivals by remember { mutableStateOf<List<StopArrival>>(emptyList()) }
     var isLoadingArrivals by remember { mutableStateOf(false) }
+
+    // Interceptador do botao Voltar nativo do Android
+    BackHandler {
+        if (activeRouteState != null) {
+            activeRouteState = null
+        } else {
+            onBack()
+        }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<DFLocation>>(emptyList()) }
@@ -181,6 +200,59 @@ fun StopsScreen(
         }
     }
 
+    // Carregamento e inicializacao da Linha Selecionada vinda da Tela de Linhas ou atalho externo
+    LaunchedEffect(initialLineNumber) {
+        if (!initialLineNumber.isNullOrBlank()) {
+            val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+            val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+            val best = lastGps ?: lastNet
+            val userLatE6 = best?.let { (it.latitude * 1_000_000).toInt() }
+            val userLonE6 = best?.let { (it.longitude * 1_000_000).toInt() }
+
+            val route = repository.getLineRouteState(
+                lineNumber = initialLineNumber,
+                preferredLineId = initialLineId,
+                userLatE6 = userLatE6,
+                userLonE6 = userLonE6
+            )
+            activeRouteState = route
+            if (route != null) {
+                if (userLatE6 != null && userLonE6 != null) {
+                    route.selectedStop?.let { sel ->
+                        focusLocation = DFLocation(sel.stopName, "", sel.latE6, sel.lonE6)
+                    }
+                } else {
+                    route.stops.firstOrNull()?.let { firstStop ->
+                        focusLocation = DFLocation(firstStop.stopName, "", firstStop.latE6, firstStop.lonE6)
+                    }
+                }
+            }
+        }
+    }
+
+    // Telemetria continua da Rota da Linha: atualiza posicoes de veiculos e previsao da parada selecionada a cada 15s
+    LaunchedEffect(activeRouteState?.activeLineId, activeRouteState?.selectedStop?.stopId, resumeTrigger) {
+        val route = activeRouteState ?: return@LaunchedEffect
+        val activeLineId = route.activeLineId
+        val activeDirId = route.activeDirectionId
+        val lineNum = route.lineNumber
+        val selStop = route.selectedStop
+
+        while (isActive) {
+            val vehicles = repository.fetchLiveVehiclesForRoute(lineNum, activeDirId)
+            val arrival = if (selStop != null) {
+                repository.fetchArrivalForLineAtStop(activeLineId, selStop)
+            } else null
+
+            activeRouteState = activeRouteState?.copy(
+                liveVehicles = vehicles,
+                selectedStopArrival = arrival ?: activeRouteState?.selectedStopArrival
+            )
+            delay(15_000L)
+        }
+    }
+
     // Cores adaptativas ao tema Claro / Escuro do celular
     val scaffoldBg = if (isDarkTheme) Color(0xFF090B10) else Color(0xFFF7F8FA)
     val searchBarBg = if (isDarkTheme) Color(0xF215161A) else Color(0xF8FFFFFF)
@@ -204,13 +276,24 @@ fun StopsScreen(
             RealOpenStreetMap(
                 stops = allStops,
                 selectedStop = selectedStop,
+                activeRoute = activeRouteState,
                 focusLocation = focusLocation,
                 recenterTrigger = recenterTrigger,
                 onStopSelected = { stop ->
-                    selectedStop = stop
-                    // Emissao imediata instantanea (< 1ms) sem nenhum loading spinner bloqueante
-                    arrivals = repository.getStaticArrivalsForStop(stop)
-                    isLoadingArrivals = false
+                    if (activeRouteState != null) {
+                        coroutineScope.launch {
+                            val arrival = repository.fetchArrivalForLineAtStop(activeRouteState!!.activeLineId, stop)
+                            activeRouteState = activeRouteState?.copy(
+                                selectedStop = stop,
+                                selectedStopArrival = arrival
+                            )
+                        }
+                    } else {
+                        selectedStop = stop
+                        // Emissao imediata instantanea (< 1ms) sem nenhum loading spinner bloqueante
+                        arrivals = repository.getStaticArrivalsForStop(stop)
+                        isLoadingArrivals = false
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -245,7 +328,13 @@ fun StopsScreen(
                                 .size(36.dp)
                                 .clip(CircleShape)
                                 .background(backBtnBg)
-                                .clickable(onClick = onBack),
+                                .clickable {
+                                    if (activeRouteState != null) {
+                                        activeRouteState = null
+                                    } else {
+                                        onBack()
+                                    }
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -428,29 +517,88 @@ fun StopsScreen(
                 )
             }
 
-            // 4. Painel de Chegadas Flutuante (Deck com 14dp de margem, aberto apenas ao selecionar parada)
+            // 4. Painel Flutuante: Itinerario da Linha com Rota e Telemetria ou Chegadas da Parada
             AnimatedVisibility(
-                visible = selectedStop != null,
+                visible = activeRouteState != null || selectedStop != null,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
             ) {
-                selectedStop?.let { stop ->
-                    FloatingArrivalsDeck(
-                        stop = stop,
-                        arrivals = arrivals,
-                        isLoading = isLoadingArrivals,
-                        isFavorite = favoriteStops.any { it.stopId == stop.stopId },
-                        onToggleFavorite = {
-                            favoritesRepo.toggleFavoriteStop(stop)
+                val currentRoute = activeRouteState
+                if (currentRoute != null) {
+                    LineItineraryDeck(
+                        activeRoute = currentRoute,
+                        onSelectStop = { stop ->
+                            coroutineScope.launch {
+                                val arrival = repository.fetchArrivalForLineAtStop(currentRoute.activeLineId, stop)
+                                activeRouteState = activeRouteState?.copy(
+                                    selectedStop = stop,
+                                    selectedStopArrival = arrival
+                                )
+                            }
+                        },
+                        onSwitchDirection = {
+                            coroutineScope.launch {
+                                val newIndex = if (currentRoute.currentDirectionIndex == 0) 1 else 0
+                                val switched = repository.changeLineRouteDirection(currentRoute, newIndex)
+                                activeRouteState = switched
+                            }
                         },
                         onClose = {
-                            selectedStop = null
+                            activeRouteState = null
+                        },
+                        onLocateBuses = {
+                            val firstBus = currentRoute.liveVehicles.firstOrNull()
+                            if (firstBus != null) {
+                                focusLocation = DFLocation(firstBus.lineNumber, "", firstBus.latE6, firstBus.lonE6)
+                            }
+                        },
+                        isFavorite = favoriteLines.any { it.lineNumber == currentRoute.lineNumber },
+                        onToggleFavorite = {
+                            val lineObj = TransitLine(
+                                routeId = currentRoute.activeLineId.toString(),
+                                agencyId = "",
+                                agencyName = currentRoute.agencyName,
+                                lineNumber = currentRoute.lineNumber,
+                                routeName = currentRoute.lineName,
+                                transitType = if (currentRoute.isMetro) 1 else 3,
+                                colorHex = currentRoute.colorHex,
+                                textColorHex = currentRoute.textColorHex,
+                                price = null
+                            )
+                            favoritesRepo.toggleFavorite(lineObj)
                         },
                         maxScreenHeight = maxHeight
                     )
+                } else {
+                    selectedStop?.let { stop ->
+                        FloatingArrivalsDeck(
+                            stop = stop,
+                            arrivals = arrivals,
+                            isLoading = isLoadingArrivals,
+                            onLineClick = { arrival ->
+                                coroutineScope.launch {
+                                    val route = repository.getLineRouteState(
+                                        lineNumber = arrival.lineNumber,
+                                        preferredStopId = stop.stopId
+                                    )
+                                    if (route != null) {
+                                        activeRouteState = route
+                                    }
+                                }
+                            },
+                            isFavorite = favoriteStops.any { it.stopId == stop.stopId },
+                            onToggleFavorite = {
+                                favoritesRepo.toggleFavoriteStop(stop)
+                            },
+                            onClose = {
+                                selectedStop = null
+                            },
+                            maxScreenHeight = maxHeight
+                        )
+                    }
                 }
             }
         }

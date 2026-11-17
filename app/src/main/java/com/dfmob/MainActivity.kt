@@ -31,21 +31,43 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val favoritesRepository = remember { FavoritesRepository(context) }
                 var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
+                var targetLineNumberForStops by remember { mutableStateOf<String?>(null) }
+                var targetLineIdForStops by remember { mutableStateOf<Int?>(null) }
 
                 Crossfade(targetState = currentScreen, label = "ScreenTransition") { screen ->
                     when (screen) {
                         AppScreen.HOME -> HomeScreen(
                             favoritesRepository = favoritesRepository,
                             onNavigateToLines = { currentScreen = AppScreen.LINES },
-                            onNavigateToStops = { currentScreen = AppScreen.STOPS }
+                            onNavigateToStops = {
+                                targetLineNumberForStops = null
+                                targetLineIdForStops = null
+                                currentScreen = AppScreen.STOPS
+                            },
+                            onNavigateToLineRoute = { lineNum ->
+                                targetLineNumberForStops = lineNum
+                                targetLineIdForStops = null
+                                currentScreen = AppScreen.STOPS
+                            }
                         )
                         AppScreen.LINES -> LinesScreen(
                             favoritesRepository = favoritesRepository,
-                            onBack = { currentScreen = AppScreen.HOME }
+                            onBack = { currentScreen = AppScreen.HOME },
+                            onLineClick = { line ->
+                                targetLineNumberForStops = line.lineNumber
+                                targetLineIdForStops = null
+                                currentScreen = AppScreen.STOPS
+                            }
                         )
                         AppScreen.STOPS -> StopsScreen(
                             favoritesRepository = favoritesRepository,
-                            onBack = { currentScreen = AppScreen.HOME }
+                            initialLineNumber = targetLineNumberForStops,
+                            initialLineId = targetLineIdForStops,
+                            onBack = {
+                                targetLineNumberForStops = null
+                                targetLineIdForStops = null
+                                currentScreen = AppScreen.HOME
+                            }
                         )
                     }
                 }

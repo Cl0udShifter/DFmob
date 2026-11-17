@@ -55,7 +55,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     favoritesRepository: FavoritesRepository? = null,
     onNavigateToLines: () -> Unit = {},
-    onNavigateToStops: () -> Unit = {}
+    onNavigateToStops: () -> Unit = {},
+    onNavigateToLineRoute: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
@@ -190,7 +191,7 @@ fun HomeScreen(
             RecentAndFavoritesSection(
                 favoriteLines = favoriteLines,
                 favoriteStops = favoriteStops,
-                onLineClick = { onNavigateToLines() },
+                onLineClick = { line -> onNavigateToLineRoute(line.lineNumber) },
                 onStopClick = { onNavigateToStops() }
             )
 
