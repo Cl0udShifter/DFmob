@@ -31,10 +31,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +64,15 @@ fun FloatingArrivalsDeck(
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val deckShape = RoundedCornerShape(24.dp)
+
+    // Ticker a cada 1 segundo para atualizar minutos e texto 'Já' dinamicamente contra o relogio do sistema
+    var currentClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000L)
+            currentClockMs = System.currentTimeMillis()
+        }
+    }
 
     val deckBackground = if (isDarkTheme) Color(0xF2141519) else Color(0xF8FFFFFF)
     val deckBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
@@ -195,6 +207,7 @@ fun FloatingArrivalsDeck(
                     ) { _, arrival ->
                         StopArrivalLineCard(
                             arrival = arrival,
+                            currentClockMs = currentClockMs,
                             isDarkTheme = isDarkTheme
                         )
                     }
@@ -207,6 +220,7 @@ fun FloatingArrivalsDeck(
 @Composable
 fun StopArrivalLineCard(
     arrival: StopArrival,
+    currentClockMs: Long,
     isDarkTheme: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -219,7 +233,7 @@ fun StopArrivalLineCard(
 
     val cardBg = if (isDarkTheme) Color(0xFF16171C) else Color(0xFFF3F4F7)
     val cardBorder = if (isDarkTheme) Color(0xFF262830) else Color(0xFFE2E4EB)
-    val chipBg = if (isDarkTheme) Color(0xFF22242B) else Color(0xFFE5E7EB)
+    val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
 
     Surface(
         modifier = modifier
@@ -285,15 +299,10 @@ fun StopArrivalLineCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Minutos ate a chegada
-                val etaText = if (arrival.minutesAway > 60) {
-                    arrival.scheduledTimeFormatted
-                } else {
-                    "${arrival.minutesAway} min"
-                }
+                // Minutos ate a chegada recalculados dinamicamente com suporte a "Já"
+                val etaText = arrival.getDisplayEta(currentClockMs)
 
                 // Se for GPS ao vivo, cor verde com icone de sinal Wi-Fi; se for programado, cor padrao com icone de relogio
-                val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
                 val etaColor = if (arrival.isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
 
                 Row(
@@ -327,7 +336,7 @@ fun StopArrivalLineCard(
                 }
             }
 
-            // Proximos horarios da linha
+            // Proximos horarios da linha (com suporte a GPS ao vivo e "Já" nas partidas seguintes)
             if (arrival.nextDepartures.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -344,21 +353,46 @@ fun StopArrivalLineCard(
                         ),
                         color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
                     )
-                    arrival.nextDepartures.take(3).forEach { timeStr ->
+                    arrival.nextDepartures.take(3).forEach { dep ->
+                        val label = dep.displayLabel(currentClockMs)
+                        val chipBg = if (dep.isRealtime) {
+                            if (isDarkTheme) Color(0x2400C853) else Color(0x1F00883E)
+                        } else {
+                            if (isDarkTheme) Color(0xFF22242C) else Color(0xFFE5E7EB)
+                        }
+                        val textColor = if (dep.isRealtime) {
+                            liveGreen
+                        } else {
+                            if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
+                        }
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(5.dp))
                                 .background(chipBg)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(
-                                text = timeStr,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 10.sp
-                                ),
-                                color = if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                if (dep.isRealtime) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Wifi,
+                                        contentDescription = "GPS ao vivo",
+                                        tint = liveGreen,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                }
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
+                                        fontSize = 10.sp
+                                    ),
+                                    color = textColor
+                                )
+                            }
                         }
                     }
                 }

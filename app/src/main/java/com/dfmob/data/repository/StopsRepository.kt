@@ -3,6 +3,7 @@ package com.dfmob.data.repository
 import android.content.Context
 import com.dfmob.data.database.DatabaseHelper
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.telemetry.MoovitTransitClient
@@ -88,8 +89,16 @@ class StopsRepository(context: Context) {
      */
     fun getStaticArrivalsForStop(stop: TransitStop): List<StopArrival> {
         val lines = dbHelper.getLinesPassingAtStop(stop.stopId)
+        val nowMs = System.currentTimeMillis()
         val cal = Calendar.getInstance()
         val currentSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
+
+        val todayStartMs = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
 
         val rawArrivals = lines.map { line ->
             val isMetro = line.isMetro
@@ -98,7 +107,8 @@ class StopsRepository(context: Context) {
             val etaMinutes: Int
             val isLive: Boolean
             val scheduledFormatted: String
-            val nextTimesList: List<String>
+            val mainTargetEpochMs: Long
+            val nextDeparturesList: List<NextDeparture>
 
             if (isMetro) {
                 // Headway fixo de alta frequencia do Metro-DF (4-7 min)
@@ -107,26 +117,58 @@ class StopsRepository(context: Context) {
                     else -> 6
                 }
                 isLive = true
+                mainTargetEpochMs = nowMs + etaMinutes * 60_000L
                 scheduledFormatted = formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
-                nextTimesList = listOf(
-                    formatSecondsToHHMM(currentSeconds + (etaMinutes + 6) * 60),
-                    formatSecondsToHHMM(currentSeconds + (etaMinutes + 12) * 60)
+                nextDeparturesList = listOf(
+                    NextDeparture(
+                        timeFormatted = formatSecondsToHHMM(currentSeconds + (etaMinutes + 6) * 60),
+                        minutesAway = etaMinutes + 6,
+                        isRealtime = true,
+                        targetEpochMs = nowMs + (etaMinutes + 6) * 60_000L
+                    ),
+                    NextDeparture(
+                        timeFormatted = formatSecondsToHHMM(currentSeconds + (etaMinutes + 12) * 60),
+                        minutesAway = etaMinutes + 12,
+                        isRealtime = true,
+                        targetEpochMs = nowMs + (etaMinutes + 12) * 60_000L
+                    )
                 )
             } else {
                 val nextDep = scheduledTimes.firstOrNull()
                 if (nextDep != null) {
                     val diffSec = maxOf(0, nextDep - currentSeconds)
-                    etaMinutes = maxOf(1, (diffSec + 30) / 60)
+                    etaMinutes = maxOf(0, (diffSec + 30) / 60)
+                    mainTargetEpochMs = todayStartMs + nextDep * 1000L
                     scheduledFormatted = formatSecondsToHHMM(nextDep)
                     // Partidas subsequentes (sem repetir o horario atual)
-                    nextTimesList = scheduledTimes.drop(1).take(2).map { formatSecondsToHHMM(it) }
+                    nextDeparturesList = scheduledTimes.drop(1).take(2).map { depSec ->
+                        val depEpoch = todayStartMs + depSec * 1000L
+                        val depMins = maxOf(0, ((depEpoch - nowMs) + 30000L) / 60000L).toInt()
+                        NextDeparture(
+                            timeFormatted = formatSecondsToHHMM(depSec),
+                            minutesAway = depMins,
+                            isRealtime = false,
+                            targetEpochMs = depEpoch
+                        )
+                    }
                     isLive = false
                 } else {
                     etaMinutes = 25
+                    mainTargetEpochMs = nowMs + 25 * 60_000L
                     scheduledFormatted = formatSecondsToHHMM(currentSeconds + 1500)
-                    nextTimesList = listOf(
-                        formatSecondsToHHMM(currentSeconds + 2400),
-                        formatSecondsToHHMM(currentSeconds + 3300)
+                    nextDeparturesList = listOf(
+                        NextDeparture(
+                            timeFormatted = formatSecondsToHHMM(currentSeconds + 2400),
+                            minutesAway = 40,
+                            isRealtime = false,
+                            targetEpochMs = nowMs + 40 * 60_000L
+                        ),
+                        NextDeparture(
+                            timeFormatted = formatSecondsToHHMM(currentSeconds + 3300),
+                            minutesAway = 55,
+                            isRealtime = false,
+                            targetEpochMs = nowMs + 55 * 60_000L
+                        )
                     )
                     isLive = false
                 }
@@ -142,7 +184,8 @@ class StopsRepository(context: Context) {
                 minutesAway = etaMinutes,
                 isRealtime = isLive,
                 scheduledTimeFormatted = scheduledFormatted,
-                nextDepartures = nextTimesList
+                targetEpochMs = mainTargetEpochMs,
+                nextDepartures = nextDeparturesList
             )
         }
 
@@ -197,8 +240,17 @@ class StopsRepository(context: Context) {
                 val minutesAway = maxOf(0, Math.round((targetEtd - nowMs) / 60000.0).toInt())
 
                 val formattedFirst = formatEpochMsToHHMM(targetEtd, timeZone)
-                val subsequentTimes = validArrivals.drop(1).take(3).map { arr ->
-                    formatEpochMsToHHMM(arr.rtEtdUTC ?: arr.staticEtdUTC, timeZone)
+                val subsequentDepartures = validArrivals.drop(1).take(3).map { arr ->
+                    val isRt = arr.rtEtdUTC != null
+                    val arrTargetEtd = arr.rtEtdUTC ?: arr.staticEtdUTC
+                    val mins = maxOf(0, Math.round((arrTargetEtd - nowMs) / 60000.0).toInt())
+                    val formatted = formatEpochMsToHHMM(arrTargetEtd, timeZone)
+                    NextDeparture(
+                        timeFormatted = formatted,
+                        minutesAway = mins,
+                        isRealtime = isRt,
+                        targetEpochMs = arrTargetEtd
+                    )
                 }
 
                 updatedArrivals.add(
@@ -212,7 +264,8 @@ class StopsRepository(context: Context) {
                         minutesAway = minutesAway,
                         isRealtime = hasLive,
                         scheduledTimeFormatted = formattedFirst,
-                        nextDepartures = subsequentTimes
+                        targetEpochMs = targetEtd,
+                        nextDepartures = subsequentDepartures
                     )
                 )
             }

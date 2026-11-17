@@ -14,6 +14,12 @@ val localProperties = Properties().apply {
 val cartoApiKey: String = localProperties.getProperty("CARTO_API_KEY")
     ?: System.getenv("CARTO_API_KEY")
     ?: ""
+val moovitApiKey: String = localProperties.getProperty("MOOVIT_API_KEY")
+    ?: System.getenv("MOOVIT_API_KEY")
+    ?: ""
+val moovitUserKey: String = localProperties.getProperty("MOOVIT_USER_KEY")
+    ?: System.getenv("MOOVIT_USER_KEY")
+    ?: ""
 
 android {
     namespace = "com.dfmob"
@@ -23,10 +29,12 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.2.1"
+        versionCode = 23
+        versionName = "1.2.2"
 
         buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
+        buildConfigField("String", "MOOVIT_API_KEY", "\"$moovitApiKey\"")
+        buildConfigField("String", "MOOVIT_USER_KEY", "\"$moovitUserKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

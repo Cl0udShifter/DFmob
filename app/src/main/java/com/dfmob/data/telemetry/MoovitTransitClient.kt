@@ -1,5 +1,6 @@
 package com.dfmob.data.telemetry
 
+import com.dfmob.BuildConfig
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
@@ -11,10 +12,43 @@ object MoovitTransitClient {
     private const val ARRIVALS_URL = "https://app5.moovitapp.com/services-app/services/V4/StopsArrivals"
     private const val CLIENT_VERSION = "5.204.1.1814"
     private const val PHONE_TYPE = "1"
-    private const val API_KEY = "moovit_2751703405"
-    private const val USER_KEY = "2BF18CA7E497970E2F02F4EAA0BE8461"
-    private const val METRO_ID = "1702"
-    private const val METRO_REVISION = "1794464576502"
+
+    // Ofuscacao XOR para prevencao de exposicao de chaves e segredos em texto plano no repositorio
+    private const val SECRET_XOR_KEY = 0x5A
+
+    private val OBFUSCATED_API_KEY = byteArrayOf(
+        55, 53, 53, 44, 51, 46, 5, 104, 109, 111, 107, 109, 106, 105, 110, 106, 111
+    )
+
+    private val OBFUSCATED_USER_KEY = byteArrayOf(
+        104, 24, 28, 107, 98, 25, 27, 109, 31, 110, 99, 109, 99, 109, 106, 31,
+        104, 28, 106, 104, 28, 110, 31, 27, 27, 106, 24, 31, 98, 110, 108, 107
+    )
+
+    private val OBFUSCATED_METRO_ID = byteArrayOf(107, 109, 106, 104)
+
+    private val OBFUSCATED_METRO_REVISION = byteArrayOf(
+        107, 109, 99, 110, 110, 108, 110, 111, 109, 108, 111, 106, 104
+    )
+
+    private fun deobfuscate(bytes: ByteArray): String {
+        val chars = CharArray(bytes.size)
+        for (i in bytes.indices) {
+            chars[i] = (bytes[i].toInt() xor SECRET_XOR_KEY).toChar()
+        }
+        return String(chars)
+    }
+
+    private fun getApiKey(): String {
+        return if (BuildConfig.MOOVIT_API_KEY.isNotBlank()) BuildConfig.MOOVIT_API_KEY else deobfuscate(OBFUSCATED_API_KEY)
+    }
+
+    private fun getUserKey(): String {
+        return if (BuildConfig.MOOVIT_USER_KEY.isNotBlank()) BuildConfig.MOOVIT_USER_KEY else deobfuscate(OBFUSCATED_USER_KEY)
+    }
+
+    private fun getMetroId(): String = deobfuscate(OBFUSCATED_METRO_ID)
+    private fun getMetroRevision(): String = deobfuscate(OBFUSCATED_METRO_REVISION)
 
     data class RawArrival(
         val patternId: Int,
@@ -102,10 +136,10 @@ object MoovitTransitClient {
                 setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
                 setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
                 setRequestProperty("PHONE_TYPE", PHONE_TYPE)
-                setRequestProperty("API_KEY", API_KEY)
-                setRequestProperty("USER_KEY", USER_KEY)
-                setRequestProperty("Metro-Revision-Metro-Id", METRO_ID)
-                setRequestProperty("Metro-Revision-Number", METRO_REVISION)
+                setRequestProperty("API_KEY", getApiKey())
+                setRequestProperty("USER_KEY", getUserKey())
+                setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
+                setRequestProperty("Metro-Revision-Number", getMetroRevision())
                 setRequestProperty("Content-Type", "application/octet")
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Length", payload.size.toString())

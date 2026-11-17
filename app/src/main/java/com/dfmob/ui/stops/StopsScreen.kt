@@ -47,11 +47,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -139,11 +143,29 @@ fun StopsScreen(
         }
     }
 
+    // Observador de Ciclo de Vida: atualiza telemetria imediatamente quando o usuario liga a tela do celular (ON_RESUME)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTrigger by remember { mutableStateOf(0L) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                resumeTrigger = System.currentTimeMillis()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // Carregamento de chegadas (Padrao Moovit: Instantaneo local sem delay + Telemetria assincrona em segundo plano e polling continuo)
-    LaunchedEffect(selectedStop) {
+    LaunchedEffect(selectedStop, resumeTrigger) {
         val stop = selectedStop
         if (stop != null) {
-            arrivals = repository.getStaticArrivalsForStop(stop)
+            if (arrivals.isEmpty()) {
+                arrivals = repository.getStaticArrivalsForStop(stop)
+            }
             isLoadingArrivals = false
             while (isActive) {
                 val updated = repository.fetchLiveTelemetryUpdates(stop, arrivals)
