@@ -32,9 +32,15 @@ import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // Basemaps minimalistas CartoDB no estilo Google Maps / Uber com injecao segura de API key via BuildConfig
 private class CartoTileSource(
@@ -108,7 +114,8 @@ fun RealOpenStreetMap(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val pinCache = remember(context) { StopPinCache(context) }
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val stopsFolder = remember { FolderOverlay() }
+    val markerMap = remember { mutableMapOf<Int, Marker>() }
 
     // Configuracao inicial do osmdroid com persistencia em cache local
     val mapView = remember {
@@ -157,12 +164,15 @@ fun RealOpenStreetMap(
         overlay
     }
 
-    // Adiciona o overlay de localizacao se ainda nao estiver presente
+    // Adiciona os overlays de paradas e localizacao se ainda nao estiverem presentes
     LaunchedEffect(mapView) {
+        if (!mapView.overlays.contains(stopsFolder)) {
+            mapView.overlays.add(stopsFolder)
+        }
         if (!mapView.overlays.contains(locationOverlay)) {
             mapView.overlays.add(locationOverlay)
-            mapView.invalidate()
         }
+        mapView.invalidate()
     }
 
     // Gerenciamento de ciclo de vida da MapView nativa e GPS
@@ -224,88 +234,129 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Gerenciador de marcadores com Viewport Culling, debouncing e Zoom Threshold estrito
+    // Gerenciador de marcadores com Viewport Culling, calculo assincrono e diffing sem recriar objetos
     LaunchedEffect(stops, selectedStop) {
-        fun updateMarkers() {
+        suspend fun updateMarkers() {
             val currentZoom = mapView.zoomLevelDouble
             val bounds = mapView.boundingBox
 
-            val existingMarkers = mapView.overlays.filterIsInstance<Marker>()
-
-            // 1. Zoom out total (< 11.5): esconde todas as paradas para manter visual limpo e fluido
+            // 1. Zoom out total (< 11.5): limpa marcadores
             if (currentZoom < 11.5) {
-                if (existingMarkers.isNotEmpty()) {
-                    mapView.overlays.removeAll(existingMarkers)
-                    mapView.invalidate()
+                if (markerMap.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        stopsFolder.items.clear()
+                        markerMap.clear()
+                        mapView.invalidate()
+                    }
                 }
                 return
             }
 
             // 2. Zoom intermediario (11.5 a 13.5): exibe apenas as estacoes de metrô
             val isIntermediateZoom = currentZoom < 13.5
-            val visibleStops = stops.filter { stop ->
-                if (isIntermediateZoom && !stop.isMetro) {
-                    return@filter false
-                }
-                // Viewport culling com margem de segurança de 0.008 graus (~800m)
-                if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
-                    if (stop.latitude < bounds.latSouth - 0.008 || stop.latitude > bounds.latNorth + 0.008 ||
-                        stop.longitude < bounds.lonWest - 0.008 || stop.longitude > bounds.lonEast + 0.008
-                    ) {
+
+            // Calculo de filtragem dos 1435 pontos executado em thread de background (Dispatchers.Default)
+            val visibleStops = withContext(Dispatchers.Default) {
+                stops.filter { stop ->
+                    if (isIntermediateZoom && !stop.isMetro) {
                         return@filter false
                     }
+                    if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
+                        if (stop.latitude < bounds.latSouth - 0.008 || stop.latitude > bounds.latNorth + 0.008 ||
+                            stop.longitude < bounds.lonWest - 0.008 || stop.longitude > bounds.lonEast + 0.008
+                        ) {
+                            return@filter false
+                        }
+                    }
+                    true
                 }
-                true
             }
 
-            mapView.overlays.removeAll(existingMarkers)
+            // Aplicacao diferencial na Main Thread: reaproveita marcadores existentes sem destruir/recriar objetos
+            withContext(Dispatchers.Main) {
+                val newIds = visibleStops.map { it.stopId }.toSet()
+                var hasChanges = false
 
-            for (stop in visibleStops) {
-                val isSelected = selectedStop?.stopId == stop.stopId
-                val iconDrawable = when {
-                    stop.isMetro && isSelected -> pinCache.metroSelected
-                    stop.isMetro -> pinCache.metroNormal
-                    isSelected -> pinCache.busSelected
-                    else -> pinCache.busNormal
-                }
-
-                val marker = Marker(mapView).apply {
-                    position = GeoPoint(stop.latitude, stop.longitude)
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    title = stop.stopName
-                    icon = iconDrawable
-                    setOnMarkerClickListener { _, _ ->
-                        onStopSelected(stop)
-                        true
+                // Remove apenas os marcadores que sairam do campo de visao
+                val iterator = markerMap.entries.iterator()
+                while (iterator.hasNext()) {
+                    val entry = iterator.next()
+                    if (entry.key !in newIds) {
+                        stopsFolder.remove(entry.value)
+                        iterator.remove()
+                        hasChanges = true
                     }
                 }
-                mapView.overlays.add(marker)
+
+                // Adiciona novos marcadores ou atualiza icones dos que ja estao na tela
+                for (stop in visibleStops) {
+                    val isSelected = selectedStop?.stopId == stop.stopId
+                    val iconDrawable = when {
+                        stop.isMetro && isSelected -> pinCache.metroSelected
+                        stop.isMetro -> pinCache.metroNormal
+                        isSelected -> pinCache.busSelected
+                        else -> pinCache.busNormal
+                    }
+
+                    val existingMarker = markerMap[stop.stopId]
+                    if (existingMarker != null) {
+                        if (existingMarker.icon != iconDrawable) {
+                            existingMarker.icon = iconDrawable
+                            hasChanges = true
+                        }
+                    } else {
+                        val marker = Marker(mapView).apply {
+                            position = GeoPoint(stop.latitude, stop.longitude)
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            title = stop.stopName
+                            icon = iconDrawable
+                            setOnMarkerClickListener { _, _ ->
+                                onStopSelected(stop)
+                                true
+                            }
+                        }
+                        stopsFolder.add(marker)
+                        markerMap[stop.stopId] = marker
+                        hasChanges = true
+                    }
+                }
+
+                if (hasChanges) {
+                    mapView.invalidate()
+                }
             }
-            mapView.invalidate()
         }
 
-        // Listener com debouncing para evitar alocacoes e processamento desnecessario a 60 FPS
-        var pendingUpdate: Runnable? = null
+        var updateJob: kotlinx.coroutines.Job? = null
         fun scheduleDebouncedUpdate(delayMs: Long) {
-            pendingUpdate?.let { mainHandler.removeCallbacks(it) }
-            val task = Runnable { updateMarkers() }
-            pendingUpdate = task
-            mainHandler.postDelayed(task, delayMs)
+            updateJob?.cancel()
+            updateJob = launch {
+                delay(delayMs)
+                updateMarkers()
+            }
         }
 
         val mapListener = object : MapListener {
             override fun onScroll(event: ScrollEvent?): Boolean {
-                scheduleDebouncedUpdate(100L)
+                scheduleDebouncedUpdate(160L)
                 return false
             }
 
             override fun onZoom(event: ZoomEvent?): Boolean {
-                scheduleDebouncedUpdate(80L)
+                scheduleDebouncedUpdate(100L)
                 return false
             }
         }
+
         mapView.addMapListener(mapListener)
         updateMarkers()
+
+        try {
+            awaitCancellation()
+        } finally {
+            mapView.removeMapListener(mapListener)
+            updateJob?.cancel()
+        }
     }
 
     AndroidView(

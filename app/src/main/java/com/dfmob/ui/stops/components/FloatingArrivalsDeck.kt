@@ -1,8 +1,12 @@
 package com.dfmob.ui.stops.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -42,8 +47,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.StopArrival
@@ -60,10 +67,18 @@ fun FloatingArrivalsDeck(
     onClose: () -> Unit,
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
+    maxScreenHeight: Dp = 600.dp,
     modifier: Modifier = Modifier
 ) {
     val isDarkTheme = isSystemInDarkTheme()
-    val deckShape = RoundedCornerShape(24.dp)
+
+    // Estado expandido (75% da tela sem margens de floating pill) vs colapsado (floating pill padrao)
+    var isExpanded by remember { mutableStateOf(false) }
+
+    // Reseta para colapsado ao alternar a parada selecionada
+    LaunchedEffect(stop.stopId) {
+        isExpanded = false
+    }
 
     // Ticker a cada 1 segundo para atualizar minutos e texto 'Já' dinamicamente contra o relogio do sistema
     var currentClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -74,29 +89,128 @@ fun FloatingArrivalsDeck(
         }
     }
 
+    // Animacao simples e rapida (250ms com FastOutSlowInEasing)
+    val animSpec = tween<Dp>(durationMillis = 250, easing = FastOutSlowInEasing)
+
+    val targetHeight = if (isExpanded) {
+        if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp
+    } else {
+        320.dp
+    }
+
+    val animatedHeight by animateDpAsState(
+        targetValue = targetHeight,
+        animationSpec = animSpec,
+        label = "deckHeight"
+    )
+
+    val animatedHorizontalPadding by animateDpAsState(
+        targetValue = if (isExpanded) 0.dp else 14.dp,
+        animationSpec = animSpec,
+        label = "deckPaddingH"
+    )
+
+    val animatedBottomPadding by animateDpAsState(
+        targetValue = if (isExpanded) 0.dp else 12.dp,
+        animationSpec = animSpec,
+        label = "deckPaddingB"
+    )
+
+    val animatedBottomRadius by animateDpAsState(
+        targetValue = if (isExpanded) 0.dp else 24.dp,
+        animationSpec = animSpec,
+        label = "deckCornerBottom"
+    )
+
+    val deckShape = RoundedCornerShape(
+        topStart = 24.dp,
+        topEnd = 24.dp,
+        bottomStart = animatedBottomRadius,
+        bottomEnd = animatedBottomRadius
+    )
+
     val deckBackground = if (isDarkTheme) Color(0xF2141519) else Color(0xF8FFFFFF)
     val deckBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
     val closeBtnBg = if (isDarkTheme) Color(0xFF23252C) else Color(0xFFEAECEF)
+    val handleColor = if (isDarkTheme) Color(0xFF3F424E) else Color(0xFFD1D5DB)
+
+    // Gesto de puxar verticalmente para cima ou para baixo
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val dragModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragStart = { dragOffsetY = 0f },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                dragOffsetY += dragAmount
+            },
+            onDragEnd = {
+                if (dragOffsetY < -25f) {
+                    isExpanded = true
+                } else if (dragOffsetY > 25f) {
+                    isExpanded = false
+                }
+                dragOffsetY = 0f
+            },
+            onDragCancel = {
+                dragOffsetY = 0f
+            }
+        )
+    }
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .height(animatedHeight)
+            .padding(
+                start = animatedHorizontalPadding,
+                end = animatedHorizontalPadding,
+                bottom = animatedBottomPadding
+            )
             .clip(deckShape)
-            .border(1.dp, deckBorder, deckShape),
+            .border(
+                width = if (isExpanded) 0.dp else 1.dp,
+                color = if (isExpanded) Color.Transparent else deckBorder,
+                shape = deckShape
+            )
+            .then(if (!isExpanded) dragModifier else Modifier),
         color = deckBackground,
         shape = deckShape,
         shadowElevation = if (isDarkTheme) 18.dp else 10.dp
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .fillMaxSize()
+                .padding(
+                    start = 14.dp,
+                    end = 14.dp,
+                    top = 6.dp,
+                    bottom = if (isExpanded) 16.dp else 10.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Cabecalho da Parada
+            // Drag Handle Bar indicador no topo (arrastavel e clicavel)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .then(dragModifier)
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(38.dp)
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(handleColor)
+                )
+            }
+
+            // Cabecalho da Parada (arrastavel para alternar expansao)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(dragModifier),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -171,7 +285,7 @@ fun FloatingArrivalsDeck(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(100.dp),
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
@@ -184,7 +298,7 @@ fun FloatingArrivalsDeck(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp),
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -197,7 +311,7 @@ fun FloatingArrivalsDeck(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp),
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
