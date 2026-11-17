@@ -90,41 +90,45 @@ class StopsRepository(context: Context) {
         val cal = Calendar.getInstance()
         val currentSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
 
-        return lines.map { line ->
+        val rawArrivals = lines.map { line ->
             val isMetro = line.isMetro
             val scheduledTimes = dbHelper.getNextScheduledDepartures(line.lineId, currentSeconds, 3)
-            val nextTimesList = if (scheduledTimes.isNotEmpty()) {
-                scheduledTimes.map { formatSecondsToHHMM(it) }
-            } else {
-                listOf(
-                    formatSecondsToHHMM(currentSeconds + 900),
-                    formatSecondsToHHMM(currentSeconds + 1800),
-                    formatSecondsToHHMM(currentSeconds + 2700)
-                )
-            }
 
             val etaMinutes: Int
             val isLive: Boolean
+            val scheduledFormatted: String
+            val nextTimesList: List<String>
+
             if (isMetro) {
-                // Headway fixo de alta frequencia do Metro-DF
+                // Headway fixo de alta frequencia do Metro-DF (4-7 min)
                 etaMinutes = when (line.lineId) {
                     1001, 1002 -> 4
-                    else -> 7
+                    else -> 6
                 }
                 isLive = true
+                scheduledFormatted = formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
+                nextTimesList = listOf(
+                    formatSecondsToHHMM(currentSeconds + (etaMinutes + 6) * 60),
+                    formatSecondsToHHMM(currentSeconds + (etaMinutes + 12) * 60)
+                )
             } else {
                 val nextDep = scheduledTimes.firstOrNull()
                 if (nextDep != null) {
-                    val diffSec = nextDep - currentSeconds
-                    etaMinutes = if (diffSec > 0) maxOf(1, (diffSec + 30) / 60) else 1
+                    val diffSec = maxOf(0, nextDep - currentSeconds)
+                    etaMinutes = maxOf(1, (diffSec + 30) / 60)
+                    scheduledFormatted = formatSecondsToHHMM(nextDep)
+                    // Partidas subsequentes (sem repetir o horario atual)
+                    nextTimesList = scheduledTimes.drop(1).take(2).map { formatSecondsToHHMM(it) }
                 } else {
-                    etaMinutes = 65
+                    etaMinutes = 25
+                    scheduledFormatted = formatSecondsToHHMM(currentSeconds + 1500)
+                    nextTimesList = listOf(
+                        formatSecondsToHHMM(currentSeconds + 2400),
+                        formatSecondsToHHMM(currentSeconds + 3300)
+                    )
                 }
                 isLive = false
             }
-
-            val scheduledFormatted = scheduledTimes.firstOrNull()?.let { formatSecondsToHHMM(it) }
-                ?: formatSecondsToHHMM(currentSeconds + etaMinutes * 60)
 
             StopArrival(
                 lineNumber = line.lineNumber,
@@ -139,6 +143,15 @@ class StopsRepository(context: Context) {
                 nextDepartures = nextTimesList
             )
         }
+
+        // Ordenacao Padrao Moovit: primeiro chegadas com GPS ao vivo, depois proximos horarios, depois numero da linha
+        return rawArrivals.sortedWith(
+            compareBy(
+                { !it.isRealtime },
+                { it.minutesAway },
+                { it.lineNumber }
+            )
+        )
     }
 
     /**
@@ -160,7 +173,7 @@ class StopsRepository(context: Context) {
                 distinctLineNumbers.map { lineNum ->
                     async {
                         try {
-                            val vehicles = telemetryService.getLiveVehiclePositions(lineNum)
+                            val vehicles = telemetryService.getLiveVehiclePositions(lineNum, stop.latE6, stop.lonE6)
                             lineNum to vehicles
                         } catch (_: Exception) {
                             lineNum to emptyList()
@@ -176,7 +189,7 @@ class StopsRepository(context: Context) {
 
         if (liveVehiclesMap.isEmpty()) return@withContext currentArrivals
 
-        currentArrivals.map { arrival ->
+        val updated = currentArrivals.map { arrival ->
             if (arrival.isMetro) {
                 arrival
             } else {
@@ -184,8 +197,8 @@ class StopsRepository(context: Context) {
                 if (!vehicles.isNullOrEmpty()) {
                     val candidateEtas = vehicles.mapNotNull { v ->
                         val distMeters = calculateDistanceMeters(v.latE6, v.lonE6, stop.latE6, stop.lonE6)
-                        if (distMeters in 50.0..25000.0) {
-                            val travelTimeSec = (distMeters / 6.1).toInt() + 45
+                        if (distMeters in 50.0..30000.0) {
+                            val travelTimeSec = (distMeters / 6.5).toInt() + 45
                             maxOf(1, Math.round(travelTimeSec / 60.0).toInt())
                         } else null
                     }
@@ -201,6 +214,14 @@ class StopsRepository(context: Context) {
                 } else arrival
             }
         }
+
+        updated.sortedWith(
+            compareBy(
+                { !it.isRealtime },
+                { it.minutesAway },
+                { it.lineNumber }
+            )
+        )
     }
 
     suspend fun getArrivalsForStop(stop: TransitStop): List<StopArrival> {

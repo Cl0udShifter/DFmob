@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 class DatabaseHelper(private val context: Context) {
 
     private val dbName = "dfmob.db"
-    private val targetRevision = 20261120
+    private val targetRevision = 20261125
     private var database: SQLiteDatabase? = null
 
     init {
@@ -115,7 +115,10 @@ class DatabaseHelper(private val context: Context) {
 
     fun getNextScheduledDepartures(lineId: Int, currentSeconds: Int, count: Int): List<Int> {
         val db = database ?: return emptyList()
-        val sql = """
+        val list = mutableListOf<Int>()
+
+        // 1. Horarios restantes no dia atual (a partir de currentSeconds)
+        val sqlToday = """
             SELECT departure_time_seconds 
             FROM trips_schedule 
             WHERE line_id = ? AND departure_time_seconds >= ?
@@ -123,11 +126,29 @@ class DatabaseHelper(private val context: Context) {
             LIMIT ?
         """.trimIndent()
 
-        val cursor = db.rawQuery(sql, arrayOf(lineId.toString(), currentSeconds.toString(), count.toString()))
-        val list = mutableListOf<Int>()
-        cursor.use { c ->
+        val cursorToday = db.rawQuery(sqlToday, arrayOf(lineId.toString(), currentSeconds.toString(), count.toString()))
+        cursorToday.use { c ->
             while (c.moveToNext()) {
                 list.add(c.getInt(0))
+            }
+        }
+
+        // 2. Se nao houver partidas suficientes hoje, busca as primeiras partidas de amanha (a partir das 00:00)
+        if (list.size < count) {
+            val needed = count - list.size
+            val sqlTomorrow = """
+                SELECT departure_time_seconds 
+                FROM trips_schedule 
+                WHERE line_id = ? AND departure_time_seconds >= 0
+                ORDER BY departure_time_seconds ASC 
+                LIMIT ?
+            """.trimIndent()
+            val cursorTomorrow = db.rawQuery(sqlTomorrow, arrayOf(lineId.toString(), needed.toString()))
+            cursorTomorrow.use { c ->
+                while (c.moveToNext()) {
+                    // Adiciona 86400 (24h em segundos) para computar corretamente a diferenca
+                    list.add(c.getInt(0) + 86400)
+                }
             }
         }
         return list
