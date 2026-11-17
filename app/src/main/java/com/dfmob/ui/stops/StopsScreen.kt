@@ -1,6 +1,11 @@
 package com.dfmob.ui.stops
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -87,10 +92,32 @@ fun StopsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<DFLocation>>(emptyList()) }
     var focusLocation by remember { mutableStateOf<DFLocation?>(null) }
+    var recenterTrigger by remember { mutableStateOf(0L) }
 
-    // Carregamento inicial das paradas
+    // Gerenciador de permissao de localizacao precisa/aproximada
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fine = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fine || coarse) {
+            recenterTrigger = System.currentTimeMillis()
+        }
+    }
+
+    // Carregamento inicial das paradas e verificacao de permissao de localizacao
     LaunchedEffect(Unit) {
         allStops = repository.getAllStops()
+        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
     }
 
     // Busca de locais do DF em tempo real ao digitar
@@ -138,6 +165,7 @@ fun StopsScreen(
                 stops = allStops,
                 selectedStop = selectedStop,
                 focusLocation = focusLocation,
+                recenterTrigger = recenterTrigger,
                 onStopSelected = { stop ->
                     selectedStop = stop
                 },
@@ -315,7 +343,7 @@ fun StopsScreen(
                 }
             }
 
-            // 3. Botao Flutuante de Centralizar no Mapa
+            // 3. Botao Flutuante de Centralizar na Localizacao Atual
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -325,12 +353,18 @@ fun StopsScreen(
                     .background(if (isDarkTheme) Color(0xE6181A20) else Color(0xF2FFFFFF))
                     .border(1.dp, searchBarBorder, CircleShape)
                     .clickable {
-                        focusLocation = DFLocation(
-                            name = "Rodoviária do Plano Piloto",
-                            description = "Zona Central",
-                            latE6 = -15794167,
-                            lonE6 = -47882778
-                        )
+                        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        if (hasFine || hasCoarse) {
+                            recenterTrigger = System.currentTimeMillis()
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
