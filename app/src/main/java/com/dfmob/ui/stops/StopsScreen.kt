@@ -240,7 +240,7 @@ fun StopsScreen(
         val selStop = route.selectedStop
 
         while (isActive) {
-            val vehicles = repository.fetchLiveVehiclesForRoute(lineNum, activeDirId)
+            val vehicles = repository.fetchLiveVehiclesForRoute(lineNum, activeDirId, activeLineId, route.stops)
             val arrival = if (selStop != null) {
                 repository.fetchArrivalForLineAtStop(activeLineId, selStop)
             } else null
@@ -249,7 +249,7 @@ fun StopsScreen(
                 liveVehicles = vehicles,
                 selectedStopArrival = arrival ?: activeRouteState?.selectedStopArrival
             )
-            delay(15_000L)
+            delay(6_000L)
         }
     }
 

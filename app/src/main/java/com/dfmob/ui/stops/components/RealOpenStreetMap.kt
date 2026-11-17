@@ -9,6 +9,8 @@ import android.graphics.drawable.BitmapDrawable
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
+import android.animation.ValueAnimator
+import android.view.animation.LinearInterpolator
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -121,6 +123,8 @@ fun RealOpenStreetMap(
     val routePolyline = remember { Polyline() }
     val stopsFolder = remember { FolderOverlay() }
     val vehiclesFolder = remember { FolderOverlay() }
+    val vehicleMarkers = remember { mutableMapOf<String, Marker>() }
+    val vehicleAnimators = remember { mutableMapOf<String, ValueAnimator>() }
     val markerMap = remember { mutableMapOf<Int, Marker>() }
 
     // Configuracao inicial do osmdroid com persistencia em cache local
@@ -282,20 +286,72 @@ fun RealOpenStreetMap(
         mapView.invalidate()
     }
 
-    // Atualizacao dos Veiculos Reais em Tempo Real (Pucks verdes vibrantes com rumo direcional e sem prefixo)
+    // Atualizacao dos Veiculos Reais em Tempo Real com animacao de deslizamento suave (glide)
     LaunchedEffect(activeRoute?.liveVehicles) {
-        vehiclesFolder.items.clear()
         val vehicles = activeRoute?.liveVehicles ?: emptyList()
-        for (v in vehicles) {
-            val marker = Marker(mapView).apply {
-                position = GeoPoint(v.latitude, v.longitude)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = createVehiclePuckDrawable(context, v.bearing)
-                infoWindow = null
+        val currentIds = vehicles.map { it.vehicleId }.toSet()
+
+        // 1. Remove marcadores de veiculos que nao estao mais ativos
+        val iterator = vehicleMarkers.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key !in currentIds) {
+                vehicleAnimators[entry.key]?.cancel()
+                vehicleAnimators.remove(entry.key)
+                vehiclesFolder.remove(entry.value)
+                iterator.remove()
             }
-            vehiclesFolder.add(marker)
+        }
+
+        // 2. Adiciona novos veiculos ou anima suavemente os existentes
+        for (v in vehicles) {
+            val targetPoint = GeoPoint(v.latitude, v.longitude)
+            val puckDrawable = createVehiclePuckDrawable(context, v.bearing)
+            val existingMarker = vehicleMarkers[v.vehicleId]
+
+            if (existingMarker != null) {
+                existingMarker.icon = puckDrawable
+                val startPoint = existingMarker.position
+                val distanceM = startPoint.distanceToAsDouble(targetPoint)
+                if (distanceM > 0.5) {
+                    vehicleAnimators[v.vehicleId]?.cancel()
+                    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                        duration = 1500L
+                        interpolator = LinearInterpolator()
+                        addUpdateListener { anim ->
+                            val f = anim.animatedFraction
+                            val lat = startPoint.latitude + (targetPoint.latitude - startPoint.latitude) * f
+                            val lon = startPoint.longitude + (targetPoint.longitude - startPoint.longitude) * f
+                            existingMarker.position = GeoPoint(lat, lon)
+                            mapView.invalidate()
+                        }
+                    }
+                    animator.start()
+                    vehicleAnimators[v.vehicleId] = animator
+                }
+            } else {
+                val marker = Marker(mapView).apply {
+                    position = targetPoint
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon = puckDrawable
+                    infoWindow = null
+                }
+                vehiclesFolder.add(marker)
+                vehicleMarkers[v.vehicleId] = marker
+            }
         }
         mapView.invalidate()
+    }
+
+    // Limpa veiculos e cancela animacoes se rota for fechada
+    LaunchedEffect(activeRoute == null) {
+        if (activeRoute == null) {
+            vehicleAnimators.values.forEach { it.cancel() }
+            vehicleAnimators.clear()
+            vehicleMarkers.clear()
+            vehiclesFolder.items.clear()
+            mapView.invalidate()
+        }
     }
 
     // Centraliza na parada selecionada na fita de itinerario da linha

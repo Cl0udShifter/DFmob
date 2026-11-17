@@ -473,7 +473,7 @@ class StopsRepository(private val context: Context) {
             initialStop = stops.firstOrNull()
         }
 
-        val liveVehicles = fetchLiveVehiclesForRoute(detail.lineNumber, activeDirId)
+        val liveVehicles = fetchLiveVehiclesForRoute(detail.lineNumber, activeDirId, activeLineId, stops)
         val allShapes = telemetryService.fetchRealRouteShapes(detail.lineNumber)
         val shapeCoordinates = matchShapeToDirection(allShapes, stops)
 
@@ -519,7 +519,7 @@ class StopsRepository(private val context: Context) {
             newSelectedStop = newStops.firstOrNull()
         }
 
-        val liveVehicles = fetchLiveVehiclesForRoute(currentState.lineNumber, activeDirId)
+        val liveVehicles = fetchLiveVehiclesForRoute(currentState.lineNumber, activeDirId, activeLineId, newStops)
         val allShapes = telemetryService.fetchRealRouteShapes(currentState.lineNumber)
         val shapeCoordinates = matchShapeToDirection(allShapes, newStops)
 
@@ -543,6 +543,14 @@ class StopsRepository(private val context: Context) {
     ): List<Pair<Double, Double>> {
         if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
         val firstStop = stops.first()
+        val lastStop = stops.last()
+        val isCircular = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, lastStop.latE6, lastStop.lonE6) < 800
+        val ida = shapes.entries.firstOrNull { it.key.contains("IDA", ignoreCase = true) }?.value
+        val volta = shapes.entries.firstOrNull { it.key.contains("VOLTA", ignoreCase = true) }?.value
+        if (isCircular && ida != null && volta != null) {
+            return ida + volta
+        }
+
         var bestShape: List<Pair<Double, Double>>? = null
         var bestDist = Double.MAX_VALUE
         for ((_, pts) in shapes) {
@@ -568,7 +576,25 @@ class StopsRepository(private val context: Context) {
         return staticArrivals.firstOrNull { it.lineNumber == lineInfo.lineNumber }
     }
 
-    suspend fun fetchLiveVehiclesForRoute(lineNumber: String, directionId: Int): List<LiveVehicleMarker> = withContext(Dispatchers.IO) {
+    suspend fun fetchLiveVehiclesForRoute(
+        lineNumber: String,
+        directionId: Int,
+        lineId: Int? = null,
+        stops: List<TransitStop> = emptyList()
+    ): List<LiveVehicleMarker> = withContext(Dispatchers.IO) {
+        if (lineId != null && stops.isNotEmpty()) {
+            val stopIds = stops.map { it.stopId }
+            val moovitVehicles = com.dfmob.data.telemetry.MoovitTransitClient.fetchLiveVehiclesForLine(
+                lineId = lineId,
+                stopIds = stopIds,
+                lineNumber = lineNumber,
+                directionId = directionId,
+                stops = stops
+            )
+            if (moovitVehicles.isNotEmpty()) {
+                return@withContext moovitVehicles
+            }
+        }
         try {
             val vehicles = telemetryService.getLiveVehiclePositions(lineNumber)
             vehicles.filter { v ->
