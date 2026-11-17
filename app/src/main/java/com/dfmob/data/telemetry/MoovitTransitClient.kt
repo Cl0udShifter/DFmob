@@ -662,6 +662,7 @@ object MoovitTransitClient {
                             var st = 0L
                             var et = 0L
                             var dur = 0
+                            var depStopId: Int? = null
                             var fromStopName: String? = null
                             var toStopName: String? = null
                             var poly: String? = null
@@ -716,6 +717,7 @@ object MoovitTransitClient {
                                     if (stopIds != null && stopIds.length() > 2) {
                                         val firstSid = stopIds.optInt(2, 0)
                                         val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
+                                        if (firstSid > 0) depStopId = firstSid
                                         fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
                                         toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
                                         stopCount = stopIds.length() - 2
@@ -735,6 +737,7 @@ object MoovitTransitClient {
                                         endTimeUtc = et,
                                         durationMinutes = dur,
                                         polylineEncoded = poly,
+                                        departureStopId = depStopId,
                                         departureStopName = fromStopName,
                                         arrivalStopName = toStopName,
                                         stopsCount = stopCount,
@@ -786,6 +789,7 @@ object MoovitTransitClient {
                             val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
                             val poly = lRec.optJSONObject("4")?.optJSONObject("rec")?.optJSONObject("2")?.optString("str")
                                 ?: lRec.optJSONObject("4")?.optJSONObject("2")?.optString("str")
+                            var depStopId: Int? = null
                             var fromStopName: String? = null
                             var toStopName: String? = null
                             var stopCount = 0
@@ -793,6 +797,7 @@ object MoovitTransitClient {
                             if (stopIds != null && stopIds.length() > 2) {
                                 val firstSid = stopIds.optInt(2, 0)
                                 val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
+                                if (firstSid > 0) depStopId = firstSid
                                 fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
                                 toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
                                 stopCount = stopIds.length() - 2
@@ -809,6 +814,7 @@ object MoovitTransitClient {
                                     endTimeUtc = et,
                                     durationMinutes = dur,
                                     polylineEncoded = poly,
+                                    departureStopId = depStopId,
                                     departureStopName = fromStopName,
                                     arrivalStopName = toStopName,
                                     stopsCount = stopCount,

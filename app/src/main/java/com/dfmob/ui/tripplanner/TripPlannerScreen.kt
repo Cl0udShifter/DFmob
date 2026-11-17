@@ -180,10 +180,10 @@ fun TripPlannerScreen(
             OriginDestinationCard(
                 originText = state.originQuery,
                 destinationText = state.destinationQuery,
-                activeField = state.activeField,
                 onOriginChange = { viewModel.onQueryChanged(it) },
                 onDestinationChange = { viewModel.onQueryChanged(it) },
                 onFieldFocus = { viewModel.onFieldFocused(it) },
+                onFieldBlur = { viewModel.onFieldBlurred(it) },
                 onSwap = { viewModel.swapOriginAndDestination() },
                 onUseCurrentLocation = { viewModel.useCurrentLocationForActiveField() },
                 onPickOnMap = {
@@ -421,10 +421,10 @@ fun TripPlannerScreen(
 private fun OriginDestinationCard(
     originText: String,
     destinationText: String,
-    activeField: ActiveField,
     onOriginChange: (String) -> Unit,
     onDestinationChange: (String) -> Unit,
     onFieldFocus: (ActiveField) -> Unit,
+    onFieldBlur: (ActiveField) -> Unit,
     onSwap: () -> Unit,
     onUseCurrentLocation: () -> Unit,
     onPickOnMap: () -> Unit
@@ -432,6 +432,8 @@ private fun OriginDestinationCard(
     val isDark = isSystemInDarkTheme()
     val cardBg = MaterialTheme.colorScheme.surface
     val borderCol = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    var isOriginFocused by remember { mutableStateOf(false) }
+    var isDestFocused by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -481,7 +483,7 @@ private fun OriginDestinationCard(
                             .height(38.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             if (originText.isEmpty()) {
                                 Text(
                                     text = "De onde? (Origem)",
@@ -494,7 +496,15 @@ private fun OriginDestinationCard(
                                 onValueChange = onOriginChange,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .onFocusChanged { if (it.isFocused) onFieldFocus(ActiveField.ORIGIN) },
+                                    .onFocusChanged { focusState ->
+                                        if (focusState.isFocused && !isOriginFocused) {
+                                            isOriginFocused = true
+                                            onFieldFocus(ActiveField.ORIGIN)
+                                        } else if (!focusState.isFocused && isOriginFocused) {
+                                            isOriginFocused = false
+                                            onFieldBlur(ActiveField.ORIGIN)
+                                        }
+                                    },
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
@@ -503,20 +513,6 @@ private fun OriginDestinationCard(
                                 singleLine = true,
                                 cursorBrush = SolidColor(TransitGreen)
                             )
-                        }
-
-                        if (originText.isNotEmpty()) {
-                            IconButton(
-                                onClick = { onOriginChange("") },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Limpar",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
                         }
                     }
 
@@ -534,7 +530,7 @@ private fun OriginDestinationCard(
                             .height(38.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             if (destinationText.isEmpty()) {
                                 Text(
                                     text = "Para onde? (Destino)",
@@ -547,7 +543,15 @@ private fun OriginDestinationCard(
                                 onValueChange = onDestinationChange,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .onFocusChanged { if (it.isFocused) onFieldFocus(ActiveField.DESTINATION) },
+                                    .onFocusChanged { focusState ->
+                                        if (focusState.isFocused && !isDestFocused) {
+                                            isDestFocused = true
+                                            onFieldFocus(ActiveField.DESTINATION)
+                                        } else if (!focusState.isFocused && isDestFocused) {
+                                            isDestFocused = false
+                                            onFieldBlur(ActiveField.DESTINATION)
+                                        }
+                                    },
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
@@ -556,20 +560,6 @@ private fun OriginDestinationCard(
                                 singleLine = true,
                                 cursorBrush = SolidColor(TransitGreen)
                             )
-                        }
-
-                        if (destinationText.isNotEmpty()) {
-                            IconButton(
-                                onClick = { onDestinationChange("") },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Limpar",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
                         }
                     }
                 }
@@ -1038,39 +1028,6 @@ private fun TripItineraryCard(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-
-                                // Indicador de GPS ao vivo na linha se disponivel
-                                val hasGps = lines.any { it.hasLiveGps }
-                                if (hasGps) {
-                                    val liveMin = lines.firstOrNull { it.hasLiveGps }?.liveEtaMinutes
-                                    val liveText = when (liveMin) {
-                                        null, 0 -> "Já"
-                                        else -> "$liveMin min"
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(TransitGreen.copy(alpha = 0.15f))
-                                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Sensors,
-                                            contentDescription = null,
-                                            tint = TransitGreen,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = liveText,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp
-                                            ),
-                                            color = TransitGreen
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
@@ -1086,8 +1043,77 @@ private fun TripItineraryCard(
                 }
             }
 
-            // Exibicao da parada de embarque principal
+            // Linha dedicada aos proximos horarios de onibus da primeira perna
             val firstTransitLeg = itinerary.legs.firstOrNull { it.type == TripLegType.TRANSIT }
+            if (firstTransitLeg != null && firstTransitLeg.upcomingDepartures.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccessTime,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Horários:",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    firstTransitLeg.upcomingDepartures.take(5).forEach { dep ->
+                        if (dep.isRealtime) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(TransitGreen.copy(alpha = 0.15f))
+                                    .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Sensors,
+                                    contentDescription = null,
+                                    tint = TransitGreen,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = dep.timeFormatted,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.5.sp
+                                    ),
+                                    color = TransitGreen
+                                )
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = dep.timeFormatted,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Exibicao da parada de embarque principal
             if (firstTransitLeg?.departureStopName != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

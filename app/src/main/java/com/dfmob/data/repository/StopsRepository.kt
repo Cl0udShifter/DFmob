@@ -705,12 +705,117 @@ class StopsRepository(private val context: Context) {
         return String.format(Locale.ROOT, "%02d:%02d", hours, mins)
     }
 
+    suspend fun getUpcomingDeparturesForStopAndLines(
+        stopId: Int,
+        lineIds: List<Int>,
+        fallbackScheduledUtc: Long
+    ): List<com.dfmob.data.model.TripDepartureItem> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<com.dfmob.data.model.TripDepartureItem>()
+        val lineIdSet = lineIds.toSet()
+        val nowMs = System.currentTimeMillis()
+        val tz = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+
+        // 1. Tenta obter do endpoint de partidas em tempo real do Moovit
+        try {
+            val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(stopId)
+            val valid = moovitArrivals
+                .filter { lineIdSet.contains(it.lineId) }
+                .flatMap { it.arrivals }
+                .filter {
+                    val target = it.rtEtdUTC ?: it.staticEtdUTC
+                    target >= nowMs - 60_000L
+                }
+
+            for (arr in valid) {
+                val isRealTime = arr.rtEtdUTC != null
+                val target = arr.rtEtdUTC ?: arr.staticEtdUTC
+                val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
+                val formatted = if (isRealTime) {
+                    if (mins <= 1) "Já" else "$mins min"
+                } else {
+                    formatEpochMsToHHMM(target, tz)
+                }
+                results.add(
+                    com.dfmob.data.model.TripDepartureItem(
+                        lineNumber = "",
+                        timeFormatted = formatted,
+                        isRealtime = isRealTime,
+                        targetEpochMs = target
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+
+        // 2. Se vazio, consulta os horarios programados no banco local SQLite
+        if (results.isEmpty()) {
+            val cal = Calendar.getInstance(tz)
+            cal.timeInMillis = nowMs
+            val curSec = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
+            for (lid in lineIds) {
+                val secList = dbHelper.getNextScheduledDepartures(lid, stopId, curSec, 3)
+                for (sec in secList) {
+                    val h = (sec / 3600) % 24
+                    val m = (sec % 3600) / 60
+                    val timeStr = String.format(Locale.ROOT, "%02d:%02d", h, m)
+                    results.add(
+                        com.dfmob.data.model.TripDepartureItem(
+                            lineNumber = "",
+                            timeFormatted = timeStr,
+                            isRealtime = false,
+                            targetEpochMs = nowMs + ((sec - curSec) * 1000L)
+                        )
+                    )
+                }
+            }
+        }
+
+        // 3. Fallback final para horario programado do itinerario se ainda vazio
+        if (results.isEmpty() && fallbackScheduledUtc > 0) {
+            results.add(
+                com.dfmob.data.model.TripDepartureItem(
+                    lineNumber = "",
+                    timeFormatted = formatEpochMsToHHMM(fallbackScheduledUtc, tz),
+                    isRealtime = false,
+                    targetEpochMs = fallbackScheduledUtc
+                )
+            )
+        }
+
+        results.distinctBy { it.timeFormatted }.sortedBy { it.targetEpochMs }.take(5)
+    }
+
+    suspend fun enrichItinerariesWithDepartures(
+        itineraries: List<com.dfmob.data.model.TripPlanItinerary>
+    ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
+        val stopDeparturesCache = mutableMapOf<Pair<Int, String>, List<com.dfmob.data.model.TripDepartureItem>>()
+
+        itineraries.map { itin ->
+            val updatedLegs = itin.legs.mapIndexed { idx, leg ->
+                val isFirstTransit = leg.type == com.dfmob.data.model.TripLegType.TRANSIT &&
+                        itin.legs.indexOfFirst { it.type == com.dfmob.data.model.TripLegType.TRANSIT } == idx
+
+                if (isFirstTransit && leg.departureStopId != null && leg.lines.isNotEmpty()) {
+                    val lineIds = leg.lines.map { it.lineId }
+                    val cacheKey = Pair(leg.departureStopId, lineIds.sorted().joinToString(","))
+                    val deps = stopDeparturesCache.getOrPut(cacheKey) {
+                        getUpcomingDeparturesForStopAndLines(leg.departureStopId, lineIds, leg.startTimeUtc)
+                    }
+                    leg.copy(upcomingDepartures = deps)
+                } else {
+                    leg
+                }
+            }
+            itin.copy(legs = updatedLegs)
+        }
+    }
+
     suspend fun searchTripPlan(
         from: com.dfmob.data.model.TripPlanLocation,
         to: com.dfmob.data.model.TripPlanLocation,
         filter: com.dfmob.data.model.TripPlanFilter
     ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
-        MoovitTransitClient.searchTripPlan(from, to, filter, dbHelper)
+        val rawItineraries = MoovitTransitClient.searchTripPlan(from, to, filter, dbHelper)
+        enrichItinerariesWithDepartures(rawItineraries)
     }
 
     suspend fun reverseGeocode(latE6: Int, lonE6: Int): String = withContext(Dispatchers.IO) {

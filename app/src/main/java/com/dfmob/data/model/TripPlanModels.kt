@@ -47,6 +47,13 @@ data class TripTransitLineOption(
     val liveEtaMinutes: Int? = null
 )
 
+data class TripDepartureItem(
+    val lineNumber: String,
+    val timeFormatted: String,
+    val isRealtime: Boolean,
+    val targetEpochMs: Long
+)
+
 data class TripPlanLeg(
     val type: TripLegType,
     val startTimeUtc: Long,
@@ -54,10 +61,12 @@ data class TripPlanLeg(
     val durationMinutes: Int,
     val distanceMeters: Double = 0.0,
     val polylineEncoded: String? = null,
+    val departureStopId: Int? = null,
     val departureStopName: String? = null,
     val arrivalStopName: String? = null,
     val stopsCount: Int = 0,
-    val lines: List<TripTransitLineOption> = emptyList()
+    val lines: List<TripTransitLineOption> = emptyList(),
+    val upcomingDepartures: List<TripDepartureItem> = emptyList()
 )
 
 data class TripPlanItinerary(

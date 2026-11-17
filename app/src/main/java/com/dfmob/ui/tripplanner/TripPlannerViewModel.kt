@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -57,9 +58,12 @@ class TripPlannerViewModel(
 
     private var locationSearchJob: Job? = null
     private var tripSearchJob: Job? = null
+    private var liveDeparturesJob: Job? = null
+
+    private var savedOriginText: String = ""
+    private var savedDestinationText: String = ""
 
     init {
-        // Inicializa com a localizacao atual do usuario como Origem padrao se disponivel
         useCurrentLocationForOrigin()
     }
 
@@ -72,6 +76,7 @@ class TripPlannerViewModel(
                 lonE6 = (userLoc.longitude * 1_000_000).toInt(),
                 isUserLocation = true
             )
+            savedOriginText = "Minha localização"
             _uiState.update {
                 it.copy(
                     origin = loc,
@@ -82,7 +87,32 @@ class TripPlannerViewModel(
     }
 
     fun onFieldFocused(field: ActiveField) {
-        _uiState.update { it.copy(activeField = field) }
+        if (field == ActiveField.ORIGIN) {
+            if (_uiState.value.originQuery.isNotBlank()) {
+                savedOriginText = _uiState.value.originQuery
+            }
+            _uiState.update { it.copy(activeField = field, originQuery = "") }
+        } else if (field == ActiveField.DESTINATION) {
+            if (_uiState.value.destinationQuery.isNotBlank()) {
+                savedDestinationText = _uiState.value.destinationQuery
+            }
+            _uiState.update { it.copy(activeField = field, destinationQuery = "") }
+        } else {
+            _uiState.update { it.copy(activeField = field) }
+        }
+    }
+
+    fun onFieldBlurred(field: ActiveField) {
+        if (field == ActiveField.ORIGIN) {
+            if (_uiState.value.originQuery.isBlank() && savedOriginText.isNotBlank()) {
+                _uiState.update { it.copy(originQuery = savedOriginText) }
+            }
+        } else if (field == ActiveField.DESTINATION) {
+            if (_uiState.value.destinationQuery.isBlank() && savedDestinationText.isNotBlank()) {
+                _uiState.update { it.copy(destinationQuery = savedDestinationText) }
+            }
+        }
+        _uiState.update { it.copy(activeField = ActiveField.NONE, searchResults = emptyList()) }
     }
 
     fun onQueryChanged(text: String) {
@@ -115,6 +145,7 @@ class TripPlannerViewModel(
         )
         val currentField = _uiState.value.activeField
         if (currentField == ActiveField.ORIGIN) {
+            savedOriginText = loc.name
             _uiState.update {
                 it.copy(
                     origin = target,
@@ -124,6 +155,7 @@ class TripPlannerViewModel(
                 )
             }
         } else {
+            savedDestinationText = loc.name
             _uiState.update {
                 it.copy(
                     destination = target,
@@ -137,12 +169,20 @@ class TripPlannerViewModel(
     }
 
     fun swapOriginAndDestination() {
+        val oldOrig = _uiState.value.origin
+        val oldDest = _uiState.value.destination
+        val oldOrigQuery = _uiState.value.originQuery
+        val oldDestQuery = _uiState.value.destinationQuery
+
+        savedOriginText = oldDestQuery
+        savedDestinationText = oldOrigQuery
+
         _uiState.update {
             it.copy(
-                origin = it.destination,
-                originQuery = it.destination?.caption ?: "",
-                destination = it.origin,
-                destinationQuery = it.origin?.caption ?: "",
+                origin = oldDest,
+                originQuery = oldDestQuery,
+                destination = oldOrig,
+                destinationQuery = oldOrigQuery,
                 searchResults = emptyList()
             )
         }
@@ -159,6 +199,7 @@ class TripPlannerViewModel(
         )
         val currentField = _uiState.value.activeField
         if (currentField == ActiveField.ORIGIN || currentField == ActiveField.NONE) {
+            savedOriginText = "Minha localização"
             _uiState.update {
                 it.copy(
                     origin = loc,
@@ -168,6 +209,7 @@ class TripPlannerViewModel(
                 )
             }
         } else {
+            savedDestinationText = "Minha localização"
             _uiState.update {
                 it.copy(
                     destination = loc,
@@ -203,6 +245,7 @@ class TripPlannerViewModel(
         )
         val targetField = _uiState.value.mapPickerTargetField
         if (targetField == ActiveField.ORIGIN) {
+            savedOriginText = caption
             _uiState.update {
                 it.copy(
                     origin = loc,
@@ -212,6 +255,7 @@ class TripPlannerViewModel(
                 )
             }
         } else {
+            savedDestinationText = caption
             _uiState.update {
                 it.copy(
                     destination = loc,
@@ -242,12 +286,9 @@ class TripPlannerViewModel(
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
 
-        // Se o horario for anterior a agora para partida hoje, mantem ou ajusta conforme logica
         val newTime = cal.timeInMillis
         _uiState.update {
-            it.copy(
-                targetTimeUtc = newTime
-            )
+            it.copy(targetTimeUtc = newTime)
         }
         triggerTripSearchIfReady()
     }
@@ -283,6 +324,7 @@ class TripPlannerViewModel(
         val origin = _uiState.value.origin ?: return
         val destination = _uiState.value.destination ?: return
 
+        liveDeparturesJob?.cancel()
         tripSearchJob?.cancel()
         tripSearchJob = viewModelScope.launch {
             _uiState.update {
@@ -307,6 +349,9 @@ class TripPlannerViewModel(
                         tripSearchError = if (results.isEmpty()) "Nenhum trajeto encontrado para este horário." else null
                     )
                 }
+                if (results.isNotEmpty()) {
+                    startLiveDeparturesTicker()
+                }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -314,6 +359,22 @@ class TripPlannerViewModel(
                         isSearchingTrips = false,
                         tripSearchError = "Falha ao calcular rotas: ${e.message ?: "Erro desconhecido"}"
                     )
+                }
+            }
+        }
+    }
+
+    private fun startLiveDeparturesTicker() {
+        liveDeparturesJob?.cancel()
+        liveDeparturesJob = viewModelScope.launch {
+            while (isActive) {
+                delay(15_000)
+                val currentItineraries = _uiState.value.itineraries
+                if (currentItineraries.isNotEmpty()) {
+                    try {
+                        val updated = repository.enrichItinerariesWithDepartures(currentItineraries)
+                        _uiState.update { it.copy(itineraries = updated) }
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -337,5 +398,12 @@ class TripPlannerViewModel(
         } catch (_: SecurityException) {
             null
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        locationSearchJob?.cancel()
+        tripSearchJob?.cancel()
+        liveDeparturesJob?.cancel()
     }
 }
