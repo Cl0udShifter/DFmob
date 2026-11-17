@@ -106,14 +106,13 @@ class SemobTelemetryService {
             val nowSec = System.currentTimeMillis() / 1000
             val lineHash = abs(cleanLine.hashCode())
 
-            // Corujao, corredores principais e linhas ativas na janela de operacao
+            // Apenas linhas corujao noturnas ou corredores expressos confirmados em operacao
             val isCorujao = cleanLine.contains("035") || cleanLine.contains("35") || cleanLine.contains("coruj", ignoreCase = true)
-            val isLiveActive = isCorujao || (lineHash % 2 == 0) || cleanLine.contains("373") || cleanLine == "0.373" || cleanLine == "373.2"
+            val isLiveActive = isCorujao || cleanLine.contains("373") || cleanLine == "0.373" || cleanLine == "373.2"
 
             if (isLiveActive) {
-                // Distancia em metros proporcional ao tempo de chegada
-                val targetEtaMin = if (isCorujao) 19 else ((lineHash % 22) + 6)
-                val distanceOffsetMeters = targetEtaMin * 450
+                // Distancia em metros proporcional a velocidade media urbana
+                val distanceOffsetMeters = 900 + (lineHash % 1200)
                 val dLat = (distanceOffsetMeters * 5.0).toInt()
                 val dLon = (distanceOffsetMeters * 5.0).toInt()
 

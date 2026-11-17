@@ -92,7 +92,7 @@ class StopsRepository(context: Context) {
 
         val rawArrivals = lines.map { line ->
             val isMetro = line.isMetro
-            val scheduledTimes = dbHelper.getNextScheduledDepartures(line.lineId, currentSeconds, 3)
+            val scheduledTimes = dbHelper.getNextScheduledDepartures(line.lineId, stop.stopId, currentSeconds, 3)
 
             val etaMinutes: Int
             val isLive: Boolean
@@ -119,9 +119,10 @@ class StopsRepository(context: Context) {
                     scheduledFormatted = formatSecondsToHHMM(nextDep)
                     // Partidas subsequentes (sem repetir o horario atual)
                     nextTimesList = scheduledTimes.drop(1).take(2).map { formatSecondsToHHMM(it) }
-                    // Linhas em transito na janela de 45 minutos ou linhas corujao ativas recebem status de GPS ao vivo
+                    // Apenas linhas em operacao na janela de ate 35 minutos recebem status de GPS ao vivo
                     val isCorujao = line.lineNumber.contains("035") || line.lineName.contains("CORUJ", ignoreCase = true)
-                    isLive = (etaMinutes <= 45) || (isCorujao && etaMinutes <= 90)
+                    val isOperatingHour = currentSeconds >= 18000 || isCorujao
+                    isLive = (etaMinutes <= 35) && isOperatingHour
                 } else {
                     etaMinutes = 25
                     scheduledFormatted = formatSecondsToHHMM(currentSeconds + 1500)
@@ -195,8 +196,10 @@ class StopsRepository(context: Context) {
         val updated = currentArrivals.map { arrival ->
             if (arrival.isMetro) {
                 arrival
+            } else if (!arrival.isRealtime) {
+                // Linhas com partidas agendadas sem operacao iminente permanecem como agendadas (sem falso GPS)
+                arrival
             } else {
-                val isCorujao = arrival.lineNumber.contains("035") || arrival.lineName.contains("CORUJ", ignoreCase = true)
                 val vehicles = liveVehiclesMap[arrival.lineNumber]
                 if (!vehicles.isNullOrEmpty()) {
                     val candidateEtas = vehicles.mapNotNull { v ->
@@ -207,18 +210,12 @@ class StopsRepository(context: Context) {
                         } else null
                     }
                     if (candidateEtas.isNotEmpty()) {
-                        val minEta = candidateEtas.minOrNull() ?: arrival.minutesAway
-                        if (minEta <= 60 || isCorujao) {
-                            arrival.copy(
-                                minutesAway = minEta,
-                                isRealtime = true
-                            )
-                        } else arrival
-                    } else if (arrival.minutesAway <= 45 || isCorujao) {
-                        arrival.copy(isRealtime = true)
+                        val minEta = minOf(arrival.minutesAway, candidateEtas.minOrNull() ?: arrival.minutesAway)
+                        arrival.copy(
+                            minutesAway = minEta,
+                            isRealtime = true
+                        )
                     } else arrival
-                } else if (arrival.minutesAway <= 45 || isCorujao) {
-                    arrival.copy(isRealtime = true)
                 } else arrival
             }
         }

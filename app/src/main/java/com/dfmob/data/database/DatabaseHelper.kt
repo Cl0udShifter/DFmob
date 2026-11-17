@@ -9,7 +9,7 @@ import java.io.FileOutputStream
 class DatabaseHelper(private val context: Context) {
 
     private val dbName = "dfmob.db"
-    private val targetRevision = 20261125
+    private val targetRevision = 20261128
     private var database: SQLiteDatabase? = null
 
     init {
@@ -113,11 +113,45 @@ class DatabaseHelper(private val context: Context) {
         return list
     }
 
-    fun getNextScheduledDepartures(lineId: Int, currentSeconds: Int, count: Int): List<Int> {
+    fun getNextScheduledDepartures(lineId: Int, stopId: Int, currentSeconds: Int, count: Int): List<Int> {
         val db = database ?: return emptyList()
         val list = mutableListOf<Int>()
 
-        // 1. Horarios restantes no dia atual (a partir de currentSeconds)
+        // 1. Obter a sequencia da parada nesta linha para calcular o tempo de trajeto
+        var stopSequence = 1
+        val seqSql = "SELECT stop_sequence FROM stop_sequences WHERE line_id = ? AND stop_id = ? LIMIT 1"
+        try {
+            db.rawQuery(seqSql, arrayOf(lineId.toString(), stopId.toString())).use { c ->
+                if (c.moveToNext()) {
+                    stopSequence = c.getInt(0)
+                }
+            }
+        } catch (_: Exception) {}
+        val travelTimeOffsetSec = (stopSequence - 1) * 75
+
+        // 2. Viagens que partiram ontem antes da meia-noite e chegam hoje (se currentSeconds < travelTimeOffsetSec)
+        if (currentSeconds < travelTimeOffsetSec) {
+            val minDepYesterday = currentSeconds - travelTimeOffsetSec + 86400
+            val sqlYesterday = """
+                SELECT departure_time_seconds 
+                FROM trips_schedule 
+                WHERE line_id = ? AND departure_time_seconds >= ?
+                ORDER BY departure_time_seconds ASC
+            """.trimIndent()
+            try {
+                db.rawQuery(sqlYesterday, arrayOf(lineId.toString(), minDepYesterday.toString())).use { c ->
+                    while (c.moveToNext() && list.size < count) {
+                        val arr = c.getInt(0) - 86400 + travelTimeOffsetSec
+                        if (arr >= currentSeconds && !list.contains(arr)) {
+                            list.add(arr)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. Viagens que partem hoje e chegam nesta parada a partir de currentSeconds
+        val minDepToday = maxOf(0, currentSeconds - travelTimeOffsetSec)
         val sqlToday = """
             SELECT departure_time_seconds 
             FROM trips_schedule 
@@ -126,14 +160,19 @@ class DatabaseHelper(private val context: Context) {
             LIMIT ?
         """.trimIndent()
 
-        val cursorToday = db.rawQuery(sqlToday, arrayOf(lineId.toString(), currentSeconds.toString(), count.toString()))
-        cursorToday.use { c ->
-            while (c.moveToNext()) {
-                list.add(c.getInt(0))
+        try {
+            val cursorToday = db.rawQuery(sqlToday, arrayOf(lineId.toString(), minDepToday.toString(), (count + 3).toString()))
+            cursorToday.use { c ->
+                while (c.moveToNext() && list.size < count) {
+                    val arrivalSec = c.getInt(0) + travelTimeOffsetSec
+                    if (arrivalSec >= currentSeconds && !list.contains(arrivalSec)) {
+                        list.add(arrivalSec)
+                    }
+                }
             }
-        }
+        } catch (_: Exception) {}
 
-        // 2. Se nao houver partidas suficientes hoje, busca as primeiras partidas de amanha (a partir das 00:00)
+        // 4. Se faltar horarios, busca nas partidas de amanha a partir da meia-noite
         if (list.size < count) {
             val needed = count - list.size
             val sqlTomorrow = """
@@ -143,13 +182,17 @@ class DatabaseHelper(private val context: Context) {
                 ORDER BY departure_time_seconds ASC 
                 LIMIT ?
             """.trimIndent()
-            val cursorTomorrow = db.rawQuery(sqlTomorrow, arrayOf(lineId.toString(), needed.toString()))
-            cursorTomorrow.use { c ->
-                while (c.moveToNext()) {
-                    // Adiciona 86400 (24h em segundos) para computar corretamente a diferenca
-                    list.add(c.getInt(0) + 86400)
+            try {
+                val cursorTomorrow = db.rawQuery(sqlTomorrow, arrayOf(lineId.toString(), needed.toString()))
+                cursorTomorrow.use { c ->
+                    while (c.moveToNext() && list.size < count) {
+                        val arrivalTomorrowSec = c.getInt(0) + travelTimeOffsetSec + 86400
+                        if (!list.contains(arrivalTomorrowSec)) {
+                            list.add(arrivalTomorrowSec)
+                        }
+                    }
                 }
-            }
+            } catch (_: Exception) {}
         }
         return list
     }
