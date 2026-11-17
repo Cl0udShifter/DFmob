@@ -4,6 +4,14 @@ import com.dfmob.BuildConfig
 import com.dfmob.data.model.LiveVehicleMarker
 import com.dfmob.data.model.TransitStop
 import org.json.JSONObject
+import com.dfmob.data.model.TripPlanItinerary
+import com.dfmob.data.model.TripPlanLeg
+import com.dfmob.data.model.TripLegType
+import com.dfmob.data.model.TripPlanLocation
+import com.dfmob.data.model.TripPlanFilter
+import com.dfmob.data.model.TripTimeMode
+import com.dfmob.data.model.TripTransitLineOption
+import com.dfmob.data.database.DatabaseHelper
 import org.json.JSONTokener
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
@@ -406,4 +414,439 @@ object MoovitTransitClient {
         val theta = Math.atan2(y, x)
         return ((Math.toDegrees(theta) + 360.0) % 360.0).toFloat()
     }
+
+    private const val TRIP_PLAN_URL = "https://app5.moovitapp.com/services-app/services/V4/TripPlanner2/Search"
+
+    fun buildTripPlanRequest(
+        fromLatE6: Int,
+        fromLonE6: Int,
+        fromCaption: String,
+        toLatE6: Int,
+        toLonE6: Int,
+        toCaption: String,
+        pref: Int,
+        timeType: Int,
+        timeUtc: Long,
+        currentTimeSelected: Boolean
+    ): ByteArray {
+        val baos = ByteArrayOutputStream()
+        val dos = DataOutputStream(baos)
+
+        // 1: tripPlanPref (i32) -> 2 (Fastest), 1 (LeastWalking), 3 (LeastTransfers)
+        dos.writeByte(8)
+        dos.writeShort(1)
+        dos.writeInt(pref)
+
+        // 2: timeUtc (i64)
+        dos.writeByte(10)
+        dos.writeShort(2)
+        dos.writeLong(timeUtc)
+
+        // 3: timeType (i32) -> Departure = 2, Arrival = 1
+        dos.writeByte(8)
+        dos.writeShort(3)
+        dos.writeInt(timeType)
+
+        // 4: currentTimeSelected (bool)
+        dos.writeByte(2)
+        dos.writeShort(4)
+        dos.writeByte(if (currentTimeSelected) 1 else 0)
+
+        // 5: routeTypes (list<i32>) -> Bus = 3, Subway = 1
+        dos.writeByte(15)
+        dos.writeShort(5)
+        dos.writeByte(8)
+        dos.writeInt(2)
+        dos.writeInt(3) // Bus
+        dos.writeInt(1) // Subway
+
+        // 6: fromLocation (struct)
+        dos.writeByte(12)
+        dos.writeShort(6)
+        writeLocationTarget(dos, fromLatE6, fromLonE6, fromCaption)
+
+        // 7: toLocation (struct)
+        dos.writeByte(12)
+        dos.writeShort(7)
+        writeLocationTarget(dos, toLatE6, toLonE6, toCaption)
+
+        // 10: skipTaxiSearch (bool) -> true
+        dos.writeByte(2)
+        dos.writeShort(10)
+        dos.writeByte(1)
+
+        // 15: addFlexTimeSearch (bool) -> true
+        dos.writeByte(2)
+        dos.writeShort(15)
+        dos.writeByte(1)
+
+        // 17: algorithmType (i32) -> 1 (FILTER)
+        dos.writeByte(8)
+        dos.writeShort(17)
+        dos.writeInt(1)
+
+        dos.writeByte(0)
+        return baos.toByteArray()
+    }
+
+    private fun writeLocationTarget(dos: DataOutputStream, latE6: Int, lonE6: Int, caption: String) {
+        dos.writeByte(12)
+        dos.writeShort(1)
+
+        dos.writeByte(11)
+        dos.writeShort(1)
+        val captionBytes = caption.toByteArray(Charsets.UTF_8)
+        dos.writeInt(captionBytes.size)
+        dos.write(captionBytes)
+
+        dos.writeByte(12)
+        dos.writeShort(3)
+        dos.writeByte(8)
+        dos.writeShort(1)
+        dos.writeInt(latE6)
+        dos.writeByte(8)
+        dos.writeShort(2)
+        dos.writeInt(lonE6)
+        dos.writeByte(0)
+
+        dos.writeByte(8)
+        dos.writeShort(4)
+        dos.writeInt(1)
+
+        dos.writeByte(0)
+
+        dos.writeByte(8)
+        dos.writeShort(2)
+        dos.writeInt(1)
+
+        dos.writeByte(0)
+    }
+
+    fun searchTripPlan(
+        from: TripPlanLocation,
+        to: TripPlanLocation,
+        filter: TripPlanFilter,
+        dbHelper: DatabaseHelper
+    ): List<TripPlanItinerary> {
+        val pref = filter.preference.thriftValue
+        val timeType = when (filter.mode) {
+            TripTimeMode.DEPART_NOW -> 2
+            TripTimeMode.DEPART_AT -> 2
+            TripTimeMode.ARRIVE_BY -> 1
+        }
+        val isNow = (filter.mode == TripTimeMode.DEPART_NOW)
+        val payload = buildTripPlanRequest(
+            fromLatE6 = from.latE6,
+            fromLonE6 = from.lonE6,
+            fromCaption = from.caption,
+            toLatE6 = to.latE6,
+            toLonE6 = to.lonE6,
+            toCaption = to.caption,
+            pref = pref,
+            timeType = timeType,
+            timeUtc = filter.targetTimeUtc,
+            currentTimeSelected = isNow
+        )
+
+        var conn: HttpURLConnection? = null
+        val itineraries = mutableListOf<TripPlanItinerary>()
+
+        try {
+            val url = URL(TRIP_PLAN_URL)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 6000
+                readTimeout = 8000
+                doOutput = true
+                setRequestProperty("Host", "app5.moovitapp.com")
+                setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
+                setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
+                setRequestProperty("PHONE_TYPE", PHONE_TYPE)
+                setRequestProperty("API_KEY", getApiKey())
+                setRequestProperty("USER_KEY", getUserKey())
+                setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
+                setRequestProperty("Metro-Revision-Number", getMetroRevision())
+                setRequestProperty("Content-Type", "application/octet")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Length", payload.size.toString())
+            }
+
+            conn.outputStream.use { os ->
+                os.write(payload)
+                os.flush()
+            }
+
+            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
+                val jsonText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val tokener = JSONTokener(jsonText)
+                while (tokener.more()) {
+                    val nextChar = tokener.nextClean()
+                    if (nextChar != '{') break
+                    tokener.back()
+                    val obj = JSONObject(tokener)
+
+                    val itinRec = obj.optJSONObject("1")?.optJSONObject("rec") ?: continue
+                    val guid = itinRec.optJSONObject("1")?.optString("str") ?: continue
+                    val legsLst = itinRec.optJSONObject("5")?.optJSONArray("lst") ?: continue
+                    if (legsLst.length() <= 2) continue
+
+                    val legs = mutableListOf<TripPlanLeg>()
+                    var startOverall: Long? = null
+                    var endOverall: Long? = null
+                    var totalWalkDistance = 0.0
+                    var totalWalkDuration = 0
+                    var transfers = 0
+
+                    for (j in 2 until legsLst.length()) {
+                        val legDict = legsLst.optJSONObject(j) ?: continue
+
+                        // 1: walkLeg
+                        if (legDict.has("1")) {
+                            val w = legDict.optJSONObject("1")?.optJSONObject("rec") ?: continue
+                            val tRec = w.optJSONObject("1")?.optJSONObject("rec")
+                            val st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
+                            val et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
+                            val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                            val shapeRec = w.optJSONObject("3")?.optJSONObject("rec")
+                            val dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
+                            val poly = shapeRec?.optJSONObject("2")?.optString("str")
+
+                            if (startOverall == null && st > 0) startOverall = st
+                            if (et > 0) endOverall = et
+                            totalWalkDistance += dist
+                            totalWalkDuration += dur
+
+                            legs.add(
+                                TripPlanLeg(
+                                    type = TripLegType.WALK,
+                                    startTimeUtc = st,
+                                    endTimeUtc = et,
+                                    durationMinutes = dur,
+                                    distanceMeters = dist,
+                                    polylineEncoded = poly
+                                )
+                            )
+                        }
+                        // 8: pathwayWalkLeg (caminhada interna de integracao)
+                        else if (legDict.has("8")) {
+                            val pw = legDict.optJSONObject("8")?.optJSONObject("rec") ?: continue
+                            val tRec = pw.optJSONObject("1")?.optJSONObject("rec")
+                            val st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
+                            val et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
+                            val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                            val shapeRec = pw.optJSONObject("8")?.optJSONObject("rec")
+                            val dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
+                            val poly = shapeRec?.optJSONObject("2")?.optString("str")
+
+                            if (startOverall == null && st > 0) startOverall = st
+                            if (et > 0) endOverall = et
+                            totalWalkDistance += dist
+                            totalWalkDuration += dur
+
+                            legs.add(
+                                TripPlanLeg(
+                                    type = TripLegType.TRANSFER_WALK,
+                                    startTimeUtc = st,
+                                    endTimeUtc = et,
+                                    durationMinutes = dur,
+                                    distanceMeters = dist,
+                                    polylineEncoded = poly
+                                )
+                            )
+                        }
+                        // 10: lineWithAlternativesLeg
+                        else if (legDict.has("10")) {
+                            val alt = legDict.optJSONObject("10")?.optJSONObject("rec") ?: legDict.optJSONObject("10") ?: continue
+                            val altLinesLst = alt.optJSONObject("1")?.optJSONArray("lst") ?: continue
+                            val altOptions = mutableListOf<TripTransitLineOption>()
+                            var st = 0L
+                            var et = 0L
+                            var dur = 0
+                            var fromStopName: String? = null
+                            var toStopName: String? = null
+                            var poly: String? = null
+                            var stopCount = 0
+
+                            for (k in 2 until altLinesLst.length()) {
+                                val lItem = altLinesLst.optJSONObject(k) ?: continue
+                                val lRec = lItem.optJSONObject("rec") ?: lItem
+                                val lid = lRec.optJSONObject("2")?.optInt("i32", 0) ?: 0
+                                val lineInfo = dbHelper.getLineInfoById(lid)
+
+                                val tRec = lRec.optJSONObject("1")?.optJSONObject("rec") ?: lRec.optJSONObject("1")
+                                val isRealTime = tRec?.optJSONObject("3")?.optInt("tf", 0) == 1
+                                val liveDep = tRec?.optJSONObject("4")?.optLong("i64", 0L) ?: 0L
+                                val now = System.currentTimeMillis()
+                                val liveEtaMin = if (isRealTime && liveDep > 0) {
+                                    maxOf(0, Math.round((liveDep - now) / 60000.0).toInt())
+                                } else null
+
+                                val opt = if (lineInfo != null) {
+                                    TripTransitLineOption(
+                                        lineId = lid,
+                                        lineNumber = lineInfo.lineNumber,
+                                        lineName = lineInfo.lineName,
+                                        colorHex = lineInfo.colorHex,
+                                        isMetro = lineInfo.isMetro,
+                                        agencyName = lineInfo.agencyName,
+                                        hasLiveGps = isRealTime,
+                                        liveEtaMinutes = liveEtaMin
+                                    )
+                                } else {
+                                    TripTransitLineOption(
+                                        lineId = lid,
+                                        lineNumber = lid.toString(),
+                                        lineName = "",
+                                        colorHex = "#007AFF",
+                                        isMetro = false,
+                                        agencyName = "",
+                                        hasLiveGps = isRealTime,
+                                        liveEtaMinutes = liveEtaMin
+                                    )
+                                }
+                                altOptions.add(opt)
+
+                                if (k == 2) {
+                                    st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
+                                    et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
+                                    dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                                    poly = lRec.optJSONObject("4")?.optJSONObject("rec")?.optJSONObject("2")?.optString("str")
+                                        ?: lRec.optJSONObject("4")?.optJSONObject("2")?.optString("str")
+                                    val stopIds = lRec.optJSONObject("3")?.optJSONArray("lst")
+                                    if (stopIds != null && stopIds.length() > 2) {
+                                        val firstSid = stopIds.optInt(2, 0)
+                                        val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
+                                        fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
+                                        toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
+                                        stopCount = stopIds.length() - 2
+                                    }
+                                }
+                            }
+
+                            if (altOptions.isNotEmpty()) {
+                                if (startOverall == null && st > 0) startOverall = st
+                                if (et > 0) endOverall = et
+                                transfers++
+
+                                legs.add(
+                                    TripPlanLeg(
+                                        type = TripLegType.TRANSIT,
+                                        startTimeUtc = st,
+                                        endTimeUtc = et,
+                                        durationMinutes = dur,
+                                        polylineEncoded = poly,
+                                        departureStopName = fromStopName,
+                                        arrivalStopName = toStopName,
+                                        stopsCount = stopCount,
+                                        lines = altOptions
+                                    )
+                                )
+                            }
+                        }
+                        // 3: lineLeg
+                        else if (legDict.has("3")) {
+                            val lItem = legDict.optJSONObject("3") ?: continue
+                            val lRec = lItem.optJSONObject("rec") ?: lItem
+                            val lid = lRec.optJSONObject("2")?.optInt("i32", 0) ?: 0
+                            val lineInfo = dbHelper.getLineInfoById(lid)
+
+                            val tRec = lRec.optJSONObject("1")?.optJSONObject("rec") ?: lRec.optJSONObject("1")
+                            val isRealTime = tRec?.optJSONObject("3")?.optInt("tf", 0) == 1
+                            val liveDep = tRec?.optJSONObject("4")?.optLong("i64", 0L) ?: 0L
+                            val now = System.currentTimeMillis()
+                            val liveEtaMin = if (isRealTime && liveDep > 0) {
+                                maxOf(0, Math.round((liveDep - now) / 60000.0).toInt())
+                            } else null
+
+                            val opt = if (lineInfo != null) {
+                                TripTransitLineOption(
+                                    lineId = lid,
+                                    lineNumber = lineInfo.lineNumber,
+                                    lineName = lineInfo.lineName,
+                                    colorHex = lineInfo.colorHex,
+                                    isMetro = lineInfo.isMetro,
+                                    agencyName = lineInfo.agencyName,
+                                    hasLiveGps = isRealTime,
+                                    liveEtaMinutes = liveEtaMin
+                                )
+                            } else {
+                                TripTransitLineOption(
+                                    lineId = lid,
+                                    lineNumber = lid.toString(),
+                                    lineName = "",
+                                    colorHex = "#007AFF",
+                                    isMetro = false,
+                                    agencyName = "",
+                                    hasLiveGps = isRealTime,
+                                    liveEtaMinutes = liveEtaMin
+                                )
+                            }
+                            val st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
+                            val et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
+                            val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                            val poly = lRec.optJSONObject("4")?.optJSONObject("rec")?.optJSONObject("2")?.optString("str")
+                                ?: lRec.optJSONObject("4")?.optJSONObject("2")?.optString("str")
+                            var fromStopName: String? = null
+                            var toStopName: String? = null
+                            var stopCount = 0
+                            val stopIds = lRec.optJSONObject("3")?.optJSONArray("lst")
+                            if (stopIds != null && stopIds.length() > 2) {
+                                val firstSid = stopIds.optInt(2, 0)
+                                val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
+                                fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
+                                toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
+                                stopCount = stopIds.length() - 2
+                            }
+
+                            if (startOverall == null && st > 0) startOverall = st
+                            if (et > 0) endOverall = et
+                            transfers++
+
+                            legs.add(
+                                TripPlanLeg(
+                                    type = TripLegType.TRANSIT,
+                                    startTimeUtc = st,
+                                    endTimeUtc = et,
+                                    durationMinutes = dur,
+                                    polylineEncoded = poly,
+                                    departureStopName = fromStopName,
+                                    arrivalStopName = toStopName,
+                                    stopsCount = stopCount,
+                                    lines = listOf(opt)
+                                )
+                            )
+                        }
+                    }
+
+                    if (legs.isNotEmpty()) {
+                        val finalTransfers = Math.max(0, transfers - 1)
+                        val totalDuration = if (startOverall != null && endOverall != null && endOverall > startOverall) {
+                            Math.round((endOverall - startOverall) / 60000.0).toInt()
+                        } else {
+                            legs.sumOf { it.durationMinutes }
+                        }
+
+                        itineraries.add(
+                            TripPlanItinerary(
+                                guid = guid,
+                                totalDurationMinutes = totalDuration,
+                                startTimeUtc = startOverall ?: System.currentTimeMillis(),
+                                endTimeUtc = endOverall ?: (System.currentTimeMillis() + totalDuration * 60000L),
+                                walkDurationMinutes = totalWalkDuration,
+                                walkDistanceMeters = totalWalkDistance,
+                                transfersCount = finalTransfers,
+                                legs = legs
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            conn?.disconnect()
+        }
+
+        return itineraries.sortedBy { it.totalDurationMinutes }
+    }
+
 }

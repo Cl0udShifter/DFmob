@@ -29,8 +29,8 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "1.2.7"
+        versionCode = 29
+        versionName = "1.3.0"
 
         buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
         buildConfigField("String", "MOOVIT_API_KEY", "\"$moovitApiKey\"")

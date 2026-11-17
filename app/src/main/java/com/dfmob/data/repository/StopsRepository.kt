@@ -704,4 +704,49 @@ class StopsRepository(private val context: Context) {
         val mins = totalMins % 60
         return String.format(Locale.ROOT, "%02d:%02d", hours, mins)
     }
+
+    suspend fun searchTripPlan(
+        from: com.dfmob.data.model.TripPlanLocation,
+        to: com.dfmob.data.model.TripPlanLocation,
+        filter: com.dfmob.data.model.TripPlanFilter
+    ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
+        MoovitTransitClient.searchTripPlan(from, to, filter, dbHelper)
+    }
+
+    suspend fun reverseGeocode(latE6: Int, lonE6: Int): String = withContext(Dispatchers.IO) {
+        val nearestStop = dbHelper.getNearestStop(latE6, lonE6)
+        if (nearestStop != null) {
+            val dist = calculateDistanceMeters(latE6, lonE6, nearestStop.latE6, nearestStop.lonE6)
+            if (dist <= 80.0) {
+                return@withContext nearestStop.stopName
+            }
+        }
+        try {
+            if (Geocoder.isPresent()) {
+                val geocoder = Geocoder(context, Locale("pt", "BR"))
+                val lat = latE6 / 1_000_000.0
+                val lon = lonE6 / 1_000_000.0
+                @Suppress("DEPRECATION")
+                val addresses = geocoder.getFromLocation(lat, lon, 1)
+                if (!addresses.isNullOrEmpty()) {
+                    val addr = addresses[0]
+                    val thoroughfare = addr.thoroughfare
+                    val subThoroughfare = addr.subThoroughfare
+                    val subLocality = addr.subLocality
+                    if (!thoroughfare.isNullOrBlank()) {
+                        return@withContext if (!subThoroughfare.isNullOrBlank()) "$thoroughfare, $subThoroughfare" else thoroughfare
+                    }
+                    val featureName = addr.featureName
+                    if (!featureName.isNullOrBlank() && featureName != thoroughfare) {
+                        return@withContext if (!subLocality.isNullOrBlank()) "$featureName, $subLocality" else featureName
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("StopsRepository", "Reverse geocode error: ${e.message}")
+        }
+        val lat = String.format(Locale.ROOT, "%.5f", latE6 / 1_000_000.0)
+        val lon = String.format(Locale.ROOT, "%.5f", lonE6 / 1_000_000.0)
+        "Local no mapa ($lat, $lon)"
+    }
 }

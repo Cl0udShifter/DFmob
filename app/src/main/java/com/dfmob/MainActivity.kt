@@ -14,12 +14,14 @@ import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
 import com.dfmob.ui.stops.StopsScreen
+import com.dfmob.ui.tripplanner.TripPlannerScreen
 import com.dfmob.ui.theme.DFmobTheme
 
 enum class AppScreen {
     HOME,
     LINES,
-    STOPS
+    STOPS,
+    TRIP_PLANNER
 }
 
 class MainActivity : ComponentActivity() {
@@ -48,6 +50,9 @@ class MainActivity : ComponentActivity() {
                                 targetLineNumberForStops = lineNum
                                 targetLineIdForStops = null
                                 currentScreen = AppScreen.STOPS
+                            },
+                            onNavigateToTripPlanner = {
+                                currentScreen = AppScreen.TRIP_PLANNER
                             }
                         )
                         AppScreen.LINES -> LinesScreen(
@@ -68,6 +73,9 @@ class MainActivity : ComponentActivity() {
                                 targetLineIdForStops = null
                                 currentScreen = AppScreen.HOME
                             }
+                        )
+                        AppScreen.TRIP_PLANNER -> TripPlannerScreen(
+                            onBack = { currentScreen = AppScreen.HOME }
                         )
                     }
                 }

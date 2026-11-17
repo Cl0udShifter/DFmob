@@ -56,7 +56,8 @@ fun HomeScreen(
     favoritesRepository: FavoritesRepository? = null,
     onNavigateToLines: () -> Unit = {},
     onNavigateToStops: () -> Unit = {},
-    onNavigateToLineRoute: (String) -> Unit = {}
+    onNavigateToLineRoute: (String) -> Unit = {},
+    onNavigateToTripPlanner: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
@@ -172,7 +173,7 @@ fun HomeScreen(
 
             // Componente 1: Caixa de busca expansivel (Transit style)
             SearchPill(
-                onClick = {}
+                onClick = onNavigateToTripPlanner
             )
 
             // Componente 2: Botoes de modo Linhas e Paradas

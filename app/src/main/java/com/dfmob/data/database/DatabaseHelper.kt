@@ -240,6 +240,35 @@ class DatabaseHelper(private val context: Context) {
         return getLineDetailByNumber(lineNum)
     }
 
+    fun getStopById(stopId: Int): TransitStop? {
+        val db = database ?: return null
+        val sql = "SELECT stop_id, stop_name, stop_code, lat_e6, lon_e6, is_metro, platform_code FROM stops WHERE stop_id = ? LIMIT 1"
+        return try {
+            db.rawQuery(sql, arrayOf(stopId.toString())).use { c ->
+                if (c.moveToNext()) {
+                    TransitStop(
+                        stopId = c.getInt(0),
+                        stopName = c.getString(1),
+                        stopCode = c.getString(2),
+                        latE6 = c.getInt(3),
+                        lonE6 = c.getInt(4),
+                        isMetro = c.getInt(5) == 1,
+                        platformCode = c.getString(6)
+                    )
+                } else null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    fun getNearestStop(latE6: Int, lonE6: Int): TransitStop? {
+        val stops = getAllStops()
+        return stops.minByOrNull { s ->
+            val dLat = (s.latE6 - latE6).toLong()
+            val dLon = (s.lonE6 - lonE6).toLong()
+            dLat * dLat + dLon * dLon
+        }
+    }
+
     fun getStopsForLine(lineId: Int): List<TransitStop> {
         val db = database ?: return emptyList()
         val sql = """
