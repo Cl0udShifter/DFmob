@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.dfmob.BuildConfig
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.TransitStop
 import org.osmdroid.config.Configuration
@@ -33,28 +34,29 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
-// Basemaps minimalistas CartoDB no estilo Google Maps / Uber (apenas ruas e traçados dos prédios)
-private val CARTO_POSITRON = XYTileSource(
-    "CartoPositron",
+// Basemaps minimalistas CartoDB no estilo Google Maps / Uber com injecao segura de API key via BuildConfig
+private class CartoTileSource(
+    name: String,
+    style: String
+) : XYTileSource(
+    name,
     0, 20, 256, ".png",
     arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/light_all/",
-        "https://b.basemaps.cartocdn.com/rastertiles/light_all/",
-        "https://c.basemaps.cartocdn.com/rastertiles/light_all/",
-        "https://d.basemaps.cartocdn.com/rastertiles/light_all/"
+        "https://a.basemaps.cartocdn.com/rastertiles/$style/",
+        "https://b.basemaps.cartocdn.com/rastertiles/$style/",
+        "https://c.basemaps.cartocdn.com/rastertiles/$style/",
+        "https://d.basemaps.cartocdn.com/rastertiles/$style/"
     )
-)
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val base = super.getTileURLString(pMapTileIndex)
+        val apiKey = BuildConfig.CARTO_API_KEY
+        return if (apiKey.isNotBlank()) "$base?key=$apiKey" else base
+    }
+}
 
-private val CARTO_DARK_MATTER = XYTileSource(
-    "CartoDarkMatter",
-    0, 20, 256, ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/dark_all/",
-        "https://b.basemaps.cartocdn.com/rastertiles/dark_all/",
-        "https://c.basemaps.cartocdn.com/rastertiles/dark_all/",
-        "https://d.basemaps.cartocdn.com/rastertiles/dark_all/"
-    )
-)
+private val CARTO_POSITRON = CartoTileSource("CartoPositronV2", "light_all")
+private val CARTO_DARK_MATTER = CartoTileSource("CartoDarkMatterV2", "dark_all")
 
 @Composable
 fun RealOpenStreetMap(

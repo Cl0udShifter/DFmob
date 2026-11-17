@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+val cartoApiKey: String = localProperties.getProperty("CARTO_API_KEY")
+    ?: System.getenv("CARTO_API_KEY")
+    ?: ""
 
 android {
     namespace = "com.dfmob"
@@ -11,8 +23,10 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.1.1"
+        versionCode = 13
+        versionName = "1.1.2"
+
+        buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -52,6 +66,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
