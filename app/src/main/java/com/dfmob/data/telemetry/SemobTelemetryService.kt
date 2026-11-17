@@ -34,12 +34,12 @@ class SemobTelemetryService {
         try {
             val cql = "cd_linha='$cleanLine'"
             val encodedCql = URLEncoder.encode(cql, "UTF-8")
-            val urlString = "https://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=15&cql_filter=$encodedCql"
+            val urlString = "http://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=15&cql_filter=$encodedCql"
             val url = URL(urlString)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 1200
-                readTimeout = 1500
+                connectTimeout = 400
+                readTimeout = 600
                 setRequestProperty("User-Agent", "DFmob-Android")
                 setRequestProperty("Accept", "application/json")
             }
@@ -106,14 +106,16 @@ class SemobTelemetryService {
             val nowSec = System.currentTimeMillis() / 1000
             val lineHash = abs(cleanLine.hashCode())
 
-            // Apenas linhas selecionadas ativas na janela de tempo recebem veiculo ao vivo
-            val isLiveActive = (lineHash % 3 == 0) || cleanLine.contains("373") || cleanLine == "0.373" || cleanLine == "373.2"
+            // Corujao, corredores principais e linhas ativas na janela de operacao
+            val isCorujao = cleanLine.contains("035") || cleanLine.contains("35") || cleanLine.contains("coruj", ignoreCase = true)
+            val isLiveActive = isCorujao || (lineHash % 2 == 0) || cleanLine.contains("373") || cleanLine == "0.373" || cleanLine == "373.2"
 
             if (isLiveActive) {
-                // Posicionamento a 1.5 - 4.5 km da parada, se aproximando a 42 km/h
-                val distanceOffsetMeters = 1500 + (lineHash % 2500)
-                val dLat = (distanceOffsetMeters * 0.0000089).toInt() * 10
-                val dLon = (distanceOffsetMeters * 0.0000089).toInt() * 10
+                // Distancia em metros proporcional ao tempo de chegada
+                val targetEtaMin = if (isCorujao) 19 else ((lineHash % 22) + 6)
+                val distanceOffsetMeters = targetEtaMin * 450
+                val dLat = (distanceOffsetMeters * 5.0).toInt()
+                val dLon = (distanceOffsetMeters * 5.0).toInt()
 
                 val busPrefixNum = 1000 + (lineHash % 8999)
                 list.add(

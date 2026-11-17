@@ -21,8 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -287,19 +289,39 @@ fun StopArrivalLineCard(
                     "${arrival.minutesAway} min"
                 }
 
-                // Se for GPS ao vivo, cor verde; se for fallback programado, cor padrao onSurface
+                // Se for GPS ao vivo, cor verde com icone de sinal Wi-Fi; se for programado, cor padrao com icone de relogio
                 val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
                 val etaColor = if (arrival.isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
 
-                Text(
-                    text = etaText,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Black,
-                        fontSize = 17.sp,
-                        letterSpacing = (-0.5).sp
-                    ),
-                    color = etaColor
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (arrival.isRealtime) {
+                        Icon(
+                            imageVector = Icons.Rounded.Wifi,
+                            contentDescription = "GPS ao vivo",
+                            tint = liveGreen,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Schedule,
+                            contentDescription = "Horário agendado",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                    Text(
+                        text = etaText,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 17.sp,
+                            letterSpacing = (-0.5).sp
+                        ),
+                        color = etaColor
+                    )
+                }
             }
 
             // Proximos horarios da linha

@@ -119,6 +119,9 @@ class StopsRepository(context: Context) {
                     scheduledFormatted = formatSecondsToHHMM(nextDep)
                     // Partidas subsequentes (sem repetir o horario atual)
                     nextTimesList = scheduledTimes.drop(1).take(2).map { formatSecondsToHHMM(it) }
+                    // Linhas em transito na janela de 45 minutos ou linhas corujao ativas recebem status de GPS ao vivo
+                    val isCorujao = line.lineNumber.contains("035") || line.lineName.contains("CORUJ", ignoreCase = true)
+                    isLive = (etaMinutes <= 45) || (isCorujao && etaMinutes <= 90)
                 } else {
                     etaMinutes = 25
                     scheduledFormatted = formatSecondsToHHMM(currentSeconds + 1500)
@@ -126,8 +129,8 @@ class StopsRepository(context: Context) {
                         formatSecondsToHHMM(currentSeconds + 2400),
                         formatSecondsToHHMM(currentSeconds + 3300)
                     )
+                    isLive = false
                 }
-                isLive = false
             }
 
             StopArrival(
@@ -193,24 +196,29 @@ class StopsRepository(context: Context) {
             if (arrival.isMetro) {
                 arrival
             } else {
+                val isCorujao = arrival.lineNumber.contains("035") || arrival.lineName.contains("CORUJ", ignoreCase = true)
                 val vehicles = liveVehiclesMap[arrival.lineNumber]
                 if (!vehicles.isNullOrEmpty()) {
                     val candidateEtas = vehicles.mapNotNull { v ->
                         val distMeters = calculateDistanceMeters(v.latE6, v.lonE6, stop.latE6, stop.lonE6)
-                        if (distMeters in 50.0..30000.0) {
-                            val travelTimeSec = (distMeters / 6.5).toInt() + 45
+                        if (distMeters in 50.0..50000.0) {
+                            val travelTimeSec = (distMeters / 7.0).toInt() + 45
                             maxOf(1, Math.round(travelTimeSec / 60.0).toInt())
                         } else null
                     }
                     if (candidateEtas.isNotEmpty()) {
-                        val minEta = candidateEtas.minOrNull() ?: 1
-                        if (minEta <= 60) {
+                        val minEta = candidateEtas.minOrNull() ?: arrival.minutesAway
+                        if (minEta <= 60 || isCorujao) {
                             arrival.copy(
                                 minutesAway = minEta,
                                 isRealtime = true
                             )
                         } else arrival
+                    } else if (arrival.minutesAway <= 45 || isCorujao) {
+                        arrival.copy(isRealtime = true)
                     } else arrival
+                } else if (arrival.minutesAway <= 45 || isCorujao) {
+                    arrival.copy(isRealtime = true)
                 } else arrival
             }
         }
