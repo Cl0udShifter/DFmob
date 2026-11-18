@@ -358,7 +358,7 @@ fun TripItineraryDetailView(
             allPoints.add(originPoint)
             val originMarker = Marker(mapView).apply {
                 position = originPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                setAnchor(Marker.ANCHOR_CENTER, 39f / 44f)
                 icon = createPinMarkerDrawable(context, "#00A859", "A")
                 title = origin.caption
             }
@@ -371,7 +371,7 @@ fun TripItineraryDetailView(
             allPoints.add(destPoint)
             val destMarker = Marker(mapView).apply {
                 position = destPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                setAnchor(Marker.ANCHOR_CENTER, 39f / 44f)
                 icon = createPinMarkerDrawable(context, "#E53935", "B")
                 title = destination.caption
             }
@@ -391,11 +391,16 @@ fun TripItineraryDetailView(
                     intermediateMarkersFolder.add(m)
                 }
 
-                val startPt = leg.intermediateStopPoints.firstOrNull()
-                    ?: leg.polylineEncoded?.let { PolylineDecoder.decode(it).firstOrNull() }
-                if (startPt != null) {
+                val decodedPoly = leg.polylineEncoded?.let { PolylineDecoder.decode(it) }
+                val startLat = leg.departureStopLat
+                    ?: (if (leg.departureStopId != null) dbHelper.getStopById(leg.departureStopId)?.latitude else null)
+                    ?: decodedPoly?.firstOrNull()?.first
+                val startLon = leg.departureStopLon
+                    ?: (if (leg.departureStopId != null) dbHelper.getStopById(leg.departureStopId)?.longitude else null)
+                    ?: decodedPoly?.firstOrNull()?.second
+                if (startLat != null && startLon != null) {
                     val boardMarker = Marker(mapView).apply {
-                        position = GeoPoint(startPt.first, startPt.second)
+                        position = GeoPoint(startLat, startLon)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         icon = createWhiteStopMarkerDrawable(context, true)
                         title = leg.departureStopName ?: "Embarque"
@@ -403,11 +408,15 @@ fun TripItineraryDetailView(
                     markersFolder.add(boardMarker)
                 }
 
-                val endPt = leg.intermediateStopPoints.lastOrNull()
-                    ?: leg.polylineEncoded?.let { PolylineDecoder.decode(it).lastOrNull() }
-                if (endPt != null) {
+                val endLat = leg.arrivalStopLat
+                    ?: (if (leg.arrivalStopId != null) dbHelper.getStopById(leg.arrivalStopId)?.latitude else null)
+                    ?: decodedPoly?.lastOrNull()?.first
+                val endLon = leg.arrivalStopLon
+                    ?: (if (leg.arrivalStopId != null) dbHelper.getStopById(leg.arrivalStopId)?.longitude else null)
+                    ?: decodedPoly?.lastOrNull()?.second
+                if (endLat != null && endLon != null) {
                     val alightMarker = Marker(mapView).apply {
-                        position = GeoPoint(endPt.first, endPt.second)
+                        position = GeoPoint(endLat, endLon)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         icon = createWhiteStopMarkerDrawable(context, false)
                         title = leg.arrivalStopName ?: "Desembarque"
@@ -1084,6 +1093,9 @@ private fun ActiveNavigationDeck(
         bottomEnd = animatedRadiusBottom
     )
 
+    val currentIsExpanded by androidx.compose.runtime.rememberUpdatedState(isExpanded)
+    val currentOnToggleExpand by androidx.compose.runtime.rememberUpdatedState(onToggleExpand)
+
     var dragOffsetY by remember { mutableStateOf(0f) }
     val dragModifier = Modifier.pointerInput(isWaitForTransit) {
         if (!isWaitForTransit) return@pointerInput
@@ -1094,10 +1106,10 @@ private fun ActiveNavigationDeck(
                 dragOffsetY += dragAmount
             },
             onDragEnd = {
-                if (dragOffsetY < -25f) {
-                    if (!isExpanded) onToggleExpand()
-                } else if (dragOffsetY > 25f) {
-                    if (isExpanded) onToggleExpand()
+                if (dragOffsetY < -20f && !currentIsExpanded) {
+                    currentOnToggleExpand()
+                } else if (dragOffsetY > 20f && currentIsExpanded) {
+                    currentOnToggleExpand()
                 }
                 dragOffsetY = 0f
             },
@@ -1110,7 +1122,8 @@ private fun ActiveNavigationDeck(
     Surface(
         modifier = modifier
             .padding(horizontal = animatedPaddingH, vertical = animatedPaddingB)
-            .height(animatedHeight),
+            .height(animatedHeight)
+            .then(if (isWaitForTransit && !isExpanded) dragModifier else Modifier),
         shape = deckShape,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(
@@ -1120,19 +1133,19 @@ private fun ActiveNavigationDeck(
         shadowElevation = 8.dp
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-            // Puxador central superior com suporte a gesto vertical
+            // Puxador central superior com suporte a gesto vertical e clique
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = isWaitForTransit) { onToggleExpand() }
                     .then(dragModifier)
-                    .padding(vertical = 4.dp),
+                    .clickable(enabled = isWaitForTransit) { onToggleExpand() }
+                    .padding(vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .width(38.dp)
-                        .height(4.dp)
+                        .width(42.dp)
+                        .height(5.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
@@ -1888,16 +1901,16 @@ private fun createVehiclePuckDrawable(context: Context, bearing: Float): BitmapD
 
 private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
     val density = context.resources.displayMetrics.density
-    val widthPx = (28 * density).toInt()
-    val heightPx = (38 * density).toInt()
+    val widthPx = (32 * density).toInt()
+    val heightPx = (44 * density).toInt()
     val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    val headRadius = 12f * density
-    val headCenterX = widthPx / 2f
-    val headCenterY = 13f * density
+    val cx = widthPx / 2f
+    val cy = 14f * density
+    val r = 12f * density
     val tipX = widthPx / 2f
-    val tipY = heightPx - (2f * density)
+    val tipY = 39f * density
 
     val pinColor = try {
         android.graphics.Color.parseColor(colorHex)
@@ -1905,58 +1918,74 @@ private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: 
         android.graphics.Color.parseColor("#00C853")
     }
 
-    // Sombra suave na base do pin
+    // Sombra oval no chão
     val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.argb(60, 0, 0, 0)
+        color = android.graphics.Color.argb(70, 0, 0, 0)
         style = Paint.Style.FILL
     }
     canvas.drawOval(
-        headCenterX - (5.5f * density),
-        heightPx - (4f * density),
-        headCenterX + (5.5f * density),
-        heightPx - (0.5f * density),
+        cx - (7f * density),
+        tipY - (1.5f * density),
+        cx + (7f * density),
+        tipY + (3.5f * density),
         shadowPaint
     )
 
-    // Silhueta do Pin moderna e bem definida
+    // Curvatura elegante e contínua do Pin (Gota de localização moderna)
     val pinPath = Path().apply {
-        arcTo(
-            headCenterX - headRadius,
-            headCenterY - headRadius,
-            headCenterX + headRadius,
-            headCenterY + headRadius,
-            -155f,
-            310f,
-            false
+        moveTo(tipX, tipY)
+        cubicTo(
+            tipX - (1.5f * density), tipY - (7f * density),
+            cx - r, cy + (5f * density),
+            cx - r, cy
         )
-        lineTo(tipX, tipY)
+        arcTo(
+            cx - r, cy - r,
+            cx + r, cy + r,
+            180f, 180f, false
+        )
+        cubicTo(
+            cx + r, cy + (5f * density),
+            tipX + (1.5f * density), tipY - (7f * density),
+            tipX, tipY
+        )
         close()
     }
 
-    // Preenchimento do Pin
+    // Preenchimento com cor vibrante do pin
     val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = pinColor
         style = Paint.Style.FILL
     }
     canvas.drawPath(pinPath, fillPaint)
 
-    // Borda branca externa nítida
+    // Contorno branco nítido de alto contraste
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 2.2f * density
+        strokeJoin = Paint.Join.ROUND
+        strokeCap = Paint.Cap.ROUND
     }
     canvas.drawPath(pinPath, borderPaint)
 
-    // Letra central em negrito destacada
-    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Medalhão circular branco no centro
+    val innerDiscRadius = 6.2f * density
+    val discPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
-        textSize = 12.5f * density
-        isFakeBoldText = true
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, innerDiscRadius, discPaint)
+
+    // Letra central em negrito destacada com a cor do marcador
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = pinColor
+        textSize = 9.5f * density
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
     }
-    val textY = headCenterY - ((textPaint.descent() + textPaint.ascent()) / 2f)
-    canvas.drawText(letter, headCenterX, textY, textPaint)
+    val textY = cy - ((textPaint.descent() + textPaint.ascent()) / 2f)
+    canvas.drawText(letter, cx, textY, textPaint)
 
     return BitmapDrawable(context.resources, bitmap)
 }

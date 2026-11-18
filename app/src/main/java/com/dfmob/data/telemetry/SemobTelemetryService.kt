@@ -23,6 +23,11 @@ class SemobTelemetryService {
 
     private val shapesCache = mutableMapOf<String, Map<String, List<Pair<Double, Double>>>>()
 
+    fun getCachedShapes(lineNumber: String): Map<String, List<Pair<Double, Double>>>? {
+        val clean = lineNumber.trim()
+        return shapesCache[clean]
+    }
+
     suspend fun getLiveVehiclePositions(
         lineNumber: String,
         referenceLatE6: Int? = null,

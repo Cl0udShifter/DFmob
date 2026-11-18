@@ -659,7 +659,12 @@ object MoovitTransitClient {
                             var dur = 0
                             var depStopId: Int? = null
                             var fromStopName: String? = null
+                            var arrStopId: Int? = null
                             var toStopName: String? = null
+                            var depStopLat: Double? = null
+                            var depStopLon: Double? = null
+                            var arrStopLat: Double? = null
+                            var arrStopLon: Double? = null
                             var poly: String? = null
                             var stopCount = 0
                             val intermediatePoints = mutableListOf<Pair<Double, Double>>()
@@ -714,9 +719,20 @@ object MoovitTransitClient {
                                     if (stopIds != null && stopIds.length() > 2) {
                                         val firstSid = stopIds.optInt(2, 0)
                                         val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
-                                        if (firstSid > 0) depStopId = firstSid
-                                        fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
-                                        toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
+                                        if (firstSid > 0) {
+                                            depStopId = firstSid
+                                            val s = dbHelper.getStopById(firstSid)
+                                            fromStopName = s?.stopName ?: "Parada $firstSid"
+                                            depStopLat = s?.latitude
+                                            depStopLon = s?.longitude
+                                        }
+                                        if (lastSid > 0) {
+                                            arrStopId = lastSid
+                                            val s = dbHelper.getStopById(lastSid)
+                                            toStopName = s?.stopName ?: "Parada $lastSid"
+                                            arrStopLat = s?.latitude
+                                            arrStopLon = s?.longitude
+                                        }
                                         stopCount = stopIds.length() - 2
                                         for (s in 3 until stopIds.length() - 1) {
                                             val sid = stopIds.optInt(s, 0)
@@ -745,7 +761,12 @@ object MoovitTransitClient {
                                         polylineEncoded = poly,
                                         departureStopId = depStopId,
                                         departureStopName = fromStopName,
+                                        arrivalStopId = arrStopId,
                                         arrivalStopName = toStopName,
+                                        departureStopLat = depStopLat,
+                                        departureStopLon = depStopLon,
+                                        arrivalStopLat = arrStopLat,
+                                        arrivalStopLon = arrStopLon,
                                         stopsCount = stopCount,
                                         lines = altOptions,
                                         intermediateStopPoints = intermediatePoints
@@ -802,12 +823,28 @@ object MoovitTransitClient {
                             var stopCount = 0
                             val stopIds = lRec.optJSONObject("3")?.optJSONArray("lst")
                             val intermediatePoints = mutableListOf<Pair<Double, Double>>()
+                            var arrStopId: Int? = null
+                            var depStopLat: Double? = null
+                            var depStopLon: Double? = null
+                            var arrStopLat: Double? = null
+                            var arrStopLon: Double? = null
                             if (stopIds != null && stopIds.length() > 2) {
                                 val firstSid = stopIds.optInt(2, 0)
                                 val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
-                                if (firstSid > 0) depStopId = firstSid
-                                fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
-                                toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
+                                if (firstSid > 0) {
+                                    depStopId = firstSid
+                                    val s = dbHelper.getStopById(firstSid)
+                                    fromStopName = s?.stopName ?: "Parada $firstSid"
+                                    depStopLat = s?.latitude
+                                    depStopLon = s?.longitude
+                                }
+                                if (lastSid > 0) {
+                                    arrStopId = lastSid
+                                    val s = dbHelper.getStopById(lastSid)
+                                    toStopName = s?.stopName ?: "Parada $lastSid"
+                                    arrStopLat = s?.latitude
+                                    arrStopLon = s?.longitude
+                                }
                                 stopCount = stopIds.length() - 2
                                 for (s in 3 until stopIds.length() - 1) {
                                     val sid = stopIds.optInt(s, 0)
@@ -833,7 +870,12 @@ object MoovitTransitClient {
                                     polylineEncoded = poly,
                                     departureStopId = depStopId,
                                     departureStopName = fromStopName,
+                                    arrivalStopId = arrStopId,
                                     arrivalStopName = toStopName,
+                                    departureStopLat = depStopLat,
+                                    departureStopLon = depStopLon,
+                                    arrivalStopLat = arrStopLat,
+                                    arrivalStopLon = arrStopLon,
                                     stopsCount = stopCount,
                                     lines = listOf(opt),
                                     intermediateStopPoints = intermediatePoints

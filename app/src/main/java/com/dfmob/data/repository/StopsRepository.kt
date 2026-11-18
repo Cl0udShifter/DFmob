@@ -411,15 +411,19 @@ class StopsRepository(private val context: Context) {
         val stops = dbHelper.getStopsForLine(activeLineId)
         if (stops.isEmpty()) return null
 
+        val cachedShapes = telemetryService.getCachedShapes(detail.lineNumber)
+        val initialShape = if (cachedShapes != null) matchShapeToDirection(cachedShapes, stops) else emptyList()
+        val fastStops = if (initialShape.isNotEmpty()) filterStopsAlongRoute(stops, initialShape, 300.0) else stops
+
         var initialStop: TransitStop? = null
         if (preferredStopId != null) {
-            initialStop = stops.firstOrNull { it.stopId == preferredStopId }
+            initialStop = fastStops.firstOrNull { it.stopId == preferredStopId }
         }
         if (initialStop == null && userLatE6 != null && userLonE6 != null) {
-            initialStop = stops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+            initialStop = fastStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
         }
         if (initialStop == null) {
-            initialStop = stops.firstOrNull()
+            initialStop = fastStops.firstOrNull()
         }
 
         val staticArrival = if (initialStop != null) {
@@ -437,10 +441,10 @@ class StopsRepository(private val context: Context) {
             isMetro = detail.isMetro,
             directions = dirOptions,
             currentDirectionIndex = chosenIndex,
-            stops = stops,
+            stops = fastStops,
             selectedStop = initialStop,
             liveVehicles = emptyList(),
-            shapeCoordinates = emptyList(),
+            shapeCoordinates = initialShape,
             selectedStopArrival = staticArrival
         )
     }
@@ -475,9 +479,23 @@ class StopsRepository(private val context: Context) {
         val shapeCoords = sDeferred.await()
         val liveArrival = aDeferred.await()
 
+        val cleanStops = if (shapeCoords.isNotEmpty()) {
+            filterStopsAlongRoute(currentState.stops, shapeCoords, 300.0)
+        } else {
+            currentState.stops
+        }
+
+        val updatedSelectedStop = if (currentState.selectedStop != null && cleanStops.any { it.stopId == currentState.selectedStop.stopId }) {
+            currentState.selectedStop
+        } else {
+            cleanStops.firstOrNull()
+        }
+
         currentState.copy(
             liveVehicles = vehicles,
             shapeCoordinates = if (shapeCoords.isNotEmpty()) shapeCoords else currentState.shapeCoordinates,
+            stops = cleanStops,
+            selectedStop = updatedSelectedStop,
             selectedStopArrival = liveArrival ?: currentState.selectedStopArrival
         )
     }
@@ -493,12 +511,16 @@ class StopsRepository(private val context: Context) {
         val activeDirId = currentState.directions[safeIndex].directionId
         val newStops = dbHelper.getStopsForLine(activeLineId)
 
+        val cachedShapes = telemetryService.getCachedShapes(currentState.lineNumber)
+        val initialShape = if (cachedShapes != null) matchShapeToDirection(cachedShapes, newStops) else emptyList()
+        val fastStops = if (initialShape.isNotEmpty()) filterStopsAlongRoute(newStops, initialShape, 300.0) else newStops
+
         var newSelectedStop: TransitStop? = null
         if (userLatE6 != null && userLonE6 != null) {
-            newSelectedStop = newStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+            newSelectedStop = fastStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
         }
         if (newSelectedStop == null) {
-            newSelectedStop = newStops.firstOrNull()
+            newSelectedStop = fastStops.firstOrNull()
         }
 
         val staticArrival = if (newSelectedStop != null) {
@@ -507,10 +529,10 @@ class StopsRepository(private val context: Context) {
 
         return currentState.copy(
             currentDirectionIndex = safeIndex,
-            stops = newStops,
+            stops = fastStops,
             selectedStop = newSelectedStop,
             liveVehicles = emptyList(),
-            shapeCoordinates = emptyList(),
+            shapeCoordinates = initialShape,
             selectedStopArrival = staticArrival
         )
     }
@@ -537,11 +559,38 @@ class StopsRepository(private val context: Context) {
         return enrichRouteStateWithLiveTelemetry(fast)
     }
 
+    private fun filterStopsAlongRoute(
+        stops: List<TransitStop>,
+        shapeCoords: List<Pair<Double, Double>>,
+        maxDistanceMeters: Double = 300.0
+    ): List<TransitStop> {
+        if (shapeCoords.isEmpty() || stops.isEmpty()) return stops
+        val filtered = stops.filter { stop ->
+            var minD = Double.MAX_VALUE
+            for (pt in shapeCoords) {
+                val d = calculateDistanceMeters(
+                    stop.latE6,
+                    stop.lonE6,
+                    (pt.first * 1_000_000).toInt(),
+                    (pt.second * 1_000_000).toInt()
+                )
+                if (d < minD) {
+                    minD = d
+                    if (minD <= maxDistanceMeters) break
+                }
+            }
+            minD <= maxDistanceMeters
+        }
+        return if (filtered.isNotEmpty()) filtered else stops
+    }
+
     private fun matchShapeToDirection(
         shapes: Map<String, List<Pair<Double, Double>>>,
         stops: List<TransitStop>
     ): List<Pair<Double, Double>> {
         if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
+        if (shapes.size == 1) return shapes.values.first()
+
         val firstStop = stops.first()
         val lastStop = stops.last()
         val isCircular = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, lastStop.latE6, lastStop.lonE6) < 800
@@ -552,18 +601,28 @@ class StopsRepository(private val context: Context) {
         }
 
         var bestShape: List<Pair<Double, Double>>? = null
-        var bestDist = Double.MAX_VALUE
+        var bestScore = -1
         for ((_, pts) in shapes) {
             if (pts.isEmpty()) continue
-            val fPt = pts.first()
-            val d = calculateDistanceMeters(
-                (fPt.first * 1_000_000).toInt(),
-                (fPt.second * 1_000_000).toInt(),
-                firstStop.latE6,
-                firstStop.lonE6
-            )
-            if (d < bestDist) {
-                bestDist = d
+            var nearCount = 0
+            for (s in stops) {
+                var minD = Double.MAX_VALUE
+                for (pt in pts) {
+                    val d = calculateDistanceMeters(
+                        s.latE6,
+                        s.lonE6,
+                        (pt.first * 1_000_000).toInt(),
+                        (pt.second * 1_000_000).toInt()
+                    )
+                    if (d < minD) {
+                        minD = d
+                        if (minD <= 350.0) break
+                    }
+                }
+                if (minD <= 350.0) nearCount++
+            }
+            if (nearCount > bestScore) {
+                bestScore = nearCount
                 bestShape = pts
             }
         }
