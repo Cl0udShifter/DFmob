@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         // Otimizacao global de download de tiles e cache de alta performance no osmdroid
         Configuration.getInstance().apply {
             load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
-            userAgentValue = "DFmob/1.4.0 (Android)"
+            userAgentValue = "DFmob/1.4.1 (Android)"
             tileDownloadThreads = 8.toShort()
             tileDownloadMaxQueueSize = 60.toShort()
             cacheMapTileCount = 48.toShort()
