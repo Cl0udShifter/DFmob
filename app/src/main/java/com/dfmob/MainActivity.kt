@@ -2,6 +2,7 @@ package com.dfmob
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -50,6 +51,12 @@ class MainActivity : ComponentActivity() {
                 var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
                 var targetLineNumberForStops by remember { mutableStateOf<String?>(null) }
                 var targetLineIdForStops by remember { mutableStateOf<Int?>(null) }
+
+                BackHandler(enabled = currentScreen != AppScreen.HOME) {
+                    targetLineNumberForStops = null
+                    targetLineIdForStops = null
+                    currentScreen = AppScreen.HOME
+                }
 
                 Crossfade(targetState = currentScreen, label = "ScreenTransition") { screen ->
                     when (screen) {
