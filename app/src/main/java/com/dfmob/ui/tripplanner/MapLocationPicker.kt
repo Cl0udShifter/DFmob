@@ -80,7 +80,7 @@ private class PickerCartoTileSource(
     style: String
 ) : XYTileSource(
     name,
-    0, 20, 256, ".png",
+    0, 20, 512, "@2x.png",
     arrayOf(
         "https://a.basemaps.cartocdn.com/rastertiles/$style/",
         "https://b.basemaps.cartocdn.com/rastertiles/$style/",
@@ -95,8 +95,8 @@ private class PickerCartoTileSource(
     }
 }
 
-private val PICKER_CARTO_POSITRON = PickerCartoTileSource("PickerCartoPositron", "light_all")
-private val PICKER_CARTO_DARK_MATTER = PickerCartoTileSource("PickerCartoDarkMatter", "dark_all")
+private val PICKER_CARTO_POSITRON = PickerCartoTileSource("PickerCartoPositronHD", "light_all")
+private val PICKER_CARTO_DARK_MATTER = PickerCartoTileSource("PickerCartoDarkMatterHD", "dark_all")
 
 @Composable
 fun MapLocationPicker(

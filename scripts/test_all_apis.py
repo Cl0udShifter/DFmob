@@ -260,8 +260,9 @@ def test_osm_nominatim_search():
         return False
 
 def test_cartodb_tiles():
-    # Tile em Brasília (zoom 12)
-    url = "https://a.basemaps.cartocdn.com/rastertiles/light_all/12/1503/2179.png"
+    # Tile em Brasília (zoom 12) em alta resolucao Retina 512px (@2x)
+    api_key = "cb1_5aim_1_0da00b46f9fe375dd500c522"
+    url = f"https://a.basemaps.cartocdn.com/rastertiles/light_all/12/1503/2179@2x.png?key={api_key}"
     req = urllib.request.Request(url, headers={"User-Agent": "DFmob-Android"})
 
     t0 = time.perf_counter()
@@ -269,11 +270,11 @@ def test_cartodb_tiles():
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
             elapsed = (time.perf_counter() - t0) * 1000
             raw = resp.read()
-            print_result("CartoDB: Map Tiles (PNG)", True, resp.status, elapsed, f"Tamanho da imagem: {len(raw)} bytes")
+            print_result("CartoDB: Retina @2x (512px)", True, resp.status, elapsed, f"Tamanho da imagem: {len(raw)} bytes")
             return True
     except Exception as e:
         elapsed = (time.perf_counter() - t0) * 1000
-        print_result("CartoDB: Map Tiles (PNG)", False, 0, elapsed, f"Erro: {e}")
+        print_result("CartoDB: Retina @2x (512px)", False, 0, elapsed, f"Erro: {e}")
         return False
 
 def test_github_updater():

@@ -53,7 +53,7 @@ private class CartoTileSource(
     style: String
 ) : XYTileSource(
     name,
-    0, 20, 256, ".png",
+    0, 20, 512, "@2x.png",
     arrayOf(
         "https://a.basemaps.cartocdn.com/rastertiles/$style/",
         "https://b.basemaps.cartocdn.com/rastertiles/$style/",
@@ -68,8 +68,8 @@ private class CartoTileSource(
     }
 }
 
-private val CARTO_POSITRON = CartoTileSource("CartoPositronV2", "light_all")
-private val CARTO_DARK_MATTER = CartoTileSource("CartoDarkMatterV2", "dark_all")
+private val CARTO_POSITRON = CartoTileSource("CartoPositronHD", "light_all")
+private val CARTO_DARK_MATTER = CartoTileSource("CartoDarkMatterHD", "dark_all")
 
 /**
  * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.

@@ -131,7 +131,7 @@ private class ItineraryCartoTileSource(
     style: String
 ) : XYTileSource(
     name,
-    0, 20, 256, ".png",
+    0, 20, 512, "@2x.png",
     arrayOf(
         "https://a.basemaps.cartocdn.com/rastertiles/$style/",
         "https://b.basemaps.cartocdn.com/rastertiles/$style/",
@@ -146,8 +146,8 @@ private class ItineraryCartoTileSource(
     }
 }
 
-private val ITIN_CARTO_POSITRON = ItineraryCartoTileSource("ItinPositron", "light_all")
-private val ITIN_CARTO_DARK_MATTER = ItineraryCartoTileSource("ItinDarkMatter", "dark_all")
+private val ITIN_CARTO_POSITRON = ItineraryCartoTileSource("ItinPositronHD", "light_all")
+private val ITIN_CARTO_DARK_MATTER = ItineraryCartoTileSource("ItinDarkMatterHD", "dark_all")
 
 sealed class NavigationStage {
     data class WalkToStop(
