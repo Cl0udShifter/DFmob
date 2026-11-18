@@ -95,6 +95,7 @@ fun StopsScreen(
     favoritesRepository: FavoritesRepository? = null,
     initialLineNumber: String? = null,
     initialLineId: Int? = null,
+    fromLinesScreen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -114,7 +115,9 @@ fun StopsScreen(
 
     // Interceptador do botao Voltar nativo do Android
     BackHandler {
-        if (activeRouteState != null) {
+        if (fromLinesScreen) {
+            onBack()
+        } else if (activeRouteState != null) {
             activeRouteState = null
         } else {
             onBack()
@@ -337,7 +340,9 @@ fun StopsScreen(
                                 .clip(CircleShape)
                                 .background(backBtnBg)
                                 .clickable {
-                                    if (activeRouteState != null) {
+                                    if (fromLinesScreen) {
+                                        onBack()
+                                    } else if (activeRouteState != null) {
                                         activeRouteState = null
                                     } else {
                                         onBack()
@@ -579,18 +584,25 @@ fun StopsScreen(
                                 focusLocation = DFLocation(firstBus.lineNumber, "", firstBus.latE6, firstBus.lonE6)
                             }
                         },
-                        isFavorite = favoriteLines.any { it.lineNumber == currentRoute.lineNumber },
+                        isFavorite = favoritesRepo.isLineFavorite(
+                            lineNumber = currentRoute.lineNumber,
+                            directionId = if (currentRoute.circular) null else currentRoute.activeDirectionId,
+                            isCircular = currentRoute.circular
+                        ),
                         onToggleFavorite = {
                             val lineObj = TransitLine(
                                 routeId = currentRoute.activeLineId.toString(),
                                 agencyId = "",
                                 agencyName = currentRoute.agencyName,
                                 lineNumber = currentRoute.lineNumber,
-                                routeName = currentRoute.lineName,
+                                routeName = if (currentRoute.circular) currentRoute.lineName else currentRoute.activeDestination,
                                 transitType = if (currentRoute.isMetro) 1 else 3,
                                 colorHex = currentRoute.colorHex,
                                 textColorHex = currentRoute.textColorHex,
-                                price = null
+                                price = null,
+                                directionId = if (currentRoute.circular) null else currentRoute.activeDirectionId,
+                                destinationName = if (currentRoute.circular) null else currentRoute.activeDestination,
+                                isCircular = currentRoute.circular
                             )
                             favoritesRepo.toggleFavorite(lineObj)
                         },

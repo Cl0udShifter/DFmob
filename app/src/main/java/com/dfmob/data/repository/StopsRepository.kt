@@ -254,10 +254,9 @@ class StopsRepository(private val context: Context) {
             )
         }
 
-        // Ordenacao Padrao Moovit: primeiro chegadas com GPS ao vivo, depois proximos horarios, depois numero da linha
+        // Ordenacao estrita por menor tempo de chegada (minutos restantes), independente de GPS
         return rawArrivals.sortedWith(
             compareBy(
-                { !it.isRealtime },
                 { it.minutesAway },
                 { it.lineNumber }
             )
@@ -344,7 +343,6 @@ class StopsRepository(private val context: Context) {
 
                 updatedArrivals.sortedWith(
                     compareBy(
-                        { !it.isRealtime },
                         { it.minutesAway },
                         { it.lineNumber }
                     )

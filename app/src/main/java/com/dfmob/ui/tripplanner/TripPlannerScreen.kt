@@ -1023,17 +1023,6 @@ private fun TripItineraryCard(
                                             )
                                         }
                                     }
-
-                                    if (lineIdx < displayLines.size - 1) {
-                                        Text(
-                                            text = "ou",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
                                 }
 
                                 if (remaining > 0) {

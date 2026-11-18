@@ -65,7 +65,7 @@ fun HomeScreen(
     recentSearchesRepository: RecentSearchesRepository? = null,
     onNavigateToLines: () -> Unit = {},
     onNavigateToStops: () -> Unit = {},
-    onNavigateToLineRoute: (String) -> Unit = {},
+    onNavigateToLineRoute: (String, Int?) -> Unit = { _, _ -> },
     onNavigateToTripPlanner: (DFLocation?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
@@ -269,7 +269,7 @@ fun HomeScreen(
                 onRecentSearchClick = { loc -> onNavigateToTripPlanner(loc) },
                 onTogglePin = { item -> recentRepo.togglePin(item) },
                 onClearRecent = { recentRepo.clearUnpinned() },
-                onLineClick = { line -> onNavigateToLineRoute(line.lineNumber) },
+                onLineClick = { line -> onNavigateToLineRoute(line.lineNumber, line.routeId.toIntOrNull()) },
                 onStopClick = { onNavigateToStops() }
             )
 

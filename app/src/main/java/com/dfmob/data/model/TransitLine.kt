@@ -9,7 +9,10 @@ data class TransitLine(
     val transitType: Int, // 3 = Onibus, 1 = Metro
     val colorHex: String,
     val textColorHex: String,
-    val price: Double?
+    val price: Double?,
+    val directionId: Int? = null,
+    val destinationName: String? = null,
+    val isCircular: Boolean = false
 ) {
     val isBus: Boolean get() = transitType == 3
     val isMetro: Boolean get() = transitType == 1

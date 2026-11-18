@@ -601,10 +601,35 @@ object MoovitTransitClient {
                             val tRec = w.optJSONObject("1")?.optJSONObject("rec")
                             val st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
                             val et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
-                            val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                            val durFromTime = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
                             val shapeRec = w.optJSONObject("3")?.optJSONObject("rec")
-                            val dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
+                            var dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
                             val poly = shapeRec?.optJSONObject("2")?.optString("str")
+
+                            if (dist <= 0.0 && !poly.isNullOrBlank()) {
+                                try {
+                                    val pts = com.dfmob.data.model.PolylineDecoder.decode(poly)
+                                    if (pts.size >= 2) {
+                                        var calcDist = 0.0
+                                        for (k in 0 until pts.size - 1) {
+                                            val p1 = pts[k]
+                                            val p2 = pts[k + 1]
+                                            val r = 6371000.0
+                                            val dLat = Math.toRadians(p2.first - p1.first)
+                                            val dLon = Math.toRadians(p2.second - p1.second)
+                                            val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                                    Math.cos(Math.toRadians(p1.first)) * Math.cos(Math.toRadians(p2.first)) *
+                                                    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+                                            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                                            calcDist += r * c
+                                        }
+                                        dist = calcDist
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
+                            val walkMinutesFromDistance = if (dist > 0.0) Math.max(1, Math.round(dist / 80.0).toInt()) else 1
+                            val dur = maxOf(durFromTime, walkMinutesFromDistance)
 
                             if (startOverall == null && st > 0) startOverall = st
                             if (et > 0) endOverall = et
@@ -628,10 +653,36 @@ object MoovitTransitClient {
                             val tRec = pw.optJSONObject("1")?.optJSONObject("rec")
                             val st = tRec?.optJSONObject("1")?.optLong("i64", 0L) ?: 0L
                             val et = tRec?.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
-                            val dur = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
+                            val durFromTime = if (st > 0 && et > st) Math.round((et - st) / 60000.0).toInt() else 0
                             val shapeRec = pw.optJSONObject("8")?.optJSONObject("rec")
-                            val dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
+                                ?: pw.optJSONObject("3")?.optJSONObject("rec")
+                            var dist = shapeRec?.optJSONObject("1")?.optDouble("dbl", 0.0) ?: 0.0
                             val poly = shapeRec?.optJSONObject("2")?.optString("str")
+
+                            if (dist <= 0.0 && !poly.isNullOrBlank()) {
+                                try {
+                                    val pts = com.dfmob.data.model.PolylineDecoder.decode(poly)
+                                    if (pts.size >= 2) {
+                                        var calcDist = 0.0
+                                        for (k in 0 until pts.size - 1) {
+                                            val p1 = pts[k]
+                                            val p2 = pts[k + 1]
+                                            val r = 6371000.0
+                                            val dLat = Math.toRadians(p2.first - p1.first)
+                                            val dLon = Math.toRadians(p2.second - p1.second)
+                                            val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                                    Math.cos(Math.toRadians(p1.first)) * Math.cos(Math.toRadians(p2.first)) *
+                                                    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+                                            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                                            calcDist += r * c
+                                        }
+                                        dist = calcDist
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
+                            val walkMinutesFromDistance = if (dist > 0.0) Math.max(1, Math.round(dist / 80.0).toInt()) else 1
+                            val dur = maxOf(durFromTime, walkMinutesFromDistance)
 
                             if (startOverall == null && st > 0) startOverall = st
                             if (et > 0) endOverall = et

@@ -560,28 +560,82 @@ private fun ItineraryStopItem(
                         }
                     }
 
-                    // Linha inferior: Proximas partidas e acessibilidade
+                    // Linha inferior: Proximas partidas estilizadas com indicador de GPS
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val subText = if (arrival != null && arrival.nextDepartures.isNotEmpty()) {
-                            arrival.nextDepartures.joinToString(", ") { it.displayLabel(currentClockMs) }
-                        } else {
-                            stop.stopCode?.let { "Código $it" } ?: "Ponto oficial SEMOB"
-                        }
+                        if (arrival != null && arrival.nextDepartures.isNotEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = "Seguintes:",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
+                                )
+                                arrival.nextDepartures.take(3).forEach { dep ->
+                                    val label = dep.displayLabel(currentClockMs)
+                                    val chipBg = if (dep.isRealtime) {
+                                        if (isDarkTheme) Color(0x2400C853) else Color(0x1F00883E)
+                                    } else {
+                                        if (isDarkTheme) Color(0xFF22242C) else Color(0xFFE5E7EB)
+                                    }
+                                    val textColor = if (dep.isRealtime) {
+                                        liveGreen
+                                    } else {
+                                        if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
+                                    }
 
-                        Text(
-                            text = subText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(chipBg)
+                                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            if (dep.isRealtime) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Wifi,
+                                                    contentDescription = "GPS ao vivo",
+                                                    tint = liveGreen,
+                                                    modifier = Modifier.size(9.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
+                                                    fontSize = 10.sp
+                                                ),
+                                                color = textColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val subText = stop.stopCode?.let { "Código $it" } ?: "Ponto oficial SEMOB"
+                            Text(
+                                text = subText,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
 
                         Icon(
                             imageVector = Icons.Rounded.Accessible,

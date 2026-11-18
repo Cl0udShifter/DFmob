@@ -41,15 +41,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Otimizacao global de download de tiles e cache de alta performance no osmdroid
+        // Configuracao global de download de tiles com persistencia vitalicia no osmdroid
         Configuration.getInstance().apply {
             load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
-            userAgentValue = "DFmob/1.4.1 (Android)"
+            userAgentValue = "DFmob/1.4.2 (Android)"
             tileDownloadThreads = 8.toShort()
             tileDownloadMaxQueueSize = 60.toShort()
-            cacheMapTileCount = 48.toShort()
-            tileFileSystemCacheMaxBytes = 300L * 1024 * 1024
-            tileFileSystemCacheTrimBytes = 250L * 1024 * 1024
+            cacheMapTileCount = 64.toShort()
+            // Cache vitalicio em disco: 10 GB de capacidade maxima
+            tileFileSystemCacheMaxBytes = 10L * 1024 * 1024 * 1024
+            tileFileSystemCacheTrimBytes = 9L * 1024 * 1024 * 1024
+            // Extende a duracao dos tiles baixados para 10 anos, impedindo expiracao ou re-download
+            expirationExtendedDuration = 1000L * 60 * 60 * 24 * 365 * 10
+            expirationOverrideDuration = 1000L * 60 * 60 * 24 * 365 * 10
         }
 
         setContent {
@@ -70,12 +74,21 @@ class MainActivity : ComponentActivity() {
                 var targetLineNumberForStops by rememberSaveable { mutableStateOf<String?>(null) }
                 var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
                 var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
+                var stopsOpenedFromLines by rememberSaveable { mutableStateOf(false) }
 
                 BackHandler(enabled = currentScreen != AppScreen.HOME) {
-                    targetLineNumberForStops = null
-                    targetLineIdForStops = null
-                    targetDestinationForTripPlanner = null
-                    currentScreen = AppScreen.HOME
+                    if (currentScreen == AppScreen.STOPS && stopsOpenedFromLines) {
+                        targetLineNumberForStops = null
+                        targetLineIdForStops = null
+                        stopsOpenedFromLines = false
+                        currentScreen = AppScreen.LINES
+                    } else {
+                        targetLineNumberForStops = null
+                        targetLineIdForStops = null
+                        targetDestinationForTripPlanner = null
+                        stopsOpenedFromLines = false
+                        currentScreen = AppScreen.HOME
+                    }
                 }
 
                 Crossfade(targetState = currentScreen, label = "ScreenTransition") { screen ->
@@ -87,11 +100,13 @@ class MainActivity : ComponentActivity() {
                             onNavigateToStops = {
                                 targetLineNumberForStops = null
                                 targetLineIdForStops = null
+                                stopsOpenedFromLines = false
                                 currentScreen = AppScreen.STOPS
                             },
-                            onNavigateToLineRoute = { lineNum ->
+                            onNavigateToLineRoute = { lineNum, lineId ->
                                 targetLineNumberForStops = lineNum
-                                targetLineIdForStops = null
+                                targetLineIdForStops = lineId
+                                stopsOpenedFromLines = false
                                 currentScreen = AppScreen.STOPS
                             },
                             onNavigateToTripPlanner = { dest ->
@@ -108,6 +123,7 @@ class MainActivity : ComponentActivity() {
                             onLineClick = { line ->
                                 targetLineNumberForStops = line.lineNumber
                                 targetLineIdForStops = null
+                                stopsOpenedFromLines = true
                                 currentScreen = AppScreen.STOPS
                             }
                         )
@@ -115,10 +131,13 @@ class MainActivity : ComponentActivity() {
                             favoritesRepository = favoritesRepository,
                             initialLineNumber = targetLineNumberForStops,
                             initialLineId = targetLineIdForStops,
+                            fromLinesScreen = stopsOpenedFromLines,
                             onBack = {
+                                val returnToLines = stopsOpenedFromLines
                                 targetLineNumberForStops = null
                                 targetLineIdForStops = null
-                                currentScreen = AppScreen.HOME
+                                stopsOpenedFromLines = false
+                                currentScreen = if (returnToLines) AppScreen.LINES else AppScreen.HOME
                             }
                         )
                         AppScreen.TRIP_PLANNER -> TripPlannerScreen(

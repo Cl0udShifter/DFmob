@@ -54,7 +54,7 @@ class ApiDiagnosticsService(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 4000
                 readTimeout = 4000
-                setRequestProperty("User-Agent", "DFmob/1.4.1 (Android)")
+                setRequestProperty("User-Agent", "DFmob/1.4.2 (Android)")
             }
             ok = (conn.responseCode in 200..399)
         } catch (_: Exception) {

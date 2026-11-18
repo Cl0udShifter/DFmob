@@ -6,7 +6,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.animation.ValueAnimator
@@ -17,7 +20,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -117,6 +123,7 @@ fun RealOpenStreetMap(
 
     val pinCache = remember(context) { StopPinCache(context) }
     val routePolyline = remember { Polyline() }
+    val directionOverlay = remember { RouteDirectionOverlay(context) }
     val stopsFolder = remember { FolderOverlay() }
     val vehiclesFolder = remember { FolderOverlay() }
     val vehicleMarkers = remember { mutableMapOf<String, Marker>() }
@@ -144,11 +151,39 @@ fun RealOpenStreetMap(
             val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
             val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
             val initialLoc = lastGps ?: lastNet
-            if (initialLoc != null) {
+            val isFresh = initialLoc != null && (System.currentTimeMillis() - initialLoc.time < 45_000L)
+            if (isFresh && initialLoc != null) {
                 controller.setCenter(GeoPoint(initialLoc.latitude, initialLoc.longitude))
             } else {
                 controller.setCenter(GeoPoint(-15.794167, -47.882778))
             }
+        }
+    }
+
+    var hasCenteredOnFreshGps by remember { mutableStateOf(false) }
+
+    // Registra listener para capturar o primeiro fix fresco do GPS ao abrir ou ligar tela
+    DisposableEffect(context) {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val freshListener = object : LocationListener {
+            override fun onLocationChanged(loc: Location) {
+                if (!hasCenteredOnFreshGps && focusLocation == null && activeRoute == null) {
+                    hasCenteredOnFreshGps = true
+                    mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude), 16.0, 750L)
+                }
+            }
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+        try {
+            lm?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 2f, freshListener)
+            lm?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 5f, freshListener)
+        } catch (_: SecurityException) {}
+
+        onDispose {
+            try { lm?.removeUpdates(freshListener) } catch (_: SecurityException) {}
         }
     }
 
@@ -170,10 +205,13 @@ fun RealOpenStreetMap(
         overlay
     }
 
-    // Adiciona os overlays em ordem hierarquica: Polylines -> Paradas -> Veiculos -> Localizacao Usuario
+    // Adiciona os overlays em ordem hierarquica: Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
     LaunchedEffect(mapView) {
         if (!mapView.overlays.contains(routePolyline)) {
             mapView.overlays.add(routePolyline)
+        }
+        if (!mapView.overlays.contains(directionOverlay)) {
+            mapView.overlays.add(directionOverlay)
         }
         if (!mapView.overlays.contains(stopsFolder)) {
             mapView.overlays.add(stopsFolder)
@@ -214,9 +252,6 @@ fun RealOpenStreetMap(
     LaunchedEffect(isDarkTheme) {
         val tileSource = if (isDarkTheme) STADIA_DARK else STADIA_SMOOTH
         mapView.setTileSource(tileSource)
-        try {
-            mapView.tileProvider.clearTileCache()
-        } catch (_: Exception) {}
         mapView.overlayManager.tilesOverlay.setColorFilter(null)
         mapView.postInvalidate()
     }
@@ -274,13 +309,16 @@ fun RealOpenStreetMap(
                 }
                 routePolyline.setPoints(geoPoints)
                 routePolyline.isEnabled = true
+                directionOverlay.setPoints(geoPoints)
             } else {
                 routePolyline.setPoints(emptyList())
                 routePolyline.isEnabled = false
+                directionOverlay.setPoints(emptyList())
             }
         } else {
             routePolyline.setPoints(emptyList())
             routePolyline.isEnabled = false
+            directionOverlay.setPoints(emptyList())
         }
         mapView.invalidate()
     }
@@ -437,8 +475,8 @@ fun RealOpenStreetMap(
             val currentZoom = mapView.zoomLevelDouble
             val bounds = mapView.boundingBox
 
-            // 1. Zoom out total (< 11.5): limpa marcadores
-            if (currentZoom < 11.5) {
+            // 1. Zoom out total (< 13.5): limpa todos os marcadores (onibus e metro) para manter o mapa despoluido
+            if (currentZoom < 13.5) {
                 if (markerMap.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         stopsFolder.items.clear()
@@ -449,15 +487,9 @@ fun RealOpenStreetMap(
                 return
             }
 
-            // 2. Zoom intermediario (11.5 a 13.5): exibe apenas as estacoes de metrô
-            val isIntermediateZoom = currentZoom < 13.5
-
             // Calculo de filtragem dos 1435 pontos executado em thread de background (Dispatchers.Default)
             val visibleStops = withContext(Dispatchers.Default) {
                 stops.filter { stop ->
-                    if (isIntermediateZoom && !stop.isMetro) {
-                        return@filter false
-                    }
                     if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
                         if (stop.latitude < bounds.latSouth - 0.008 || stop.latitude > bounds.latNorth + 0.008 ||
                             stop.longitude < bounds.lonWest - 0.008 || stop.longitude > bounds.lonEast + 0.008

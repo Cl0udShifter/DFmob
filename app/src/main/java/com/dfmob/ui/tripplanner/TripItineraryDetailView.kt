@@ -54,6 +54,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
+import com.dfmob.ui.stops.components.RouteDirectionOverlay
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MyLocation
@@ -208,6 +209,7 @@ fun TripItineraryDetailView(
 
     // Rastreamento de Paradas Restantes na perna a bordo
     var remainingStopsCount by remember { mutableIntStateOf(0) }
+    var lastPassedStopIndex by remember { mutableIntStateOf(-1) }
 
     // Previsoes em tempo real por linha e relogio continuo
     var liveDeparturesByLine by remember { mutableStateOf<Map<Int, List<TripDepartureItem>>>(emptyMap()) }
@@ -234,6 +236,7 @@ fun TripItineraryDetailView(
 
     // Overlays do osmdroid
     val polylinesFolder = remember { FolderOverlay() }
+    val directionOverlay = remember { RouteDirectionOverlay(context) }
     val markersFolder = remember { FolderOverlay() }
     val intermediateMarkersFolder = remember { FolderOverlay() }
     val vehiclesFolder = remember { FolderOverlay() }
@@ -252,6 +255,7 @@ fun TripItineraryDetailView(
             minZoomLevel = 9.0
             maxZoomLevel = 20.0
             overlays.add(polylinesFolder)
+            overlays.add(directionOverlay)
             overlays.add(intermediateMarkersFolder)
             overlays.add(markersFolder)
             overlays.add(vehiclesFolder)
@@ -319,9 +323,6 @@ fun TripItineraryDetailView(
     // Gerenciamento de ciclo de vida do mapa e GPS
     LaunchedEffect(isDarkTheme) {
         mapView.setTileSource(if (isDarkTheme) ITIN_STADIA_DARK else ITIN_STADIA_SMOOTH)
-        try {
-            mapView.tileProvider.clearTileCache()
-        } catch (_: Exception) {}
         mapView.postInvalidate()
     }
 
@@ -357,6 +358,7 @@ fun TripItineraryDetailView(
         markersFolder.items.clear()
 
         val allPoints = mutableListOf<GeoPoint>()
+        val transitDirectionPoints = mutableListOf<GeoPoint>()
 
         itinerary.legs.forEach { leg ->
             val polylineStr = leg.polylineEncoded
@@ -364,6 +366,9 @@ fun TripItineraryDetailView(
                 val decoded = PolylineDecoder.decode(polylineStr)
                 val geoPoints = decoded.map { GeoPoint(it.first, it.second) }
                 allPoints.addAll(geoPoints)
+                if (leg.type == TripLegType.TRANSIT) {
+                    transitDirectionPoints.addAll(geoPoints)
+                }
 
                 val line = Polyline(mapView).apply {
                     setPoints(geoPoints)
@@ -393,6 +398,7 @@ fun TripItineraryDetailView(
                 polylinesFolder.add(line)
             }
         }
+        directionOverlay.setPoints(transitDirectionPoints)
 
         // Marcador de Origem
         if (origin != null) {
@@ -693,22 +699,37 @@ fun TripItineraryDetailView(
             }
 
             is NavigationStage.RideTransit -> {
-                // Atualiza o contador decrescente de paradas restantes
-                if (stage.intermediateStops.isNotEmpty()) {
-                    var remaining = 0
-                    for (pt in stage.intermediateStops) {
-                        val dist = distanceMeters(userLoc.latitude, userLoc.longitude, pt.latitude, pt.longitude)
-                        if (dist > 35f) {
-                            remaining++
+                // Atualiza o contador decrescente de paradas restantes com suporte a salto de GPS
+                val fullStopList = stage.intermediateStops + listOfNotNull(stage.destinationPoint)
+                if (fullStopList.isNotEmpty()) {
+                    val closestIndex = fullStopList.indices.minByOrNull { i ->
+                        distanceMeters(userLoc.latitude, userLoc.longitude, fullStopList[i].latitude, fullStopList[i].longitude)
+                    } ?: -1
+
+                    if (closestIndex >= 0) {
+                        val distToClosest = distanceMeters(
+                            userLoc.latitude, userLoc.longitude,
+                            fullStopList[closestIndex].latitude, fullStopList[closestIndex].longitude
+                        )
+                        // Se o usuario estiver a ate 250m da parada mais proxima a frente
+                        if (distToClosest < 250f && closestIndex > lastPassedStopIndex) {
+                            lastPassedStopIndex = closestIndex
                         }
                     }
-                    remainingStopsCount = remaining.coerceAtLeast(1)
+
+                    val totalStopsInRide = fullStopList.size
+                    val remaining = if (lastPassedStopIndex >= 0) {
+                        (totalStopsInRide - 1 - lastPassedStopIndex).coerceAtLeast(1)
+                    } else {
+                        stage.totalStopsCount.coerceAtLeast(1)
+                    }
+                    remainingStopsCount = remaining
                 }
 
                 val destPt = stage.destinationPoint
                 if (destPt != null) {
                     val distToDest = distanceMeters(userLoc.latitude, userLoc.longitude, destPt.latitude, destPt.longitude)
-                    if (distToDest <= 60f) {
+                    if (distToDest <= 60f || (lastPassedStopIndex >= 0 && lastPassedStopIndex >= fullStopList.size - 1)) {
                         // Chegou na parada destino do onibus
                         currentStageIndex = (currentStageIndex + 1).coerceAtMost(stages.size - 1)
                     }
@@ -1698,15 +1719,44 @@ private fun OverviewItineraryDeck(
                             }
 
                             TripLegType.TRANSIT -> {
-                                val linesText = leg.lines.joinToString(" ou ") { it.lineNumber }
-                                Text(
-                                    text = linesText,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 14.sp
-                                    ),
-                                    color = TransitGreen
-                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                ) {
+                                    leg.lines.forEach { lineOpt ->
+                                        val badgeBg = try {
+                                            Color(android.graphics.Color.parseColor(lineOpt.colorHex))
+                                        } catch (_: Exception) {
+                                            TransitGreen
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(badgeBg)
+                                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                                        ) {
+                                            if (lineOpt.isMetro) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.DirectionsSubway,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                            }
+                                            Text(
+                                                text = lineOpt.lineNumber,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 13.sp
+                                                ),
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
 
                                 leg.departureStopName?.let { depStop ->
                                     Text(

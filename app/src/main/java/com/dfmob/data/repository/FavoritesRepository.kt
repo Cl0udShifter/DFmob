@@ -105,6 +105,20 @@ class FavoritesRepository(context: Context) {
         return _favoriteStops.value
     }
 
+    init {
+        // Migracao para nova estrutura de favoritos com direcao especifica:
+        // Limpa a lista de linhas favoritas antigas uma unica vez, mantendo as paradas intactas
+        val isMigrated = prefs.getBoolean("favorites_lines_v2_migrated", false)
+        if (!isMigrated) {
+            prefs.edit()
+                .remove(KEY_FAVORITES)
+                .remove(KEY_FAVORITE_LINES_JSON)
+                .putBoolean("favorites_lines_v2_migrated", true)
+                .apply()
+            _favoriteLines.value = emptyList()
+        }
+    }
+
     private fun loadFavoriteLinesFromPrefs(): List<TransitLine> {
         val rawJson = prefs.getString(KEY_FAVORITE_LINES_JSON, null) ?: return emptyList()
         return try {
@@ -122,13 +136,24 @@ class FavoritesRepository(context: Context) {
                         transitType = obj.optInt("transitType", 3),
                         colorHex = obj.optString("colorHex", "#00DC64"),
                         textColorHex = obj.optString("textColorHex", "#000000"),
-                        price = if (obj.has("price") && !obj.isNull("price")) obj.getDouble("price") else null
+                        price = if (obj.has("price") && !obj.isNull("price")) obj.getDouble("price") else null,
+                        directionId = if (obj.has("directionId") && !obj.isNull("directionId")) obj.getInt("directionId") else null,
+                        destinationName = if (obj.has("destinationName") && !obj.isNull("destinationName")) obj.getString("destinationName") else null,
+                        isCircular = obj.optBoolean("isCircular", false)
                     )
                 )
             }
             list
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    private fun getLineKey(line: TransitLine): String {
+        return if (line.isCircular || line.directionId == null) {
+            line.lineNumber
+        } else {
+            "${line.lineNumber}_${line.directionId}"
         }
     }
 
@@ -140,18 +165,29 @@ class FavoritesRepository(context: Context) {
         return getFavoriteRouteIds().contains(routeId)
     }
 
+    fun isLineFavorite(lineNumber: String, directionId: Int? = null, isCircular: Boolean = false): Boolean {
+        return if (isCircular || directionId == null) {
+            _favoriteLines.value.any { it.lineNumber == lineNumber }
+        } else {
+            _favoriteLines.value.any { it.lineNumber == lineNumber && (it.directionId == null || it.directionId == directionId) }
+        }
+    }
+
     fun toggleFavorite(line: TransitLine): Boolean {
+        val key = getLineKey(line)
         val currentIds = getFavoriteRouteIds().toMutableSet()
         val currentLines = _favoriteLines.value.toMutableList()
         val isNowFavorite: Boolean
 
-        if (currentIds.contains(line.routeId)) {
+        val existingIndex = currentLines.indexOfFirst { getLineKey(it) == key }
+
+        if (existingIndex >= 0) {
             currentIds.remove(line.routeId)
-            currentLines.removeAll { it.routeId == line.routeId }
+            currentIds.remove(key)
+            currentLines.removeAt(existingIndex)
             isNowFavorite = false
         } else {
-            currentIds.add(line.routeId)
-            currentLines.removeAll { it.routeId == line.routeId }
+            currentIds.add(key)
             currentLines.add(line)
             isNowFavorite = true
         }
@@ -173,6 +209,13 @@ class FavoritesRepository(context: Context) {
             if (item.price != null) {
                 obj.put("price", item.price)
             }
+            if (item.directionId != null) {
+                obj.put("directionId", item.directionId)
+            }
+            if (item.destinationName != null) {
+                obj.put("destinationName", item.destinationName)
+            }
+            obj.put("isCircular", item.isCircular)
             array.put(obj)
         }
         editor.putString(KEY_FAVORITE_LINES_JSON, array.toString())

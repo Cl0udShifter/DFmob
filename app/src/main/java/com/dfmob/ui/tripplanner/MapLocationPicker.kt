@@ -169,9 +169,6 @@ fun MapLocationPicker(
     // Gerencia ciclo de vida do MapView
     LaunchedEffect(isDarkTheme) {
         mapView.setTileSource(if (isDarkTheme) PICKER_STADIA_DARK else PICKER_STADIA_SMOOTH)
-        try {
-            mapView.tileProvider.clearTileCache()
-        } catch (_: Exception) {}
         mapView.postInvalidate()
     }
 
@@ -456,8 +453,26 @@ fun MapLocationPicker(
                     val lastGps = try { lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
                     val lastNet = try { lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
                     val userLoc = lastGps ?: lastNet
-                    if (userLoc != null) {
-                        mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude))
+                    if (userLoc != null && System.currentTimeMillis() - userLoc.time < 30_000L) {
+                        mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude), 16.5, 750L)
+                    } else {
+                        try {
+                            val singleListener = object : android.location.LocationListener {
+                                override fun onLocationChanged(loc: android.location.Location) {
+                                    mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude), 16.5, 750L)
+                                    lm?.removeUpdates(this)
+                                }
+                                override fun onProviderEnabled(provider: String) {}
+                                override fun onProviderDisabled(provider: String) {}
+                                @Deprecated("Deprecated in Java")
+                                override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                            }
+                            lm?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, singleListener)
+                            lm?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0L, 0f, singleListener)
+                        } catch (_: SecurityException) {}
+                        if (userLoc != null) {
+                            mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude), 16.5, 750L)
+                        }
                     }
                 },
                 shape = CircleShape,
