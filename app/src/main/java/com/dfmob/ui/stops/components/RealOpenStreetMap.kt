@@ -136,7 +136,7 @@ fun RealOpenStreetMap(
             setTileSource(initialSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            isTilesScaledToDpi = true
+            isTilesScaledToDpi = false
             minZoomLevel = 9.0
             maxZoomLevel = 20.0
             controller.setZoom(15.5)

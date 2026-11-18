@@ -1,10 +1,12 @@
 package com.dfmob
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import org.osmdroid.config.Configuration
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
@@ -35,6 +37,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Otimizacao global de download de tiles e cache de alta performance no osmdroid
+        Configuration.getInstance().apply {
+            load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
+            userAgentValue = "DFmob/1.4.0 (Android)"
+            tileDownloadThreads = 8.toShort()
+            tileDownloadMaxQueueSize = 60.toShort()
+            cacheMapTileCount = 48.toShort()
+            tileFileSystemCacheMaxBytes = 300L * 1024 * 1024
+            tileFileSystemCacheTrimBytes = 250L * 1024 * 1024
+        }
+
         setContent {
             val context = LocalContext.current
             val themePreferences = remember { ThemePreferences(context) }
