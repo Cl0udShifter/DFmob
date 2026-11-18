@@ -24,7 +24,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1027,7 +1026,6 @@ private fun ActiveNavigationDeck(
     onManualAdvance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
     val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
 
     val isWaitForTransit = stage is NavigationStage.WaitForTransit

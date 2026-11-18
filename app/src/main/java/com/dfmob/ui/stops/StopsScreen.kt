@@ -584,6 +584,7 @@ fun StopsScreen(
                             )
                             favoritesRepo.toggleFavorite(lineObj)
                         },
+                        isDarkTheme = isDarkTheme,
                         maxScreenHeight = maxHeight
                     )
                 } else {
@@ -592,6 +593,7 @@ fun StopsScreen(
                             stop = stop,
                             arrivals = arrivals,
                             isLoading = isLoadingArrivals,
+                            isDarkTheme = isDarkTheme,
                             onLineClick = { arrival ->
                                 coroutineScope.launch {
                                     val route = repository.getLineRouteState(

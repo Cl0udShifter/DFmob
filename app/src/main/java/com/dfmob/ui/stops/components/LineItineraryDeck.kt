@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,9 +71,9 @@ fun LineItineraryDeck(
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     maxScreenHeight: Dp = 600.dp,
+    isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
     modifier: Modifier = Modifier
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
     var isExpanded by remember { mutableStateOf(false) }
 
     // Ticker a cada 1 segundo para recalcular previsao ao vivo contra relogio local
@@ -325,6 +325,7 @@ fun LineItineraryDeck(
                             arrival = if (isSelected) activeRoute.selectedStopArrival else null,
                             currentClockMs = currentClockMs,
                             liveGreen = liveGreen,
+                            isDarkTheme = isDarkTheme,
                             onClick = { onSelectStop(stop) }
                         )
                     }
@@ -426,9 +427,9 @@ private fun ItineraryStopItem(
     arrival: com.dfmob.data.model.StopArrival?,
     currentClockMs: Long,
     liveGreen: Color,
+    isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
     onClick: () -> Unit
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
     val itemBg = if (isDarkTheme) Color(0xFF1E2028) else Color(0xFFF3F5F9)
     val itemBorder = if (isDarkTheme) Color(0xFF2C2F3A) else Color(0xFFE2E5EC)
 

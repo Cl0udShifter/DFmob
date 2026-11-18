@@ -8,7 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -97,7 +97,7 @@ fun TripPlannerScreen(
     val context = LocalContext.current
     val viewModel = remember { TripPlannerViewModel(repository, context) }
     val state by viewModel.uiState.collectAsState()
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
@@ -433,7 +433,7 @@ private fun OriginDestinationCard(
     onUseCurrentLocation: () -> Unit,
     onPickOnMap: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val cardBg = MaterialTheme.colorScheme.surface
     val borderCol = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
     var isOriginFocused by remember { mutableStateOf(false) }

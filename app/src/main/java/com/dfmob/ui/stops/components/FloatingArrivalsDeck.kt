@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,10 +69,9 @@ fun FloatingArrivalsDeck(
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     maxScreenHeight: Dp = 600.dp,
+    isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
     modifier: Modifier = Modifier
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
-
     // Estado expandido (75% da tela sem margens de floating pill) vs colapsado (floating pill padrao)
     var isExpanded by remember { mutableStateOf(false) }
 
