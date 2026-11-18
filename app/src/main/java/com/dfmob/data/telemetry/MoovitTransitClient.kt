@@ -662,6 +662,7 @@ object MoovitTransitClient {
                             var toStopName: String? = null
                             var poly: String? = null
                             var stopCount = 0
+                            val intermediatePoints = mutableListOf<Pair<Double, Double>>()
 
                             for (k in 2 until altLinesLst.length()) {
                                 val lItem = altLinesLst.optJSONObject(k) ?: continue
@@ -709,6 +710,7 @@ object MoovitTransitClient {
                                     poly = lRec.optJSONObject("4")?.optJSONObject("rec")?.optJSONObject("2")?.optString("str")
                                         ?: lRec.optJSONObject("4")?.optJSONObject("2")?.optString("str")
                                     val stopIds = lRec.optJSONObject("3")?.optJSONArray("lst")
+                                    intermediatePoints.clear()
                                     if (stopIds != null && stopIds.length() > 2) {
                                         val firstSid = stopIds.optInt(2, 0)
                                         val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
@@ -716,6 +718,15 @@ object MoovitTransitClient {
                                         fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
                                         toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
                                         stopCount = stopIds.length() - 2
+                                        for (s in 3 until stopIds.length() - 1) {
+                                            val sid = stopIds.optInt(s, 0)
+                                            if (sid > 0) {
+                                                val stop = dbHelper.getStopById(sid)
+                                                if (stop != null) {
+                                                    intermediatePoints.add(Pair(stop.latitude, stop.longitude))
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -736,7 +747,8 @@ object MoovitTransitClient {
                                         departureStopName = fromStopName,
                                         arrivalStopName = toStopName,
                                         stopsCount = stopCount,
-                                        lines = altOptions
+                                        lines = altOptions,
+                                        intermediateStopPoints = intermediatePoints
                                     )
                                 )
                             }
@@ -789,6 +801,7 @@ object MoovitTransitClient {
                             var toStopName: String? = null
                             var stopCount = 0
                             val stopIds = lRec.optJSONObject("3")?.optJSONArray("lst")
+                            val intermediatePoints = mutableListOf<Pair<Double, Double>>()
                             if (stopIds != null && stopIds.length() > 2) {
                                 val firstSid = stopIds.optInt(2, 0)
                                 val lastSid = stopIds.optInt(stopIds.length() - 1, 0)
@@ -796,6 +809,15 @@ object MoovitTransitClient {
                                 fromStopName = dbHelper.getStopById(firstSid)?.stopName ?: "Parada $firstSid"
                                 toStopName = dbHelper.getStopById(lastSid)?.stopName ?: "Parada $lastSid"
                                 stopCount = stopIds.length() - 2
+                                for (s in 3 until stopIds.length() - 1) {
+                                    val sid = stopIds.optInt(s, 0)
+                                    if (sid > 0) {
+                                        val stop = dbHelper.getStopById(sid)
+                                        if (stop != null) {
+                                            intermediatePoints.add(Pair(stop.latitude, stop.longitude))
+                                        }
+                                    }
+                                }
                             }
 
                             if (startOverall == null && st > 0) startOverall = st
@@ -813,7 +835,8 @@ object MoovitTransitClient {
                                     departureStopName = fromStopName,
                                     arrivalStopName = toStopName,
                                     stopsCount = stopCount,
-                                    lines = listOf(opt)
+                                    lines = listOf(opt),
+                                    intermediateStopPoints = intermediatePoints
                                 )
                             )
                         }

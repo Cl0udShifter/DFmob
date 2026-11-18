@@ -75,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -211,6 +212,17 @@ fun TripItineraryDetailView(
     // Rastreamento de Paradas Restantes na perna a bordo
     var remainingStopsCount by remember { mutableIntStateOf(0) }
 
+    // Previsoes em tempo real por linha e relogio continuo
+    var liveDeparturesByLine by remember { mutableStateOf<Map<Int, List<TripDepartureItem>>>(emptyMap()) }
+    var currentTimerTickerMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000L)
+            currentTimerTickerMs = System.currentTimeMillis()
+        }
+    }
+
     // Localizacao do Usuario
     var currentUserLocation by remember { mutableStateOf<Location?>(null) }
 
@@ -343,8 +355,8 @@ fun TripItineraryDetailView(
             allPoints.add(originPoint)
             val originMarker = Marker(mapView).apply {
                 position = originPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = createCircleMarkerDrawable(context, "#00A859", "A")
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                icon = createPinMarkerDrawable(context, "#00A859", "A")
                 title = origin.caption
             }
             markersFolder.add(originMarker)
@@ -356,8 +368,8 @@ fun TripItineraryDetailView(
             allPoints.add(destPoint)
             val destMarker = Marker(mapView).apply {
                 position = destPoint
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = createCircleMarkerDrawable(context, "#E53935", "B")
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                icon = createPinMarkerDrawable(context, "#E53935", "B")
                 title = destination.caption
             }
             markersFolder.add(destMarker)
@@ -477,6 +489,7 @@ fun TripItineraryDetailView(
         if (currentStage is NavigationStage.WaitForTransit) {
             val wait = currentStage as NavigationStage.WaitForTransit
             while (isActive) {
+                // 1. Veiculos em transito no mapa
                 val markers = mutableListOf<LiveVehicleMarker>()
                 for (line in wait.candidateLines) {
                     try {
@@ -491,7 +504,48 @@ fun TripItineraryDetailView(
                     } catch (_: Exception) {}
                 }
 
+                // 2. Previsoes em tempo real para a parada de embarque
+                val newDeparturesMap = mutableMapOf<Int, List<TripDepartureItem>>()
+                if (wait.stopId != null) {
+                    try {
+                        val nowMs = System.currentTimeMillis()
+                        val lineIdSet = wait.candidateLines.map { it.lineId }.toSet()
+                        val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(wait.stopId)
+                        val matched = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
+
+                        for (lArr in matched) {
+                            val valid = lArr.arrivals.filter {
+                                val target = it.rtEtdUTC ?: it.staticEtdUTC
+                                target >= nowMs - 60_000L
+                            }
+                            val items = valid.map { arr ->
+                                val isRt = arr.rtEtdUTC != null
+                                val target = arr.rtEtdUTC ?: arr.staticEtdUTC
+                                val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
+                                val formatted = if (isRt) {
+                                    if (mins <= 1) "Já" else "$mins min"
+                                } else {
+                                    formatEpochMsToHHMM(target)
+                                }
+                                TripDepartureItem(
+                                    lineNumber = "",
+                                    timeFormatted = formatted,
+                                    isRealtime = isRt,
+                                    targetEpochMs = target,
+                                    lineId = lArr.lineId
+                                )
+                            }.distinctBy { it.timeFormatted }.sortedBy { it.targetEpochMs }.take(5)
+                            if (items.isNotEmpty()) {
+                                newDeparturesMap[lArr.lineId] = items
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
                 withContext(Dispatchers.Main) {
+                    if (newDeparturesMap.isNotEmpty()) {
+                        liveDeparturesByLine = newDeparturesMap
+                    }
                     vehiclesFolder.items.clear()
                     for (v in markers) {
                         val marker = Marker(mapView).apply {
@@ -655,6 +709,9 @@ fun TripItineraryDetailView(
                 maxScreenHeight = maxScreenHeight,
                 remainingStops = remainingStopsCount,
                 selectedLine = selectedLineForRide,
+                liveDeparturesByLine = liveDeparturesByLine,
+                currentTickerMs = currentTimerTickerMs,
+                dbHelper = dbHelper,
                 onToggleExpand = { isExpandedDeck = !isExpandedDeck },
                 onLineSelectedToBoard = { line ->
                     selectedLineForRide = line
@@ -958,6 +1015,9 @@ private fun ActiveNavigationDeck(
     maxScreenHeight: Dp,
     remainingStops: Int,
     selectedLine: TripTransitLineOption?,
+    liveDeparturesByLine: Map<Int, List<TripDepartureItem>>,
+    currentTickerMs: Long,
+    dbHelper: DatabaseHelper,
     onToggleExpand: () -> Unit,
     onLineSelectedToBoard: (TripTransitLineOption) -> Unit,
     onManualAdvance: () -> Unit,
@@ -1188,8 +1248,29 @@ private fun ActiveNavigationDeck(
                                         }
                                     }
 
-                                    // Horarios desta linha
-                                    val departures = stage.initialUpcomingDepartures.take(5)
+                                    // Horarios desta linha especifica
+                                    val departures = liveDeparturesByLine[line.lineId]?.ifEmpty { null }
+                                        ?: stage.initialUpcomingDepartures.filter { it.lineId == line.lineId }.ifEmpty { null }
+                                        ?: remember(line.lineId, stage.stopId, currentTickerMs / 60000L) {
+                                            if (stage.stopId != null) {
+                                                val tz = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+                                                val cal = java.util.Calendar.getInstance(tz)
+                                                val curSec = cal.get(java.util.Calendar.HOUR_OF_DAY) * 3600 + cal.get(java.util.Calendar.MINUTE) * 60 + cal.get(java.util.Calendar.SECOND)
+                                                val secList: List<Int> = dbHelper.getNextScheduledDepartures(line.lineId, stage.stopId, curSec, 3)
+                                                secList.map { sec: Int ->
+                                                    val h = (sec / 3600) % 24
+                                                    val m = (sec % 3600) / 60
+                                                    TripDepartureItem(
+                                                        lineNumber = line.lineNumber,
+                                                        timeFormatted = String.format(Locale.ROOT, "%02d:%02d", h, m),
+                                                        isRealtime = false,
+                                                        targetEpochMs = currentTickerMs + ((sec - curSec) * 1000L),
+                                                        lineId = line.lineId
+                                                    )
+                                                }
+                                            } else emptyList()
+                                        }
+
                                     if (departures.isNotEmpty()) {
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Row(
@@ -1203,8 +1284,10 @@ private fun ActiveNavigationDeck(
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.size(13.dp)
                                             )
-                                            departures.forEach { dep ->
+                                            departures.take(5).forEach { dep ->
                                                 if (dep.isRealtime) {
+                                                    val mins = maxOf(0, Math.round((dep.targetEpochMs - currentTickerMs) / 60000.0).toInt())
+                                                    val dynamicRtText = if (mins <= 1) "Já" else "$mins min"
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         modifier = Modifier
@@ -1220,7 +1303,7 @@ private fun ActiveNavigationDeck(
                                                         )
                                                         Spacer(modifier = Modifier.width(3.dp))
                                                         Text(
-                                                            text = dep.timeFormatted,
+                                                            text = dynamicRtText,
                                                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
                                                             color = TransitGreen
                                                         )
@@ -1585,32 +1668,60 @@ private fun buildNavigationStages(
                     GeoPoint(decodedPoints.last().first, decodedPoints.last().second)
                 } else null
 
-                // Recupera paradas intermediarias do banco GTFS local se lineId estiver presente
-                val firstLineId = leg.lines.firstOrNull()?.lineId
+                // 1. Usa as paradas intermediarias vindas da API Moovit (precisas para esta perna)
                 val intermediatePoints = mutableListOf<GeoPoint>()
-                if (firstLineId != null && firstLineId > 0) {
-                    val allLineStops = dbHelper.getStopsForLine(firstLineId)
-                    if (allLineStops.size > 2) {
-                        val firstSid = leg.departureStopId
-                        val startIdx = if (firstSid != null) allLineStops.indexOfFirst { it.stopId == firstSid }.coerceAtLeast(0) else 0
-                        val endIdx = allLineStops.size - 1
-                        val slice = allLineStops.subList(
-                            (startIdx + 1).coerceAtMost(allLineStops.size),
-                            endIdx.coerceAtLeast(0)
-                        )
-                        intermediatePoints.addAll(slice.map { GeoPoint(it.latitude, it.longitude) })
+                if (leg.intermediateStopPoints.isNotEmpty()) {
+                    intermediatePoints.addAll(leg.intermediateStopPoints.map { GeoPoint(it.first, it.second) })
+                } else {
+                    // Fallback para paradas do banco SQLite limitadas estritamente ao trecho entre embarque e desembarque
+                    val firstLineId = leg.lines.firstOrNull()?.lineId
+                    if (firstLineId != null && firstLineId > 0) {
+                        val allLineStops = dbHelper.getStopsForLine(firstLineId)
+                        if (allLineStops.size > 2) {
+                            val firstSid = leg.departureStopId
+                            val startIdx = if (firstSid != null) {
+                                allLineStops.indexOfFirst { it.stopId == firstSid }.coerceAtLeast(0)
+                            } else 0
+                            val destIdx = if (destPoint != null) {
+                                allLineStops.indexOfFirst {
+                                    distanceMeters(it.latitude, it.longitude, destPoint.latitude, destPoint.longitude) < 120f
+                                }
+                            } else -1
+                            val safeEndIdx = if (destIdx > startIdx) destIdx else allLineStops.size - 1
+                            val slice = allLineStops.subList(
+                                (startIdx + 1).coerceAtMost(allLineStops.size),
+                                safeEndIdx.coerceAtLeast(0)
+                            )
+                            intermediatePoints.addAll(slice.map { GeoPoint(it.latitude, it.longitude) })
+                        }
                     }
                 }
 
-                // Fallback se nao houver paradas no banco: amostra pontos ao longo da polyline
-                if (intermediatePoints.isEmpty() && leg.stopsCount > 0 && decodedPoints.size > 2) {
-                    val count = leg.stopsCount
+                // 2. Trava geometrica rigorosa: elimina quaisquer pontos fora da rota desta perna (ex: voltas de linhas circulares)
+                val validIntermediateStops = if (decodedPoints.isNotEmpty() && intermediatePoints.isNotEmpty()) {
+                    intermediatePoints.filter { pt ->
+                        val minDistance = decodedPoints.minOfOrNull { p ->
+                            distanceMeters(pt.latitude, pt.longitude, p.first, p.second)
+                        } ?: Float.MAX_VALUE
+                        minDistance <= 120f
+                    }
+                } else {
+                    intermediatePoints
+                }
+
+                // 3. Fallback se vazio e houver contagem de paradas: interpola pontos ao longo da propria polyline
+                val finalIntermediateStops = if (validIntermediateStops.isEmpty() && leg.stopsCount > 1 && decodedPoints.size > 2) {
+                    val count = leg.stopsCount - 1
                     val step = (decodedPoints.size / (count + 1)).coerceAtLeast(1)
+                    val sampled = mutableListOf<GeoPoint>()
                     for (s in 1..count) {
                         val ptIdx = (s * step).coerceAtMost(decodedPoints.size - 2)
                         val pt = decodedPoints[ptIdx]
-                        intermediatePoints.add(GeoPoint(pt.first, pt.second))
+                        sampled.add(GeoPoint(pt.first, pt.second))
                     }
+                    sampled
+                } else {
+                    validIntermediateStops
                 }
 
                 // Etapa 1: Esperar pelo onibus
@@ -1633,8 +1744,8 @@ private fun buildNavigationStages(
                         candidateLines = leg.lines,
                         destinationStopName = leg.arrivalStopName ?: "Parada de Desembarque",
                         destinationPoint = destPoint,
-                        totalStopsCount = leg.stopsCount.coerceAtLeast(intermediatePoints.size),
-                        intermediateStops = intermediatePoints
+                        totalStopsCount = if (finalIntermediateStops.isNotEmpty()) finalIntermediateStops.size + 1 else leg.stopsCount.coerceAtLeast(1),
+                        intermediateStops = finalIntermediateStops
                     )
                 )
             }
@@ -1738,33 +1849,77 @@ private fun createVehiclePuckDrawable(context: Context, bearing: Float): BitmapD
     return BitmapDrawable(context.resources, bitmap)
 }
 
-private fun createCircleMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
-    val sizePx = (32 * context.resources.displayMetrics.density).toInt()
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
+    val density = context.resources.displayMetrics.density
+    val widthPx = (24 * density).toInt()
+    val heightPx = (32 * density).toInt()
+    val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = try { android.graphics.Color.parseColor(colorHex) } catch (_: Exception) { android.graphics.Color.GREEN }
+    val headRadius = 10f * density
+    val headCenterX = widthPx / 2f
+    val headCenterY = 11f * density
+    val tipX = widthPx / 2f
+    val tipY = heightPx - (2f * density)
+
+    val pinColor = try {
+        android.graphics.Color.parseColor(colorHex)
+    } catch (_: Exception) {
+        android.graphics.Color.parseColor("#00A859")
+    }
+
+    // Sombra oval na base do pin
+    val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.argb(50, 0, 0, 0)
         style = Paint.Style.FILL
     }
-    val radius = sizePx / 2f
-    canvas.drawCircle(radius, radius, radius - 2, paint)
+    canvas.drawOval(
+        headCenterX - (4.5f * density),
+        heightPx - (3f * density),
+        headCenterX + (4.5f * density),
+        heightPx - (0.5f * density),
+        shadowPaint
+    )
 
+    // Caminho da silhueta do Pin
+    val pinPath = Path().apply {
+        arcTo(
+            headCenterX - headRadius,
+            headCenterY - headRadius,
+            headCenterX + headRadius,
+            headCenterY + headRadius,
+            -150f,
+            300f,
+            false
+        )
+        lineTo(tipX, tipY)
+        close()
+    }
+
+    // Preenchimento do Pin
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = pinColor
+        style = Paint.Style.FILL
+    }
+    canvas.drawPath(pinPath, fillPaint)
+
+    // Borda branca do Pin
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 3f * context.resources.displayMetrics.density
+        strokeWidth = 1.8f * density
     }
-    canvas.drawCircle(radius, radius, radius - 2, borderPaint)
+    canvas.drawPath(pinPath, borderPaint)
 
+    // Letra no cabecote do Pin
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
-        textSize = 14f * context.resources.displayMetrics.density
+        textSize = 11.5f * density
         isFakeBoldText = true
         textAlign = Paint.Align.CENTER
     }
-    val yPos = (radius - ((textPaint.descent() + textPaint.ascent()) / 2))
-    canvas.drawText(letter, radius, yPos, textPaint)
+    val textY = headCenterY - ((textPaint.descent() + textPaint.ascent()) / 2f)
+    canvas.drawText(letter, headCenterX, textY, textPaint)
 
     return BitmapDrawable(context.resources, bitmap)
 }

@@ -718,40 +718,42 @@ class StopsRepository(private val context: Context) {
         // 1. Tenta obter do endpoint de partidas em tempo real do Moovit
         try {
             val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(stopId)
-            val valid = moovitArrivals
-                .filter { lineIdSet.contains(it.lineId) }
-                .flatMap { it.arrivals }
-                .filter {
+            val matchedLines = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
+
+            for (lArr in matchedLines) {
+                val valid = lArr.arrivals.filter {
                     val target = it.rtEtdUTC ?: it.staticEtdUTC
                     target >= nowMs - 60_000L
                 }
-
-            for (arr in valid) {
-                val isRealTime = arr.rtEtdUTC != null
-                val target = arr.rtEtdUTC ?: arr.staticEtdUTC
-                val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
-                val formatted = if (isRealTime) {
-                    if (mins <= 1) "Já" else "$mins min"
-                } else {
-                    formatEpochMsToHHMM(target, tz)
-                }
-                results.add(
-                    com.dfmob.data.model.TripDepartureItem(
-                        lineNumber = "",
-                        timeFormatted = formatted,
-                        isRealtime = isRealTime,
-                        targetEpochMs = target
+                for (arr in valid) {
+                    val isRealTime = arr.rtEtdUTC != null
+                    val target = arr.rtEtdUTC ?: arr.staticEtdUTC
+                    val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
+                    val formatted = if (isRealTime) {
+                        if (mins <= 1) "Já" else "$mins min"
+                    } else {
+                        formatEpochMsToHHMM(target, tz)
+                    }
+                    results.add(
+                        com.dfmob.data.model.TripDepartureItem(
+                            lineNumber = "",
+                            timeFormatted = formatted,
+                            isRealtime = isRealTime,
+                            targetEpochMs = target,
+                            lineId = lArr.lineId
+                        )
                     )
-                )
+                }
             }
         } catch (_: Exception) {}
 
-        // 2. Se vazio, consulta os horarios programados no banco local SQLite
-        if (results.isEmpty()) {
-            val cal = Calendar.getInstance(tz)
-            cal.timeInMillis = nowMs
-            val curSec = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
-            for (lid in lineIds) {
+        // 2. Consulta os horarios programados no banco local SQLite para as linhas que nao tiveram retorno
+        val cal = Calendar.getInstance(tz)
+        cal.timeInMillis = nowMs
+        val curSec = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
+        for (lid in lineIds) {
+            val countForLine = results.count { it.lineId == lid }
+            if (countForLine == 0) {
                 val secList = dbHelper.getNextScheduledDepartures(lid, stopId, curSec, 3)
                 for (sec in secList) {
                     val h = (sec / 3600) % 24
@@ -762,7 +764,8 @@ class StopsRepository(private val context: Context) {
                             lineNumber = "",
                             timeFormatted = timeStr,
                             isRealtime = false,
-                            targetEpochMs = nowMs + ((sec - curSec) * 1000L)
+                            targetEpochMs = nowMs + ((sec - curSec) * 1000L),
+                            lineId = lid
                         )
                     )
                 }
@@ -771,17 +774,23 @@ class StopsRepository(private val context: Context) {
 
         // 3. Fallback final para horario programado do itinerario se ainda vazio
         if (results.isEmpty() && fallbackScheduledUtc > 0) {
-            results.add(
-                com.dfmob.data.model.TripDepartureItem(
-                    lineNumber = "",
-                    timeFormatted = formatEpochMsToHHMM(fallbackScheduledUtc, tz),
-                    isRealtime = false,
-                    targetEpochMs = fallbackScheduledUtc
+            for (lid in lineIds) {
+                results.add(
+                    com.dfmob.data.model.TripDepartureItem(
+                        lineNumber = "",
+                        timeFormatted = formatEpochMsToHHMM(fallbackScheduledUtc, tz),
+                        isRealtime = false,
+                        targetEpochMs = fallbackScheduledUtc,
+                        lineId = lid
+                    )
                 )
-            )
+            }
         }
 
-        results.distinctBy { it.timeFormatted }.sortedBy { it.targetEpochMs }.take(5)
+        results.groupBy { it.lineId }
+            .flatMap { (_, items) ->
+                items.distinctBy { it.timeFormatted }.sortedBy { it.targetEpochMs }.take(5)
+            }
     }
 
     suspend fun enrichItinerariesWithDepartures(

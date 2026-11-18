@@ -51,7 +51,8 @@ data class TripDepartureItem(
     val lineNumber: String,
     val timeFormatted: String,
     val isRealtime: Boolean,
-    val targetEpochMs: Long
+    val targetEpochMs: Long,
+    val lineId: Int = 0
 )
 
 data class TripPlanLeg(
@@ -66,7 +67,8 @@ data class TripPlanLeg(
     val arrivalStopName: String? = null,
     val stopsCount: Int = 0,
     val lines: List<TripTransitLineOption> = emptyList(),
-    val upcomingDepartures: List<TripDepartureItem> = emptyList()
+    val upcomingDepartures: List<TripDepartureItem> = emptyList(),
+    val intermediateStopPoints: List<Pair<Double, Double>> = emptyList()
 )
 
 data class TripPlanItinerary(
