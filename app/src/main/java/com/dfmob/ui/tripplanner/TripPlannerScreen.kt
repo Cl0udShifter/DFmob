@@ -191,6 +191,14 @@ fun TripPlannerScreen(
                     ),
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Text(
+                    text = ".",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 20.sp
+                    ),
+                    color = TransitGreen
+                )
             }
 
             // MODULO 1: Origem e Destino com conexao vertical
