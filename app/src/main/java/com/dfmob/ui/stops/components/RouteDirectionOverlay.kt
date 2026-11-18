@@ -10,22 +10,32 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import kotlin.math.atan2
-import kotlin.math.hypot
+import kotlin.math.cos
 
 /**
- * Overlay otimizado que renderiza indicadores de fluxo/direcao (circulo branco com seta preta grossa)
- * ao longo da rota de onibus e metro no mapa.
+ * Overlay otimizado que renderiza indicadores de fluxo/direcao estaticos
+ * (circulo branco com seta preta grossa) ao longo da rota de onibus e metro no mapa.
  *
- * Casos de borda tratados:
- * 1. Z-Index: Posicionado abaixo de marcadores de paradas e icones de veiculos.
- * 2. Culling de Zoom: Totalmente oculto em zoom < 13.5 (visao geral do DF sem poluicao).
- * 3. Densidade Dinamica: Espacamento de ~280px em zoom 13.5-15.5 e ~180px em zoom >= 15.5.
- * 4. Orientacao precisa: Seta alinhada ao vetor de deslocamento da via.
+ * Utiliza a arquitetura e padrao do Moovit:
+ * 1. Pontos estaticos calculados em coordenadas geograficas reais (a cada ~350m ao longo do percurso).
+ * 2. Pontos ficam 100% ancorados na coordenada geografica da rua, sem deslizar ou mover ao dar zoom in/out.
+ * 3. Estados de exibicao por nivel de zoom (Moovit DrawArrowsState):
+ *    - zoom < 14.0: NO_DRAW (0 setas para manter a visao geral do DF limpa)
+ *    - 14.0 <= zoom < 16.5: DRAW_HALF (apenas indices pares para evitar poluicao visual)
+ *    - zoom >= 16.5: DRAW_ALL (todas as setas exibidas)
+ * 4. Orientacao precisa em graus seguindo o azimute da via.
  */
 class RouteDirectionOverlay(context: Context) : Overlay() {
 
     private val density = context.resources.displayMetrics.density
-    private var points: List<GeoPoint> = emptyList()
+
+    private data class StaticArrow(
+        val geoPoint: GeoPoint,
+        val angleDeg: Float
+    )
+
+    @Volatile
+    private var staticArrows: List<StaticArrow> = emptyList()
 
     private val circleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -58,71 +68,84 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
     }
 
     private val radius = 8.5f * density
-    private val p1 = Point()
-    private val p2 = Point()
+    private val screenPt = Point()
 
     fun setPoints(newPoints: List<GeoPoint>) {
-        this.points = newPoints
+        if (newPoints.size < 2) {
+            staticArrows = emptyList()
+            return
+        }
+
+        val stepMeters = 350.0
+        val arrows = ArrayList<StaticArrow>()
+        var accumulated = 0.0
+        var nextTarget = 150.0
+
+        for (i in 0 until newPoints.size - 1) {
+            val pA = newPoints[i]
+            val pB = newPoints[i + 1]
+            val segDist = pA.distanceToAsDouble(pB)
+            if (segDist <= 0.001) continue
+
+            val dLat = pB.latitude - pA.latitude
+            val dLon = pB.longitude - pA.longitude
+            val cosLat = cos(Math.toRadians(pA.latitude))
+            val angleDeg = Math.toDegrees(atan2(-dLat, dLon * cosLat)).toFloat()
+
+            while (accumulated + segDist >= nextTarget) {
+                val fraction = (nextTarget - accumulated) / segDist
+                val arrowLat = pA.latitude + fraction * dLat
+                val arrowLon = pA.longitude + fraction * dLon
+                arrows.add(StaticArrow(GeoPoint(arrowLat, arrowLon), angleDeg))
+                nextTarget += stepMeters
+            }
+
+            accumulated += segDist
+        }
+
+        this.staticArrows = arrows
     }
 
     override fun draw(canvas: Canvas?, mapView: MapView?, shadow: Boolean) {
         if (shadow || canvas == null || mapView == null) return
         val currentZoom = mapView.zoomLevelDouble
-        if (currentZoom < 13.5 || points.size < 2) return
+        val arrows = staticArrows
+        if (currentZoom < 14.0 || arrows.isEmpty()) return
 
-        val spacingPx = if (currentZoom < 15.5) 280f * density else 180f * density
+        val isHalf = currentZoom < 16.5
         val projection = mapView.projection
         val width = mapView.width
         val height = mapView.height
+        val mapOrientation = mapView.mapOrientation
 
-        var accumulatedDist = 0.0
-        var nextArrowDist = spacingPx * 0.7 // Margem inicial para a primeira seta
+        for (i in arrows.indices) {
+            if (isHalf && (i % 2 != 0)) continue
 
-        projection.toPixels(points[0], p1)
+            val arrow = arrows[i]
+            projection.toPixels(arrow.geoPoint, screenPt)
 
-        for (i in 1 until points.size) {
-            projection.toPixels(points[i], p2)
+            val px = screenPt.x
+            val py = screenPt.y
 
-            val dx = (p2.x - p1.x).toDouble()
-            val dy = (p2.y - p1.y).toDouble()
-            val segLen = hypot(dx, dy)
+            if (px < -30 || px > width + 30 || py < -30 || py > height + 30) continue
 
-            if (segLen > 0.1) {
-                while (accumulatedDist + segLen >= nextArrowDist) {
-                    val progress = (nextArrowDist - accumulatedDist) / segLen
-                    val arrowX = (p1.x + progress * dx).toFloat()
-                    val arrowY = (p1.y + progress * dy).toFloat()
+            canvas.save()
+            canvas.translate(px.toFloat(), py.toFloat())
 
-                    // Desenha apenas setas visiveis dentro dos limites da tela com margem
-                    if (arrowX >= -30 && arrowX <= width + 30 && arrowY >= -30 && arrowY <= height + 30) {
-                        val angleDeg = Math.toDegrees(atan2(dy, dx)).toFloat()
+            // 1. Sombra suave
+            canvas.drawCircle(0f, 1f * density, radius, shadowPaint)
 
-                        canvas.save()
-                        canvas.translate(arrowX, arrowY)
+            // 2. Circulo branco solido
+            canvas.drawCircle(0f, 0f, radius, circleFillPaint)
 
-                        // 1. Sombra suave
-                        canvas.drawCircle(0f, 1f * density, radius, shadowPaint)
+            // 3. Borda fina de contorno
+            canvas.drawCircle(0f, 0f, radius, circleBorderPaint)
 
-                        // 2. Circulo branco solido
-                        canvas.drawCircle(0f, 0f, radius, circleFillPaint)
+            // 4. Seta grossa preta alinhada ao sentido do percurso
+            canvas.rotate(arrow.angleDeg - mapOrientation)
+            canvas.drawPath(arrowPath, arrowPaint)
 
-                        // 3. Borda fina de contorno
-                        canvas.drawCircle(0f, 0f, radius, circleBorderPaint)
-
-                        // 4. Seta grossa preta alinhada a via
-                        canvas.rotate(angleDeg)
-                        canvas.drawPath(arrowPath, arrowPaint)
-
-                        canvas.restore()
-                    }
-
-                    nextArrowDist += spacingPx
-                }
-            }
-
-            accumulatedDist += segLen
-            p1.x = p2.x
-            p1.y = p2.y
+            canvas.restore()
         }
     }
 }

@@ -45,7 +45,7 @@ class StadiaMapsService(
                 requestMethod = "GET"
                 connectTimeout = 4000
                 readTimeout = 4000
-                setRequestProperty("User-Agent", "DFmob/1.4.2 (Android)")
+                setRequestProperty("User-Agent", "DFmob/1.4.3 (Android)")
             }
 
             if (connection.responseCode != 200) {
@@ -111,7 +111,7 @@ class StadiaMapsService(
                 requestMethod = "GET"
                 connectTimeout = 3000
                 readTimeout = 3000
-                setRequestProperty("User-Agent", "DFmob/1.4.2 (Android)")
+                setRequestProperty("User-Agent", "DFmob/1.4.3 (Android)")
             }
             connection.responseCode == 200
         } catch (_: Exception) {

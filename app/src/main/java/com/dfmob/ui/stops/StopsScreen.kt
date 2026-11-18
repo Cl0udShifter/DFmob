@@ -289,6 +289,7 @@ fun StopsScreen(
                 activeRoute = activeRouteState,
                 focusLocation = focusLocation,
                 recenterTrigger = recenterTrigger,
+                enableAutoCenterOnGps = initialLineNumber.isNullOrBlank() && activeRouteState == null && focusLocation == null,
                 isDarkTheme = isDarkTheme,
                 onStopSelected = { stop ->
                     if (activeRouteState != null) {
@@ -584,11 +585,13 @@ fun StopsScreen(
                                 focusLocation = DFLocation(firstBus.lineNumber, "", firstBus.latE6, firstBus.lonE6)
                             }
                         },
-                        isFavorite = favoritesRepo.isLineFavorite(
-                            lineNumber = currentRoute.lineNumber,
-                            directionId = if (currentRoute.circular) null else currentRoute.activeDirectionId,
-                            isCircular = currentRoute.circular
-                        ),
+                        isFavorite = favoriteLines.any { fav ->
+                            if (currentRoute.circular) {
+                                fav.lineNumber == currentRoute.lineNumber
+                            } else {
+                                fav.lineNumber == currentRoute.lineNumber && (fav.directionId == null || fav.directionId == currentRoute.activeDirectionId)
+                            }
+                        },
                         onToggleFavorite = {
                             val lineObj = TransitLine(
                                 routeId = currentRoute.activeLineId.toString(),

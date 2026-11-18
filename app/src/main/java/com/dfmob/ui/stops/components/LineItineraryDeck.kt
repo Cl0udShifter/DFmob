@@ -225,21 +225,44 @@ fun LineItineraryDeck(
                         )
                     }
 
-                    // Botao Fechar Itinerario da Linha
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(actionBtnBg)
-                            .clickable(onClick = onClose),
-                        contentAlignment = Alignment.Center
+                    // Acoes do Topo: Favorito e Fechar
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Fechar rota",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        // Botao Favoritar Linha
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(actionBtnBg)
+                                .clickable(onClick = onToggleFavorite),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                contentDescription = "Favoritar linha",
+                                tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        // Botao Fechar Itinerario da Linha
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(actionBtnBg)
+                                .clickable(onClick = onClose),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Fechar rota",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
@@ -331,7 +354,7 @@ fun LineItineraryDeck(
                     }
                 }
 
-                // 5. Barra Inferior com Acoes: Localizacao em Tempo Real e Favorito
+                // 5. Barra Inferior com Acao: Localizacao em Tempo Real
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -343,7 +366,7 @@ fun LineItineraryDeck(
                     val liveVehiclesCount = activeRoute.liveVehicles.size
                     Surface(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(40.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .clickable(onClick = onLocateBuses),
@@ -374,40 +397,6 @@ fun LineItineraryDeck(
                                     fontSize = 12.5.sp
                                 ),
                                 color = Color.White
-                            )
-                        }
-                    }
-
-                    // Botao Favoritar Linha
-                    Surface(
-                        modifier = Modifier
-                            .height(40.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .border(1.dp, borderColor, RoundedCornerShape(20.dp))
-                            .clickable(onClick = onToggleFavorite),
-                        color = actionBtnBg,
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                contentDescription = "Favoritar linha",
-                                tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Text(
-                                text = "Favorito",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }

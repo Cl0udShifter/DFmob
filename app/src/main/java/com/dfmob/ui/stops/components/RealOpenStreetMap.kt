@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -115,6 +116,7 @@ fun RealOpenStreetMap(
     recenterTrigger: Long,
     onStopSelected: (TransitStop) -> Unit,
     activeRoute: LineRouteState? = null,
+    enableAutoCenterOnGps: Boolean = true,
     isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
     modifier: Modifier = Modifier
 ) {
@@ -152,8 +154,11 @@ fun RealOpenStreetMap(
             val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
             val initialLoc = lastGps ?: lastNet
             val isFresh = initialLoc != null && (System.currentTimeMillis() - initialLoc.time < 45_000L)
-            if (isFresh && initialLoc != null) {
+            val canAutoCenter = enableAutoCenterOnGps && focusLocation == null && activeRoute == null
+            if (canAutoCenter && isFresh && initialLoc != null) {
                 controller.setCenter(GeoPoint(initialLoc.latitude, initialLoc.longitude))
+            } else if (focusLocation != null) {
+                controller.setCenter(GeoPoint(focusLocation.latitude, focusLocation.longitude))
             } else {
                 controller.setCenter(GeoPoint(-15.794167, -47.882778))
             }
@@ -161,13 +166,16 @@ fun RealOpenStreetMap(
     }
 
     var hasCenteredOnFreshGps by remember { mutableStateOf(false) }
+    val currentEnableAutoCenter by rememberUpdatedState(enableAutoCenterOnGps)
+    val currentFocusLocation by rememberUpdatedState(focusLocation)
+    val currentActiveRoute by rememberUpdatedState(activeRoute)
 
     // Registra listener para capturar o primeiro fix fresco do GPS ao abrir ou ligar tela
     DisposableEffect(context) {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         val freshListener = object : LocationListener {
             override fun onLocationChanged(loc: Location) {
-                if (!hasCenteredOnFreshGps && focusLocation == null && activeRoute == null) {
+                if (!hasCenteredOnFreshGps && currentEnableAutoCenter && currentFocusLocation == null && currentActiveRoute == null) {
                     hasCenteredOnFreshGps = true
                     mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude), 16.0, 750L)
                 }
