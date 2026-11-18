@@ -39,7 +39,7 @@ object MoovitTransitClient {
     private val OBFUSCATED_METRO_ID = byteArrayOf(107, 109, 106, 104)
 
     private val OBFUSCATED_METRO_REVISION = byteArrayOf(
-        107, 109, 99, 110, 110, 108, 110, 111, 109, 108, 111, 106, 104
+        107, 109, 99, 110, 99, 109, 110, 104, 104, 110, 109, 104, 105
     )
 
     private fun deobfuscate(bytes: ByteArray): String {
@@ -59,9 +59,89 @@ object MoovitTransitClient {
     }
 
     private fun getMetroId(): String = deobfuscate(OBFUSCATED_METRO_ID)
-    private fun getMetroRevision(): String = deobfuscate(OBFUSCATED_METRO_REVISION)
+
+    @Volatile
+    private var currentMetroRevision: String = deobfuscate(OBFUSCATED_METRO_REVISION)
+
+    private fun getMetroRevision(): String = currentMetroRevision
 
     private const val LINE_ARRIVALS_URL = "https://app5.moovitapp.com/services-app/services/V4/LineArrivals"
+
+    private fun openMoovitConnection(
+        urlStr: String,
+        payloadSize: Int,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        metroRevision: String?
+    ): HttpURLConnection {
+        val url = URL(urlStr)
+        return (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            doOutput = true
+            setRequestProperty("Host", "app5.moovitapp.com")
+            setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
+            setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
+            setRequestProperty("PHONE_TYPE", PHONE_TYPE)
+            setRequestProperty("API_KEY", getApiKey())
+            setRequestProperty("USER_KEY", getUserKey())
+            setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
+            if (!metroRevision.isNullOrBlank()) {
+                setRequestProperty("Metro-Revision-Number", metroRevision)
+            }
+            setRequestProperty("Content-Type", "application/octet")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Content-Length", payloadSize.toString())
+        }
+    }
+
+    private fun executeRequest(
+        urlStr: String,
+        payload: ByteArray,
+        connectTimeoutMs: Int = 4000,
+        readTimeoutMs: Int = 5000
+    ): String? {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = openMoovitConnection(urlStr, payload.size, connectTimeoutMs, readTimeoutMs, currentMetroRevision)
+            conn.outputStream.use { os ->
+                os.write(payload)
+                os.flush()
+            }
+
+            val code = conn.responseCode
+            val returnedRev = conn.getHeaderField("Metro-Revision-Number")
+            if (!returnedRev.isNullOrBlank()) {
+                currentMetroRevision = returnedRev
+            }
+
+            if (code == HttpURLConnection.HTTP_OK) {
+                return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } else if (code == 412) {
+                // HTTP 412 Precondition Failed: revisao do metro expirada
+                val newRev = returnedRev ?: currentMetroRevision
+                conn.disconnect()
+                val retryConn = openMoovitConnection(urlStr, payload.size, connectTimeoutMs, readTimeoutMs, newRev)
+                retryConn.outputStream.use { os ->
+                    os.write(payload)
+                    os.flush()
+                }
+                if (retryConn.responseCode == HttpURLConnection.HTTP_OK) {
+                    val retryRev = retryConn.getHeaderField("Metro-Revision-Number")
+                    if (!retryRev.isNullOrBlank()) {
+                        currentMetroRevision = retryRev
+                    }
+                    return retryConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                }
+            }
+        } catch (_: Exception) {
+            // Silencioso: fallback suave para dados locais
+        } finally {
+            conn?.disconnect()
+        }
+        return null
+    }
 
     data class RawArrival(
         val patternId: Int,
@@ -140,94 +220,63 @@ object MoovitTransitClient {
 
     fun fetchArrivalsForStop(stopId: Int): List<RawLineArrivals> {
         val payload = buildStopArrivalsRequest(stopId, System.currentTimeMillis())
-        var conn: HttpURLConnection? = null
         val result = mutableListOf<RawLineArrivals>()
 
+        val jsonText = executeRequest(ARRIVALS_URL, payload, 4000, 4000) ?: return result
         try {
-            val url = URL(ARRIVALS_URL)
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 4000
-                readTimeout = 4000
-                doOutput = true
-                setRequestProperty("Host", "app5.moovitapp.com")
-                setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
-                setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
-                setRequestProperty("PHONE_TYPE", PHONE_TYPE)
-                setRequestProperty("API_KEY", getApiKey())
-                setRequestProperty("USER_KEY", getUserKey())
-                setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
-                setRequestProperty("Metro-Revision-Number", getMetroRevision())
-                setRequestProperty("Content-Type", "application/octet")
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Length", payload.size.toString())
-            }
+            val root = JSONObject(jsonText)
+            val lineArrivalsObj = root.optJSONObject("3")
+            val lstArray = lineArrivalsObj?.optJSONArray("lst")
+            if (lstArray != null && lstArray.length() > 2) {
+                for (i in 2 until lstArray.length()) {
+                    val lineRec = lstArray.optJSONObject(i) ?: continue
+                    val lineId = lineRec.optJSONObject("1")?.optInt("i32", 0) ?: 0
+                    if (lineId == 0) continue
 
-            conn.outputStream.use { os ->
-                os.write(payload)
-                os.flush()
-            }
+                    val arrivalsObj = lineRec.optJSONObject("2")
+                    val arrLst = arrivalsObj?.optJSONArray("lst")
+                    val arrivals = mutableListOf<RawArrival>()
 
-            val responseCode = conn.responseCode
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                val jsonText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val root = JSONObject(jsonText)
+                    if (arrLst != null && arrLst.length() > 2) {
+                        for (j in 2 until arrLst.length()) {
+                            val arrRec = arrLst.optJSONObject(j) ?: continue
+                            val patternId = arrRec.optJSONObject("1")?.optInt("i32", 0) ?: 0
+                            val tripId = arrRec.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
+                            val staticEtdUTC = arrRec.optJSONObject("3")?.optLong("i64", 0L) ?: 0L
+                            val rtEtdUTC = if (arrRec.has("4")) arrRec.optJSONObject("4")?.optLong("i64") else null
 
-                val lineArrivalsObj = root.optJSONObject("3")
-                val lstArray = lineArrivalsObj?.optJSONArray("lst")
-                if (lstArray != null && lstArray.length() > 2) {
-                    for (i in 2 until lstArray.length()) {
-                        val lineRec = lstArray.optJSONObject(i) ?: continue
-                        val lineId = lineRec.optJSONObject("1")?.optInt("i32", 0) ?: 0
-                        if (lineId == 0) continue
+                            val vehRec = arrRec.optJSONObject("11")?.optJSONObject("rec")
+                            val vehicleId = vehRec?.optJSONObject("3")?.optString("str")
+                            val latlonRec = vehRec?.optJSONObject("1")?.optJSONObject("rec")
+                            val latE6 = (latlonRec?.optJSONObject("1")?.optInt("i32", 0) ?: latlonRec?.optInt("1", 0)).takeIf { it != null && it != 0 }
+                            val lonE6 = (latlonRec?.optJSONObject("2")?.optInt("i32", 0) ?: latlonRec?.optInt("2", 0)).takeIf { it != null && it != 0 }
+                            val sampleTime = (vehRec?.optJSONObject("4")?.optLong("i64", 0L) ?: vehRec?.optLong("4", 0L)).takeIf { it != null && it != 0L }
+                            val nextStopIdx = (vehRec?.optJSONObject("2")?.optJSONObject("rec")?.optJSONObject("1")?.optInt("i32", -1)
+                                ?: vehRec?.optJSONObject("2")?.optJSONObject("rec")?.optInt("1", -1)).takeIf { it != null && it >= 0 }
+                            val patternSize = arrRec.optJSONObject("13")?.optInt("i32", 0).takeIf { it != null && it > 0 }
 
-                        val arrivalsObj = lineRec.optJSONObject("2")
-                        val arrLst = arrivalsObj?.optJSONArray("lst")
-                        val arrivals = mutableListOf<RawArrival>()
-
-                        if (arrLst != null && arrLst.length() > 2) {
-                            for (j in 2 until arrLst.length()) {
-                                val arrRec = arrLst.optJSONObject(j) ?: continue
-                                val patternId = arrRec.optJSONObject("1")?.optInt("i32", 0) ?: 0
-                                val tripId = arrRec.optJSONObject("2")?.optLong("i64", 0L) ?: 0L
-                                val staticEtdUTC = arrRec.optJSONObject("3")?.optLong("i64", 0L) ?: 0L
-                                val rtEtdUTC = if (arrRec.has("4")) arrRec.optJSONObject("4")?.optLong("i64") else null
-
-                                val vehRec = arrRec.optJSONObject("11")?.optJSONObject("rec")
-                                val vehicleId = vehRec?.optJSONObject("3")?.optString("str")
-                                val latlonRec = vehRec?.optJSONObject("1")?.optJSONObject("rec")
-                                val latE6 = (latlonRec?.optJSONObject("1")?.optInt("i32", 0) ?: latlonRec?.optInt("1", 0)).takeIf { it != null && it != 0 }
-                                val lonE6 = (latlonRec?.optJSONObject("2")?.optInt("i32", 0) ?: latlonRec?.optInt("2", 0)).takeIf { it != null && it != 0 }
-                                val sampleTime = (vehRec?.optJSONObject("4")?.optLong("i64", 0L) ?: vehRec?.optLong("4", 0L)).takeIf { it != null && it != 0L }
-                                val nextStopIdx = (vehRec?.optJSONObject("2")?.optJSONObject("rec")?.optJSONObject("1")?.optInt("i32", -1)
-                                    ?: vehRec?.optJSONObject("2")?.optJSONObject("rec")?.optInt("1", -1)).takeIf { it != null && it >= 0 }
-                                val patternSize = arrRec.optJSONObject("13")?.optInt("i32", 0).takeIf { it != null && it > 0 }
-
-                                arrivals.add(
-                                    RawArrival(
-                                        patternId = patternId,
-                                        tripId = tripId,
-                                        staticEtdUTC = staticEtdUTC,
-                                        rtEtdUTC = rtEtdUTC,
-                                        vehicleId = vehicleId,
-                                        vehicleLatE6 = latE6,
-                                        vehicleLonE6 = lonE6,
-                                        vehicleSampleTimeUtc = sampleTime,
-                                        nextStopIndex = nextStopIdx,
-                                        patternStopsSize = patternSize
-                                    )
+                            arrivals.add(
+                                RawArrival(
+                                    patternId = patternId,
+                                    tripId = tripId,
+                                    staticEtdUTC = staticEtdUTC,
+                                    rtEtdUTC = rtEtdUTC,
+                                    vehicleId = vehicleId,
+                                    vehicleLatE6 = latE6,
+                                    vehicleLonE6 = lonE6,
+                                    vehicleSampleTimeUtc = sampleTime,
+                                    nextStopIndex = nextStopIdx,
+                                    patternStopsSize = patternSize
                                 )
-                            }
+                            )
                         }
-
-                        result.add(RawLineArrivals(lineId, arrivals))
                     }
+
+                    result.add(RawLineArrivals(lineId, arrivals))
                 }
             }
         } catch (_: Exception) {
             // Silencioso: fallback suave para banco SQLite local em caso de instabilidade de rede
-        } finally {
-            conn?.disconnect()
         }
 
         return result
@@ -320,86 +369,58 @@ object MoovitTransitClient {
 
         val pairs = sampledStops.map { Pair(it, lineId) }
         val payload = buildLineArrivalsRequest(pairs, System.currentTimeMillis())
-        var conn: HttpURLConnection? = null
         val vehiclesMap = mutableMapOf<String, LiveVehicleMarker>()
 
+        val jsonText = executeRequest(LINE_ARRIVALS_URL, payload, 4000, 4000) ?: return emptyList()
+
         try {
-            val url = URL(LINE_ARRIVALS_URL)
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 4000
-                readTimeout = 4000
-                doOutput = true
-                setRequestProperty("Host", "app5.moovitapp.com")
-                setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
-                setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
-                setRequestProperty("PHONE_TYPE", PHONE_TYPE)
-                setRequestProperty("API_KEY", getApiKey())
-                setRequestProperty("USER_KEY", getUserKey())
-                setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
-                setRequestProperty("Metro-Revision-Number", getMetroRevision())
-                setRequestProperty("Content-Type", "application/octet")
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Length", payload.size.toString())
-            }
+            val tokener = JSONTokener(jsonText)
+            while (tokener.more()) {
+                val nextChar = tokener.nextClean()
+                if (nextChar != '{') break
+                tokener.back()
+                val obj = JSONObject(tokener)
+                val lineRec = obj.optJSONObject("3")?.optJSONObject("rec") ?: continue
+                val arrLst = lineRec.optJSONObject("2")?.optJSONArray("lst") ?: continue
 
-            conn.outputStream.use { os ->
-                os.write(payload)
-                os.flush()
-            }
+                if (arrLst.length() > 2) {
+                    for (j in 2 until arrLst.length()) {
+                        val arrRec = arrLst.optJSONObject(j) ?: continue
+                        val vehRec = arrRec.optJSONObject("11")?.optJSONObject("rec") ?: continue
+                        val latlonRec = vehRec.optJSONObject("1")?.optJSONObject("rec") ?: continue
+                        val latE6 = latlonRec.optJSONObject("1")?.optInt("i32", 0) ?: latlonRec.optInt("1", 0)
+                        val lonE6 = latlonRec.optJSONObject("2")?.optInt("i32", 0) ?: latlonRec.optInt("2", 0)
+                        val vid = vehRec.optJSONObject("3")?.optString("str") ?: continue
+                        val nextStopIdx = vehRec.optJSONObject("2")?.optJSONObject("rec")?.optJSONObject("1")?.optInt("i32", -1)
+                            ?: vehRec.optJSONObject("2")?.optJSONObject("rec")?.optInt("1", -1)
+                            ?: -1
 
-            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
-                val jsonText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val tokener = JSONTokener(jsonText)
-                while (tokener.more()) {
-                    val nextChar = tokener.nextClean()
-                    if (nextChar != '{') break
-                    tokener.back()
-                    val obj = JSONObject(tokener)
-                    val lineRec = obj.optJSONObject("3")?.optJSONObject("rec") ?: continue
-                    val arrLst = lineRec.optJSONObject("2")?.optJSONArray("lst") ?: continue
-
-                    if (arrLst.length() > 2) {
-                        for (j in 2 until arrLst.length()) {
-                            val arrRec = arrLst.optJSONObject(j) ?: continue
-                            val vehRec = arrRec.optJSONObject("11")?.optJSONObject("rec") ?: continue
-                            val latlonRec = vehRec.optJSONObject("1")?.optJSONObject("rec") ?: continue
-                            val latE6 = latlonRec.optJSONObject("1")?.optInt("i32", 0) ?: latlonRec.optInt("1", 0)
-                            val lonE6 = latlonRec.optJSONObject("2")?.optInt("i32", 0) ?: latlonRec.optInt("2", 0)
-                            val vid = vehRec.optJSONObject("3")?.optString("str") ?: continue
-                            val nextStopIdx = vehRec.optJSONObject("2")?.optJSONObject("rec")?.optJSONObject("1")?.optInt("i32", -1)
-                                ?: vehRec.optJSONObject("2")?.optJSONObject("rec")?.optInt("1", -1)
-                                ?: -1
-
-                            if (latE6 != 0 && lonE6 != 0 && !vehiclesMap.containsKey(vid)) {
-                                var bearing = 0f
-                                if (nextStopIdx >= 0 && nextStopIdx < stops.size) {
-                                    val targetStop = stops[nextStopIdx]
-                                    bearing = calculateBearing(
-                                        latE6 / 1_000_000.0,
-                                        lonE6 / 1_000_000.0,
-                                        targetStop.latitude,
-                                        targetStop.longitude
-                                    )
-                                }
-
-                                vehiclesMap[vid] = LiveVehicleMarker(
-                                    vehicleId = vid,
-                                    lineNumber = lineNumber,
-                                    latE6 = latE6,
-                                    lonE6 = lonE6,
-                                    speedKmh = 0f,
-                                    bearing = bearing,
-                                    directionId = directionId
+                        if (latE6 != 0 && lonE6 != 0 && !vehiclesMap.containsKey(vid)) {
+                            var bearing = 0f
+                            if (nextStopIdx >= 0 && nextStopIdx < stops.size) {
+                                val targetStop = stops[nextStopIdx]
+                                bearing = calculateBearing(
+                                    latE6 / 1_000_000.0,
+                                    lonE6 / 1_000_000.0,
+                                    targetStop.latitude,
+                                    targetStop.longitude
                                 )
                             }
+
+                            vehiclesMap[vid] = LiveVehicleMarker(
+                                vehicleId = vid,
+                                lineNumber = lineNumber,
+                                latE6 = latE6,
+                                lonE6 = lonE6,
+                                speedKmh = 0f,
+                                bearing = bearing,
+                                directionId = directionId
+                            )
                         }
                     }
                 }
             }
         } catch (_: Exception) {
-        } finally {
-            conn?.disconnect()
         }
 
         return vehiclesMap.values.toList()
@@ -548,42 +569,16 @@ object MoovitTransitClient {
             currentTimeSelected = isNow
         )
 
-        var conn: HttpURLConnection? = null
         val itineraries = mutableListOf<TripPlanItinerary>()
+        val jsonText = executeRequest(TRIP_PLAN_URL, payload, 6000, 8000) ?: return itineraries
 
         try {
-            val url = URL(TRIP_PLAN_URL)
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 6000
-                readTimeout = 8000
-                doOutput = true
-                setRequestProperty("Host", "app5.moovitapp.com")
-                setRequestProperty("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 14; 2412DPC0AG Build/UKQ1.231003.002)")
-                setRequestProperty("CLIENT_VERSION", CLIENT_VERSION)
-                setRequestProperty("PHONE_TYPE", PHONE_TYPE)
-                setRequestProperty("API_KEY", getApiKey())
-                setRequestProperty("USER_KEY", getUserKey())
-                setRequestProperty("Metro-Revision-Metro-Id", getMetroId())
-                setRequestProperty("Metro-Revision-Number", getMetroRevision())
-                setRequestProperty("Content-Type", "application/octet")
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Length", payload.size.toString())
-            }
-
-            conn.outputStream.use { os ->
-                os.write(payload)
-                os.flush()
-            }
-
-            if (conn.responseCode == HttpURLConnection.HTTP_OK) {
-                val jsonText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val tokener = JSONTokener(jsonText)
-                while (tokener.more()) {
-                    val nextChar = tokener.nextClean()
-                    if (nextChar != '{') break
-                    tokener.back()
-                    val obj = JSONObject(tokener)
+            val tokener = JSONTokener(jsonText)
+            while (tokener.more()) {
+                val nextChar = tokener.nextClean()
+                if (nextChar != '{') break
+                tokener.back()
+                val obj = JSONObject(tokener)
 
                     val itinRec = obj.optJSONObject("1")?.optJSONObject("rec") ?: continue
                     val guid = itinRec.optJSONObject("1")?.optString("str") ?: continue
@@ -846,10 +841,7 @@ object MoovitTransitClient {
                         )
                     }
                 }
-            }
         } catch (_: Exception) {
-        } finally {
-            conn?.disconnect()
         }
 
         return itineraries.sortedBy { it.totalDurationMinutes }
