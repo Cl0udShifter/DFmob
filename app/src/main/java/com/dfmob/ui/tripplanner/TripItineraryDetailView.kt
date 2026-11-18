@@ -378,6 +378,45 @@ fun TripItineraryDetailView(
             markersFolder.add(destMarker)
         }
 
+        // Desenha paradas pretas e marcadores brancos de subida/descida diretamente ao entrar na tela
+        intermediateMarkersFolder.items.clear()
+        itinerary.legs.forEach { leg ->
+            if (leg.type == TripLegType.TRANSIT) {
+                for (pt in leg.intermediateStopPoints) {
+                    val m = Marker(mapView).apply {
+                        position = GeoPoint(pt.first, pt.second)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = createSmallDotDrawable(context)
+                    }
+                    intermediateMarkersFolder.add(m)
+                }
+
+                val startPt = leg.intermediateStopPoints.firstOrNull()
+                    ?: leg.polylineEncoded?.let { PolylineDecoder.decode(it).firstOrNull() }
+                if (startPt != null) {
+                    val boardMarker = Marker(mapView).apply {
+                        position = GeoPoint(startPt.first, startPt.second)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = createWhiteStopMarkerDrawable(context, true)
+                        title = leg.departureStopName ?: "Embarque"
+                    }
+                    markersFolder.add(boardMarker)
+                }
+
+                val endPt = leg.intermediateStopPoints.lastOrNull()
+                    ?: leg.polylineEncoded?.let { PolylineDecoder.decode(it).lastOrNull() }
+                if (endPt != null) {
+                    val alightMarker = Marker(mapView).apply {
+                        position = GeoPoint(endPt.first, endPt.second)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = createWhiteStopMarkerDrawable(context, false)
+                        title = leg.arrivalStopName ?: "Desembarque"
+                    }
+                    markersFolder.add(alightMarker)
+                }
+            }
+        }
+
         mapView.invalidate()
 
         // Ajuste inicial com zoom out exibindo todo o trajeto com folga para nao cobrir sob o painel
@@ -409,7 +448,6 @@ fun TripItineraryDetailView(
         when (val stage = currentStage) {
             is NavigationStage.WalkToStop -> {
                 isExpandedDeck = false
-                intermediateMarkersFolder.items.clear()
                 vehiclesFolder.items.clear()
                 mapView.invalidate()
                 val target = stage.targetPoint
@@ -421,7 +459,6 @@ fun TripItineraryDetailView(
             is NavigationStage.WaitForTransit -> {
                 // Painel abre automaticamente a 75% da tela para visualizar os onibus e horarios
                 isExpandedDeck = true
-                intermediateMarkersFolder.items.clear()
                 val target = stage.stopPoint
                 if (target != null) {
                     mapView.controller.animateTo(target, 16.5, 700L)
@@ -434,15 +471,16 @@ fun TripItineraryDetailView(
                 vehiclesFolder.items.clear()
                 remainingStopsCount = stage.totalStopsCount
 
-                // Desenha pequenos pontos pretos indicando as paradas em que o usuario nao deve descer
-                intermediateMarkersFolder.items.clear()
-                for (pt in stage.intermediateStops) {
-                    val m = Marker(mapView).apply {
-                        position = pt
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        icon = createSmallDotDrawable(context)
+                // Assegura que as paradas intermediarias estao no mapa
+                if (intermediateMarkersFolder.items.isEmpty()) {
+                    for (pt in stage.intermediateStops) {
+                        val m = Marker(mapView).apply {
+                            position = pt
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            icon = createSmallDotDrawable(context)
+                        }
+                        intermediateMarkersFolder.add(m)
                     }
-                    intermediateMarkersFolder.add(m)
                 }
                 mapView.invalidate()
 
@@ -467,7 +505,6 @@ fun TripItineraryDetailView(
 
             is NavigationStage.WalkToDestination -> {
                 isExpandedDeck = false
-                intermediateMarkersFolder.items.clear()
                 vehiclesFolder.items.clear()
                 mapView.invalidate()
                 val target = stage.destinationPoint
@@ -478,7 +515,6 @@ fun TripItineraryDetailView(
 
             is NavigationStage.Completed -> {
                 isExpandedDeck = false
-                intermediateMarkersFolder.items.clear()
                 vehiclesFolder.items.clear()
                 mapView.invalidate()
             }
@@ -1049,29 +1085,32 @@ private fun ActiveNavigationDeck(
     )
 
     var dragOffsetY by remember { mutableStateOf(0f) }
+    val dragModifier = Modifier.pointerInput(isWaitForTransit) {
+        if (!isWaitForTransit) return@pointerInput
+        detectVerticalDragGestures(
+            onDragStart = { dragOffsetY = 0f },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                dragOffsetY += dragAmount
+            },
+            onDragEnd = {
+                if (dragOffsetY < -25f) {
+                    if (!isExpanded) onToggleExpand()
+                } else if (dragOffsetY > 25f) {
+                    if (isExpanded) onToggleExpand()
+                }
+                dragOffsetY = 0f
+            },
+            onDragCancel = {
+                dragOffsetY = 0f
+            }
+        )
+    }
 
     Surface(
         modifier = modifier
             .padding(horizontal = animatedPaddingH, vertical = animatedPaddingB)
-            .height(animatedHeight)
-            .pointerInput(isWaitForTransit) {
-                if (isWaitForTransit) {
-                    detectVerticalDragGestures(
-                        onDragEnd = {
-                            if (dragOffsetY < -50f && !isExpanded) {
-                                onToggleExpand()
-                            } else if (dragOffsetY > 50f && isExpanded) {
-                                onToggleExpand()
-                            }
-                            dragOffsetY = 0f
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffsetY += dragAmount
-                        }
-                    )
-                }
-            },
+            .height(animatedHeight),
         shape = deckShape,
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(
@@ -1081,18 +1120,20 @@ private fun ActiveNavigationDeck(
         shadowElevation = 8.dp
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-            // Puxador central superior
+            // Puxador central superior com suporte a gesto vertical
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = isWaitForTransit) { onToggleExpand() },
+                    .clickable(enabled = isWaitForTransit) { onToggleExpand() }
+                    .then(dragModifier)
+                    .padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
+                        .width(38.dp)
                         .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
             }
@@ -1152,11 +1193,13 @@ private fun ActiveNavigationDeck(
 
                 is NavigationStage.WaitForTransit -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(dragModifier)
+                            .clickable(enabled = isWaitForTransit) { onToggleExpand() },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Aguarde o transporte",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
@@ -1168,14 +1211,6 @@ private fun ActiveNavigationDeck(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        IconButton(onClick = onToggleExpand) {
-                            Icon(
-                                imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.KeyboardArrowUp,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1853,45 +1888,45 @@ private fun createVehiclePuckDrawable(context: Context, bearing: Float): BitmapD
 
 private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
     val density = context.resources.displayMetrics.density
-    val widthPx = (24 * density).toInt()
-    val heightPx = (32 * density).toInt()
+    val widthPx = (28 * density).toInt()
+    val heightPx = (38 * density).toInt()
     val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
-    val headRadius = 10f * density
+    val headRadius = 12f * density
     val headCenterX = widthPx / 2f
-    val headCenterY = 11f * density
+    val headCenterY = 13f * density
     val tipX = widthPx / 2f
     val tipY = heightPx - (2f * density)
 
     val pinColor = try {
         android.graphics.Color.parseColor(colorHex)
     } catch (_: Exception) {
-        android.graphics.Color.parseColor("#00A859")
+        android.graphics.Color.parseColor("#00C853")
     }
 
-    // Sombra oval na base do pin
+    // Sombra suave na base do pin
     val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.argb(50, 0, 0, 0)
+        color = android.graphics.Color.argb(60, 0, 0, 0)
         style = Paint.Style.FILL
     }
     canvas.drawOval(
-        headCenterX - (4.5f * density),
-        heightPx - (3f * density),
-        headCenterX + (4.5f * density),
+        headCenterX - (5.5f * density),
+        heightPx - (4f * density),
+        headCenterX + (5.5f * density),
         heightPx - (0.5f * density),
         shadowPaint
     )
 
-    // Caminho da silhueta do Pin
+    // Silhueta do Pin moderna e bem definida
     val pinPath = Path().apply {
         arcTo(
             headCenterX - headRadius,
             headCenterY - headRadius,
             headCenterX + headRadius,
             headCenterY + headRadius,
-            -150f,
-            300f,
+            -155f,
+            310f,
             false
         )
         lineTo(tipX, tipY)
@@ -1905,23 +1940,67 @@ private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: 
     }
     canvas.drawPath(pinPath, fillPaint)
 
-    // Borda branca do Pin
+    // Borda branca externa nítida
     val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 1.8f * density
+        strokeWidth = 2.2f * density
     }
     canvas.drawPath(pinPath, borderPaint)
 
-    // Letra no cabecote do Pin
+    // Letra central em negrito destacada
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
-        textSize = 11.5f * density
+        textSize = 12.5f * density
         isFakeBoldText = true
         textAlign = Paint.Align.CENTER
     }
     val textY = headCenterY - ((textPaint.descent() + textPaint.ascent()) / 2f)
     canvas.drawText(letter, headCenterX, textY, textPaint)
+
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+private fun createWhiteStopMarkerDrawable(context: Context, isBoarding: Boolean): Drawable {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (18 * density).toInt()
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+
+    // Sombra do marcador circular
+    val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.argb(60, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(center, center, center, shadow)
+
+    // Fundo branco
+    val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(center, center, center - (1.5f * density), whitePaint)
+
+    // Borda escura de contorno para contraste absoluto
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.parseColor("#1E293B")
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * density
+    }
+    canvas.drawCircle(center, center, center - (1.5f * density), borderPaint)
+
+    // Ponto interno (Verde para subida/embarque, Vermelho para descida/desembarque)
+    val innerDotColor = if (isBoarding) {
+        android.graphics.Color.parseColor("#00C853")
+    } else {
+        android.graphics.Color.parseColor("#E53935")
+    }
+    val innerDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = innerDotColor
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(center, center, 3.8f * density, innerDotPaint)
 
     return BitmapDrawable(context.resources, bitmap)
 }

@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
@@ -32,13 +35,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.repository.RecentSearchItem
+import com.dfmob.ui.theme.TransitGreen
 
 @Composable
 fun RecentAndFavoritesSection(
+    recentSearches: List<RecentSearchItem> = emptyList(),
     favoriteLines: List<TransitLine> = emptyList(),
     favoriteStops: List<TransitStop> = emptyList(),
+    onRecentSearchClick: (DFLocation) -> Unit = {},
+    onTogglePin: (RecentSearchItem) -> Unit = {},
+    onClearRecent: () -> Unit = {},
     onLineClick: (TransitLine) -> Unit = {},
     onStopClick: (TransitStop) -> Unit = {},
     modifier: Modifier = Modifier
@@ -47,10 +57,12 @@ fun RecentAndFavoritesSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Modulo de Ultimas Pesquisas (texto limpo)
-        CleanTextBlock(
-            header = "Últimas pesquisas",
-            message = "Nenhuma busca recente encontrada no dispositivo"
+        // Modulo de Ultimas Pesquisas com suporte a fixacao e limpar
+        RecentSearchesCard(
+            recentSearches = recentSearches,
+            onRecentSearchClick = onRecentSearchClick,
+            onTogglePin = onTogglePin,
+            onClearRecent = onClearRecent
         )
 
         // Modulo de Favoritos (linhas e paradas com diferenciacao visual)
@@ -329,9 +341,11 @@ private fun FavoriteLineMiniRow(
 }
 
 @Composable
-private fun CleanTextBlock(
-    header: String,
-    message: String,
+private fun RecentSearchesCard(
+    recentSearches: List<RecentSearchItem>,
+    onRecentSearchClick: (DFLocation) -> Unit,
+    onTogglePin: (RecentSearchItem) -> Unit,
+    onClearRecent: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(18.dp)
@@ -354,25 +368,106 @@ private fun CleanTextBlock(
                 .padding(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = header.uppercase(),
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ÚLTIMAS PESQUISAS",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.Normal,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+                if (recentSearches.any { !it.isPinned }) {
+                    Text(
+                        text = "Limpar",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        ),
+                        color = TransitGreen,
+                        modifier = Modifier
+                            .clickable(onClick = onClearRecent)
+                            .padding(vertical = 2.dp, horizontal = 4.dp)
+                    )
+                }
+            }
+
+            if (recentSearches.isEmpty()) {
+                Text(
+                    text = "Nenhuma busca recente encontrada no dispositivo",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    recentSearches.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onRecentSearchClick(item.toDFLocation()) }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onTogglePin(item) }
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (item.isPinned) Icons.Rounded.PushPin else Icons.Outlined.PushPin,
+                                    contentDescription = if (item.isPinned) "Desafixar" else "Fixar no topo",
+                                    tint = if (item.isPinned) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                if (item.description.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = item.description,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 11.5.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

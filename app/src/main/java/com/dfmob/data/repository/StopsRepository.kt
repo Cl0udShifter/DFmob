@@ -357,16 +357,16 @@ class StopsRepository(private val context: Context) {
         }
     }
 
-    suspend fun getLineRouteState(
+    fun getLineRouteStateFast(
         lineNumber: String,
         preferredLineId: Int? = null,
         preferredStopId: Int? = null,
         userLatE6: Int? = null,
         userLonE6: Int? = null
-    ): LineRouteState? = withContext(Dispatchers.IO) {
+    ): LineRouteState? {
         val detail = dbHelper.getLineDetailByNumber(lineNumber)
             ?: (if (preferredLineId != null) dbHelper.getLineDetailById(preferredLineId) else null)
-            ?: return@withContext null
+            ?: return null
 
         val dirOptions = detail.directions.map { dir ->
             LineDirectionOption(
@@ -376,7 +376,7 @@ class StopsRepository(private val context: Context) {
                 destinationName = dir.destinationName
             )
         }
-        if (dirOptions.isEmpty()) return@withContext null
+        if (dirOptions.isEmpty()) return null
 
         var chosenIndex = 0
         if (preferredLineId != null) {
@@ -409,7 +409,7 @@ class StopsRepository(private val context: Context) {
         val activeLineId = dirOptions[chosenIndex].lineId
         val activeDirId = dirOptions[chosenIndex].directionId
         val stops = dbHelper.getStopsForLine(activeLineId)
-        if (stops.isEmpty()) return@withContext null
+        if (stops.isEmpty()) return null
 
         var initialStop: TransitStop? = null
         if (preferredStopId != null) {
@@ -422,15 +422,11 @@ class StopsRepository(private val context: Context) {
             initialStop = stops.firstOrNull()
         }
 
-        val liveVehicles = fetchLiveVehiclesForRoute(detail.lineNumber, activeDirId, activeLineId, stops)
-        val allShapes = telemetryService.fetchRealRouteShapes(detail.lineNumber)
-        val shapeCoordinates = matchShapeToDirection(allShapes, stops)
-
-        val arrival = if (initialStop != null) {
-            fetchArrivalForLineAtStop(activeLineId, initialStop)
+        val staticArrival = if (initialStop != null) {
+            getStaticArrivalForLineAtStop(activeLineId, initialStop)
         } else null
 
-        LineRouteState(
+        return LineRouteState(
             groupId = detail.groupId,
             lineNumber = detail.lineNumber,
             lineName = detail.lineName,
@@ -443,18 +439,55 @@ class StopsRepository(private val context: Context) {
             currentDirectionIndex = chosenIndex,
             stops = stops,
             selectedStop = initialStop,
-            liveVehicles = liveVehicles,
-            shapeCoordinates = shapeCoordinates,
-            selectedStopArrival = arrival
+            liveVehicles = emptyList(),
+            shapeCoordinates = emptyList(),
+            selectedStopArrival = staticArrival
         )
     }
 
-    suspend fun changeLineRouteDirection(
+    suspend fun enrichRouteStateWithLiveTelemetry(currentState: LineRouteState): LineRouteState = coroutineScope {
+        val vDeferred = async(Dispatchers.IO) {
+            try {
+                fetchLiveVehiclesForRoute(currentState.lineNumber, currentState.activeDirectionId, currentState.activeLineId, currentState.stops)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+        val sDeferred = async(Dispatchers.IO) {
+            try {
+                val shapes = telemetryService.fetchRealRouteShapes(currentState.lineNumber)
+                matchShapeToDirection(shapes, currentState.stops)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+        val aDeferred = async(Dispatchers.IO) {
+            try {
+                if (currentState.selectedStop != null) {
+                    fetchArrivalForLineAtStop(currentState.activeLineId, currentState.selectedStop)
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        val vehicles = vDeferred.await()
+        val shapeCoords = sDeferred.await()
+        val liveArrival = aDeferred.await()
+
+        currentState.copy(
+            liveVehicles = vehicles,
+            shapeCoordinates = if (shapeCoords.isNotEmpty()) shapeCoords else currentState.shapeCoordinates,
+            selectedStopArrival = liveArrival ?: currentState.selectedStopArrival
+        )
+    }
+
+    fun changeLineRouteDirectionFast(
         currentState: LineRouteState,
         newDirectionIndex: Int,
         userLatE6: Int? = null,
         userLonE6: Int? = null
-    ): LineRouteState = withContext(Dispatchers.IO) {
+    ): LineRouteState {
         val safeIndex = newDirectionIndex.coerceIn(0, currentState.directions.lastIndex)
         val activeLineId = currentState.directions[safeIndex].lineId
         val activeDirId = currentState.directions[safeIndex].directionId
@@ -468,22 +501,40 @@ class StopsRepository(private val context: Context) {
             newSelectedStop = newStops.firstOrNull()
         }
 
-        val liveVehicles = fetchLiveVehiclesForRoute(currentState.lineNumber, activeDirId, activeLineId, newStops)
-        val allShapes = telemetryService.fetchRealRouteShapes(currentState.lineNumber)
-        val shapeCoordinates = matchShapeToDirection(allShapes, newStops)
-
-        val arrival = if (newSelectedStop != null) {
-            fetchArrivalForLineAtStop(activeLineId, newSelectedStop)
+        val staticArrival = if (newSelectedStop != null) {
+            getStaticArrivalForLineAtStop(activeLineId, newSelectedStop)
         } else null
 
-        currentState.copy(
+        return currentState.copy(
             currentDirectionIndex = safeIndex,
             stops = newStops,
             selectedStop = newSelectedStop,
-            liveVehicles = liveVehicles,
-            shapeCoordinates = shapeCoordinates,
-            selectedStopArrival = arrival
+            liveVehicles = emptyList(),
+            shapeCoordinates = emptyList(),
+            selectedStopArrival = staticArrival
         )
+    }
+
+    suspend fun getLineRouteState(
+        lineNumber: String,
+        preferredLineId: Int? = null,
+        preferredStopId: Int? = null,
+        userLatE6: Int? = null,
+        userLonE6: Int? = null
+    ): LineRouteState? {
+        val fast = getLineRouteStateFast(lineNumber, preferredLineId, preferredStopId, userLatE6, userLonE6)
+            ?: return null
+        return enrichRouteStateWithLiveTelemetry(fast)
+    }
+
+    suspend fun changeLineRouteDirection(
+        currentState: LineRouteState,
+        newDirectionIndex: Int,
+        userLatE6: Int? = null,
+        userLonE6: Int? = null
+    ): LineRouteState {
+        val fast = changeLineRouteDirectionFast(currentState, newDirectionIndex, userLatE6, userLonE6)
+        return enrichRouteStateWithLiveTelemetry(fast)
     }
 
     private fun matchShapeToDirection(

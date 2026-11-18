@@ -67,6 +67,28 @@ class TripPlannerViewModel(
         useCurrentLocationForOrigin()
     }
 
+    fun setDestination(dest: DFLocation) {
+        if (_uiState.value.origin == null) {
+            useCurrentLocationForOrigin()
+        }
+        val target = TripPlanLocation(
+            caption = dest.name,
+            latE6 = dest.latE6,
+            lonE6 = dest.lonE6,
+            isUserLocation = false
+        )
+        savedDestinationText = dest.name
+        _uiState.update {
+            it.copy(
+                destination = target,
+                destinationQuery = dest.name,
+                searchResults = emptyList(),
+                activeField = ActiveField.NONE
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
     fun useCurrentLocationForOrigin() {
         val userLoc = getLastKnownLocation()
         if (userLoc != null) {

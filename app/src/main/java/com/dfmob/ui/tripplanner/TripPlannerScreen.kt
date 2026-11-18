@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,7 @@ import com.dfmob.data.model.TripPlanItinerary
 import com.dfmob.data.model.TripPlanLeg
 import com.dfmob.data.model.TripPreference
 import com.dfmob.data.model.TripTimeMode
+import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
 import java.util.Calendar
@@ -92,14 +94,24 @@ import java.util.TimeZone
 @Composable
 fun TripPlannerScreen(
     onBack: () -> Unit,
+    initialDestination: DFLocation? = null,
+    recentSearchesRepository: RecentSearchesRepository? = null,
     repository: StopsRepository = StopsRepository(LocalContext.current)
 ) {
     val context = LocalContext.current
+    val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
     val viewModel = remember { TripPlannerViewModel(repository, context) }
     val state by viewModel.uiState.collectAsState()
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(initialDestination) {
+        if (initialDestination != null) {
+            viewModel.setDestination(initialDestination)
+            recentRepo.addSearch(initialDestination)
+        }
+    }
 
     // 1. Tela do Seletor de Mapa em tela cheia se estiver ativa
     if (state.isPickingOnMap) {
@@ -112,6 +124,7 @@ fun TripPlannerScreen(
             onCancel = { viewModel.cancelMapPicker() },
             onConfirm = { latE6, lonE6, caption ->
                 viewModel.confirmMapPicker(latE6, lonE6, caption)
+                recentRepo.addSearch(DFLocation(caption, "", latE6, lonE6))
             },
             onReverseGeocode = { latE6, lonE6 ->
                 viewModel.reverseGeocode(latE6, lonE6)
@@ -217,6 +230,7 @@ fun TripPlannerScreen(
                                     .clickable {
                                         focusManager.clearFocus()
                                         viewModel.selectLocationResult(loc)
+                                        recentRepo.addSearch(loc)
                                     }
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically

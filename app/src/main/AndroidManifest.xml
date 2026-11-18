@@ -19,6 +19,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/Theme.DFmob"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

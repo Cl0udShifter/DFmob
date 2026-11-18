@@ -211,21 +211,27 @@ fun StopsScreen(
             val userLatE6 = best?.let { (it.latitude * 1_000_000).toInt() }
             val userLonE6 = best?.let { (it.longitude * 1_000_000).toInt() }
 
-            val route = repository.getLineRouteState(
+            val fastRoute = repository.getLineRouteStateFast(
                 lineNumber = initialLineNumber,
                 preferredLineId = initialLineId,
                 userLatE6 = userLatE6,
                 userLonE6 = userLonE6
             )
-            activeRouteState = route
-            if (route != null) {
+            if (fastRoute != null) {
+                activeRouteState = fastRoute
                 if (userLatE6 != null && userLonE6 != null) {
-                    route.selectedStop?.let { sel ->
+                    fastRoute.selectedStop?.let { sel ->
                         focusLocation = DFLocation(sel.stopName, "", sel.latE6, sel.lonE6)
                     }
                 } else {
-                    route.stops.firstOrNull()?.let { firstStop ->
+                    fastRoute.stops.firstOrNull()?.let { firstStop ->
                         focusLocation = DFLocation(firstStop.stopName, "", firstStop.latE6, firstStop.lonE6)
+                    }
+                }
+                coroutineScope.launch {
+                    val live = repository.enrichRouteStateWithLiveTelemetry(fastRoute)
+                    if (activeRouteState?.activeLineId == fastRoute.activeLineId) {
+                        activeRouteState = live
                     }
                 }
             }
@@ -548,16 +554,20 @@ fun StopsScreen(
                             }
                         },
                         onSwitchDirection = {
+                            val newIndex = if (currentRoute.currentDirectionIndex == 0) 1 else 0
+                            val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                            val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+                            val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+                            val best = lastGps ?: lastNet
+                            val uLat = best?.let { (it.latitude * 1_000_000).toInt() }
+                            val uLon = best?.let { (it.longitude * 1_000_000).toInt() }
+                            val fastSwitched = repository.changeLineRouteDirectionFast(currentRoute, newIndex, uLat, uLon)
+                            activeRouteState = fastSwitched
                             coroutineScope.launch {
-                                val newIndex = if (currentRoute.currentDirectionIndex == 0) 1 else 0
-                                val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                                val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
-                                val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
-                                val best = lastGps ?: lastNet
-                                val uLat = best?.let { (it.latitude * 1_000_000).toInt() }
-                                val uLon = best?.let { (it.longitude * 1_000_000).toInt() }
-                                val switched = repository.changeLineRouteDirection(currentRoute, newIndex, uLat, uLon)
-                                activeRouteState = switched
+                                val live = repository.enrichRouteStateWithLiveTelemetry(fastSwitched)
+                                if (activeRouteState?.activeLineId == fastSwitched.activeLineId) {
+                                    activeRouteState = live
+                                }
                             }
                         },
                         onClose = {
@@ -595,13 +605,17 @@ fun StopsScreen(
                             isLoading = isLoadingArrivals,
                             isDarkTheme = isDarkTheme,
                             onLineClick = { arrival ->
-                                coroutineScope.launch {
-                                    val route = repository.getLineRouteState(
-                                        lineNumber = arrival.lineNumber,
-                                        preferredStopId = stop.stopId
-                                    )
-                                    if (route != null) {
-                                        activeRouteState = route
+                                val fastRoute = repository.getLineRouteStateFast(
+                                    lineNumber = arrival.lineNumber,
+                                    preferredStopId = stop.stopId
+                                )
+                                if (fastRoute != null) {
+                                    activeRouteState = fastRoute
+                                    coroutineScope.launch {
+                                        val live = repository.enrichRouteStateWithLiveTelemetry(fastRoute)
+                                        if (activeRouteState?.activeLineId == fastRoute.activeLineId) {
+                                            activeRouteState = live
+                                        }
                                     }
                                 }
                             },

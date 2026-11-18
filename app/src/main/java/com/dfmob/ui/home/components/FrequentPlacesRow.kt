@@ -1,7 +1,8 @@
 package com.dfmob.ui.home.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,16 +30,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.data.model.DFLocation
 import com.dfmob.ui.theme.TransitBlue
 import com.dfmob.ui.theme.TransitGreen
 
 @Composable
 fun FrequentPlacesRow(
-    modifier: Modifier = Modifier,
+    homePlace: DFLocation? = null,
+    workPlace: DFLocation? = null,
     onHomeClick: () -> Unit = {},
-    onWorkClick: () -> Unit = {}
+    onHomeLongClick: () -> Unit = {},
+    onWorkClick: () -> Unit = {},
+    onWorkLongClick: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -46,24 +53,27 @@ fun FrequentPlacesRow(
     ) {
         PlaceCard(
             title = "Casa",
-            subtitle = "Clique para editar",
+            subtitle = homePlace?.name ?: "Clique para configurar",
             icon = Icons.Rounded.Home,
             iconColor = TransitGreen,
             modifier = Modifier.weight(1f),
-            onClick = onHomeClick
+            onClick = onHomeClick,
+            onLongClick = onHomeLongClick
         )
 
         PlaceCard(
             title = "Trabalho",
-            subtitle = "Clique para editar",
+            subtitle = workPlace?.name ?: "Clique para configurar",
             icon = Icons.Rounded.Work,
             iconColor = TransitBlue,
             modifier = Modifier.weight(1f),
-            onClick = onWorkClick
+            onClick = onWorkClick,
+            onLongClick = onWorkLongClick
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlaceCard(
     title: String,
@@ -71,7 +81,8 @@ private fun PlaceCard(
     icon: ImageVector,
     iconColor: Color,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(16.dp)
     val interactionSource = remember { MutableInteractionSource() }
@@ -84,10 +95,11 @@ private fun PlaceCard(
                 color = MaterialTheme.colorScheme.outline,
                 shape = shape
             )
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = rememberRipple(bounded = true),
-                onClick = onClick
+                onClick = onClick,
+                onLongClick = onLongClick
             ),
         color = MaterialTheme.colorScheme.surface,
         shape = shape
@@ -107,7 +119,7 @@ private fun PlaceCard(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(
@@ -125,7 +137,9 @@ private fun PlaceCard(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

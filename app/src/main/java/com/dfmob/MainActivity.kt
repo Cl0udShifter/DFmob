@@ -13,11 +13,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.dfmob.data.model.DFLocation
 import com.dfmob.data.preferences.AppThemeMode
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.repository.FavoritesRepository
+import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
 import com.dfmob.ui.settings.SettingsScreen
@@ -62,13 +65,16 @@ class MainActivity : ComponentActivity() {
 
             DFmobTheme(darkTheme = isDarkTheme) {
                 val favoritesRepository = remember { FavoritesRepository(context) }
-                var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
-                var targetLineNumberForStops by remember { mutableStateOf<String?>(null) }
-                var targetLineIdForStops by remember { mutableStateOf<Int?>(null) }
+                val recentSearchesRepository = remember { RecentSearchesRepository(context) }
+                var currentScreen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
+                var targetLineNumberForStops by rememberSaveable { mutableStateOf<String?>(null) }
+                var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
+                var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
 
                 BackHandler(enabled = currentScreen != AppScreen.HOME) {
                     targetLineNumberForStops = null
                     targetLineIdForStops = null
+                    targetDestinationForTripPlanner = null
                     currentScreen = AppScreen.HOME
                 }
 
@@ -76,6 +82,7 @@ class MainActivity : ComponentActivity() {
                     when (screen) {
                         AppScreen.HOME -> HomeScreen(
                             favoritesRepository = favoritesRepository,
+                            recentSearchesRepository = recentSearchesRepository,
                             onNavigateToLines = { currentScreen = AppScreen.LINES },
                             onNavigateToStops = {
                                 targetLineNumberForStops = null
@@ -87,7 +94,8 @@ class MainActivity : ComponentActivity() {
                                 targetLineIdForStops = null
                                 currentScreen = AppScreen.STOPS
                             },
-                            onNavigateToTripPlanner = {
+                            onNavigateToTripPlanner = { dest ->
+                                targetDestinationForTripPlanner = dest
                                 currentScreen = AppScreen.TRIP_PLANNER
                             },
                             onNavigateToSettings = {
@@ -114,7 +122,12 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                         AppScreen.TRIP_PLANNER -> TripPlannerScreen(
-                            onBack = { currentScreen = AppScreen.HOME }
+                            initialDestination = targetDestinationForTripPlanner,
+                            recentSearchesRepository = recentSearchesRepository,
+                            onBack = {
+                                targetDestinationForTripPlanner = null
+                                currentScreen = AppScreen.HOME
+                            }
                         )
                         AppScreen.SETTINGS -> SettingsScreen(
                             themePreferences = themePreferences,

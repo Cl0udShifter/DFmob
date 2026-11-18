@@ -8,26 +8,37 @@ import android.graphics.drawable.BitmapDrawable
 import android.location.LocationManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,9 +60,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,6 +73,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.dfmob.BuildConfig
+import com.dfmob.data.model.DFLocation
+import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -100,18 +116,34 @@ fun MapLocationPicker(
     initialLonE6: Int?,
     onCancel: () -> Unit,
     onConfirm: (latE6: Int, lonE6: Int, caption: String) -> Unit,
-    onReverseGeocode: suspend (latE6: Int, lonE6: Int) -> String
+    onReverseGeocode: suspend (latE6: Int, lonE6: Int) -> String,
+    title: String? = null
 ) {
     val context = LocalContext.current
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val stopsRepository = remember { StopsRepository(context) }
 
     var centerLatE6 by remember { mutableStateOf(initialLatE6 ?: -15794167) }
     var centerLonE6 by remember { mutableStateOf(initialLonE6 ?: -47882778) }
     var resolvedAddress by remember { mutableStateOf("Carregando endereço...") }
     var isResolving by remember { mutableStateOf(false) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<DFLocation>>(emptyList()) }
+    var isDropdownDismissed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchQuery, isDropdownDismissed) {
+        if (isDropdownDismissed || searchQuery.isBlank() || searchQuery.trim().length < 3) {
+            searchResults = emptyList()
+        } else {
+            delay(400L)
+            searchResults = stopsRepository.searchLocations(searchQuery)
+        }
+    }
 
     val mapView = remember {
         Configuration.getInstance().load(
@@ -216,40 +248,184 @@ fun MapLocationPicker(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Top bar com botao de voltar e orientacao
-        Surface(
+        // Barra Superior de Busca com Autocomplete da Stadia Maps
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(14.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-            shadowElevation = 4.dp
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .align(Alignment.TopCenter)
         ) {
-            Row(
+            val searchBarShape = RoundedCornerShape(16.dp)
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Voltar",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = "Arraste o mapa até o local desejado",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
+                    .clip(searchBarShape)
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        shape = searchBarShape
                     ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                shape = searchBarShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                shadowElevation = if (isDarkTheme) 8.dp else 4.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = title ?: "Buscar endereço ou local no DF...",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Normal
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                isDropdownDismissed = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(TransitGreen),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                focusManager.clearFocus()
+                                isDropdownDismissed = true
+                            })
+                        )
+                    }
+
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                searchQuery = ""
+                                searchResults = emptyList()
+                                isDropdownDismissed = true
+                                focusManager.clearFocus()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Limpar busca",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Buscar",
+                            tint = TransitGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Dropdown de sugestoes com resultados da Stadia Maps
+            if (searchResults.isNotEmpty() && !isDropdownDismissed) {
+                Spacer(modifier = Modifier.height(4.dp))
+                val dropdownShape = RoundedCornerShape(16.dp)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .clip(dropdownShape)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            shape = dropdownShape
+                        ),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = dropdownShape,
+                    shadowElevation = if (isDarkTheme) 14.dp else 8.dp
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(searchResults) { loc ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        searchQuery = loc.name
+                                        isDropdownDismissed = true
+                                        focusManager.clearFocus()
+                                        val geo = GeoPoint(loc.latitude, loc.longitude)
+                                        mapView.controller.animateTo(geo)
+                                        centerLatE6 = loc.latE6
+                                        centerLonE6 = loc.lonE6
+                                        resolvedAddress = loc.name
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Place,
+                                    contentDescription = null,
+                                    tint = TransitGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = loc.name,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.5.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (loc.description.isNotBlank()) {
+                                        Text(
+                                            text = loc.description,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

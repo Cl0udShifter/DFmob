@@ -40,8 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.repository.FavoritesRepository
+import com.dfmob.data.repository.RecentSearchesRepository
+import com.dfmob.data.repository.StopsRepository
+import com.dfmob.ui.tripplanner.MapLocationPicker
 import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
@@ -58,14 +62,16 @@ import java.io.File
 fun HomeScreen(
     modifier: Modifier = Modifier,
     favoritesRepository: FavoritesRepository? = null,
+    recentSearchesRepository: RecentSearchesRepository? = null,
     onNavigateToLines: () -> Unit = {},
     onNavigateToStops: () -> Unit = {},
     onNavigateToLineRoute: (String) -> Unit = {},
-    onNavigateToTripPlanner: () -> Unit = {},
+    onNavigateToTripPlanner: (DFLocation?) -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
+    val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
     val scope = rememberCoroutineScope()
     val updateManager = remember { AppUpdateManager(context) }
 
@@ -73,6 +79,11 @@ fun HomeScreen(
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
     val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
+    val recentSearches by recentRepo.recentSearches.collectAsState()
+    val homePlace by recentRepo.homePlace.collectAsState()
+    val workPlace by recentRepo.workPlace.collectAsState()
+
+    var pickingPlaceType by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
 
@@ -82,11 +93,34 @@ fun HomeScreen(
         updateState = result
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.background,
+    if (pickingPlaceType != null) {
+        val placeType = pickingPlaceType!!
+        val initialPlace = if (placeType == "HOME") homePlace else workPlace
+        MapLocationPicker(
+            initialLatE6 = initialPlace?.latE6,
+            initialLonE6 = initialPlace?.lonE6,
+            title = if (placeType == "HOME") "Definir local de Casa" else "Definir local de Trabalho",
+            onCancel = { pickingPlaceType = null },
+            onConfirm = { latE6, lonE6, caption ->
+                val loc = DFLocation(caption, if (placeType == "HOME") "Casa" else "Trabalho", latE6, lonE6)
+                if (placeType == "HOME") {
+                    recentRepo.setHomePlace(loc)
+                } else {
+                    recentRepo.setWorkPlace(loc)
+                }
+                pickingPlaceType = null
+                onNavigateToTripPlanner(loc)
+            },
+            onReverseGeocode = { latE6, lonE6 ->
+                StopsRepository(context).reverseGeocode(latE6, lonE6)
+            }
+        )
+    } else {
+        Scaffold(
+            modifier = modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             // Modulo fixo na parte inferior, visivel exclusivamente quando ha update disponivel
             val isUpdateVisible = updateState is UpdateState.UpdateAvailable ||
@@ -192,7 +226,7 @@ fun HomeScreen(
 
             // Componente 1: Caixa de busca expansivel (Transit style)
             SearchPill(
-                onClick = onNavigateToTripPlanner
+                onClick = { onNavigateToTripPlanner(null) }
             )
 
             // Componente 2: Botoes de modo Linhas e Paradas
@@ -203,14 +237,38 @@ fun HomeScreen(
 
             // Novo Componente: Casa e Trabalho
             FrequentPlacesRow(
-                onHomeClick = {},
-                onWorkClick = {}
+                homePlace = homePlace,
+                workPlace = workPlace,
+                onHomeClick = {
+                    if (homePlace != null) {
+                        onNavigateToTripPlanner(homePlace)
+                    } else {
+                        pickingPlaceType = "HOME"
+                    }
+                },
+                onHomeLongClick = {
+                    pickingPlaceType = "HOME"
+                },
+                onWorkClick = {
+                    if (workPlace != null) {
+                        onNavigateToTripPlanner(workPlace)
+                    } else {
+                        pickingPlaceType = "WORK"
+                    }
+                },
+                onWorkLongClick = {
+                    pickingPlaceType = "WORK"
+                }
             )
 
             // Componente 3: Cards estilo painel de partidas com favoritos dinamicos (linhas e paradas)
             RecentAndFavoritesSection(
+                recentSearches = recentSearches,
                 favoriteLines = favoriteLines,
                 favoriteStops = favoriteStops,
+                onRecentSearchClick = { loc -> onNavigateToTripPlanner(loc) },
+                onTogglePin = { item -> recentRepo.togglePin(item) },
+                onClearRecent = { recentRepo.clearUnpinned() },
                 onLineClick = { line -> onNavigateToLineRoute(line.lineNumber) },
                 onStopClick = { onNavigateToStops() }
             )
@@ -218,6 +276,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
+}
 }
 
 @Preview(name = "Home Screen - Transit Pure Blocks", showBackground = true)
