@@ -33,6 +33,7 @@ class StopsRepository(private val context: Context) {
 
     private val dbHelper = DatabaseHelper(context)
     private val telemetryService = SemobTelemetryService()
+    private val stadiaMapsService = com.dfmob.data.service.StadiaMapsService()
 
     private val keyLocations = listOf(
         DFLocation("Rodoviária do Plano Piloto", "Zona Central, Brasília", -15794167, -47882778),
@@ -88,104 +89,54 @@ class StopsRepository(private val context: Context) {
 
         val results = mutableListOf<DFLocation>()
 
-        // 1. Busca imediata em paradas e estacoes do DF (< 1ms)
-        try {
-            val allStops = dbHelper.getAllStops()
-            val stopMatches = allStops.filter { stop ->
-                stop.stopName.lowercase(Locale.ROOT).contains(clean) ||
-                        (stop.stopCode != null && stop.stopCode.contains(clean))
-            }.take(4).map { stop ->
-                val typeDesc = if (stop.isMetro) {
-                    "Estação de Metrô-DF • ${stop.platformCode ?: "Plataforma"}"
-                } else {
-                    "Parada de Ônibus • Código ${stop.stopCode ?: "SEMOB"}"
-                }
-                DFLocation(
-                    name = stop.stopName,
-                    description = typeDesc,
-                    latE6 = stop.latE6,
-                    lonE6 = stop.lonE6
-                )
-            }
-            results.addAll(stopMatches)
-        } catch (_: Exception) {
-        }
-
-        // 2. Busca em pontos de referencia principais e regioes administrativas
+        // 1. Busca em pontos de referencia principais e regioes administrativas locais (sem custo de rede)
         val landmarkMatches = keyLocations.filter {
             it.name.lowercase(Locale.ROOT).contains(clean) ||
                     it.description.lowercase(Locale.ROOT).contains(clean)
         }.take(3)
         results.addAll(landmarkMatches)
 
-        // 3. Geocodificacao real estilo Google Maps via Android Geocoder nativo
-        val geocodedResults = mutableListOf<DFLocation>()
-        try {
-            if (Geocoder.isPresent()) {
-                val geocoder = Geocoder(context, Locale("pt", "BR"))
-                val queryWithRegion = if (query.contains("DF", ignoreCase = true) || query.contains("Brasília", ignoreCase = true)) {
-                    query
-                } else {
-                    "$query, Distrito Federal, Brasil"
-                }
-                @Suppress("DEPRECATION")
-                val addresses = geocoder.getFromLocationName(queryWithRegion, 6)
-                if (!addresses.isNullOrEmpty()) {
-                    for (addr in addresses) {
-                        val lat = addr.latitude
-                        val lon = addr.longitude
-                        // Filtra para o quadrilatero expandido do Distrito Federal e entorno imediato
-                        if (lat in -16.3..-15.4 && lon in -48.4..-47.2) {
-                            val title = addr.featureName ?: addr.thoroughfare ?: addr.getAddressLine(0)?.split(",")?.firstOrNull() ?: query
-                            val subtitleParts = mutableListOf<String>()
-                            addr.subLocality?.let { subtitleParts.add(it) }
-                            addr.subAdminArea?.let { subtitleParts.add(it) }
-                            val sub = if (subtitleParts.isNotEmpty()) subtitleParts.joinToString(", ") else "Distrito Federal"
-                            geocodedResults.add(
-                                DFLocation(
-                                    name = title,
-                                    description = sub,
-                                    latE6 = (lat * 1_000_000).toInt(),
-                                    lonE6 = (lon * 1_000_000).toInt()
-                                )
-                            )
-                        }
-                    }
+        // 2. Busca geocodificada via Stadia Maps Autocomplete (com cache e filtro geografico no DF)
+        if (clean.length >= 3) {
+            val stadiaResults = stadiaMapsService.autocomplete(clean)
+            for (item in stadiaResults) {
+                if (results.none { it.name.equals(item.name, ignoreCase = true) }) {
+                    results.add(item)
                 }
             }
-        } catch (_: Exception) {
         }
 
-        // 4. Fallback OpenStreetMap Nominatim se o Geocoder nao retornar resultados de rua
-        if (geocodedResults.isEmpty()) {
+        // 3. Fallback no Android Geocoder nativo caso Stadia nao tenha retornado resultados
+        if (results.isEmpty() && clean.length >= 3) {
             try {
-                val encoded = URLEncoder.encode("$query DF Brasil", "UTF-8")
-                val urlStr = "https://nominatim.openstreetmap.org/search?q=$encoded&format=json&addressdetails=1&countrycodes=br&viewbox=-48.3,-15.4,-47.2,-16.1&bounded=1&limit=5"
-                val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 3000
-                    readTimeout = 3000
-                    setRequestProperty("User-Agent", "DFmob-TransitApp")
-                }
-                if (conn.responseCode == 200) {
-                    val text = conn.inputStream.bufferedReader().use { it.readText() }
-                    val jsonArray = JSONArray(text)
-                    for (i in 0 until jsonArray.length()) {
-                        val item = jsonArray.getJSONObject(i)
-                        val displayName = item.optString("display_name", "")
-                        val lat = item.optDouble("lat", 0.0)
-                        val lon = item.optDouble("lon", 0.0)
-                        if (lat != 0.0 && lon != 0.0 && lat in -16.3..-15.4 && lon in -48.4..-47.2) {
-                            val parts = displayName.split(",").map { it.trim() }
-                            val title = parts.take(2).joinToString(", ")
-                            val sub = parts.drop(2).take(2).joinToString(", ")
-                            geocodedResults.add(
-                                DFLocation(
-                                    name = title,
-                                    description = if (sub.isNotBlank()) sub else "Distrito Federal",
-                                    latE6 = (lat * 1_000_000).toInt(),
-                                    lonE6 = (lon * 1_000_000).toInt()
+                if (Geocoder.isPresent()) {
+                    val geocoder = Geocoder(context, Locale("pt", "BR"))
+                    val queryWithRegion = if (query.contains("DF", ignoreCase = true) || query.contains("Brasília", ignoreCase = true)) {
+                        query
+                    } else {
+                        "$query, Distrito Federal, Brasil"
+                    }
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocationName(queryWithRegion, 5)
+                    if (!addresses.isNullOrEmpty()) {
+                        for (addr in addresses) {
+                            val lat = addr.latitude
+                            val lon = addr.longitude
+                            if (lat in -16.3..-15.4 && lon in -48.4..-47.2) {
+                                val title = addr.featureName ?: addr.thoroughfare ?: addr.getAddressLine(0)?.split(",")?.firstOrNull() ?: query
+                                val subtitleParts = mutableListOf<String>()
+                                addr.subLocality?.let { subtitleParts.add(it) }
+                                addr.subAdminArea?.let { subtitleParts.add(it) }
+                                val sub = if (subtitleParts.isNotEmpty()) subtitleParts.joinToString(", ") else "Distrito Federal"
+                                results.add(
+                                    DFLocation(
+                                        name = title,
+                                        description = sub,
+                                        latE6 = (lat * 1_000_000).toInt(),
+                                        lonE6 = (lon * 1_000_000).toInt()
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
@@ -193,9 +144,7 @@ class StopsRepository(private val context: Context) {
             }
         }
 
-        results.addAll(geocodedResults)
-
-        // Deduplicacao por proximidade geografica (< 100m) e limite dos melhores resultados
+        // Deduplicacao por proximidade geografica (< 100m) e limite de resultados
         results.distinctBy { "${it.latE6 / 1000}_${it.lonE6 / 1000}" }.take(8)
     }
 

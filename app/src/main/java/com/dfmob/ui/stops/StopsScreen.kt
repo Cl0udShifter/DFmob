@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -98,7 +99,7 @@ fun StopsScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val focusManager = LocalFocusManager.current
     val repository = remember { StopsRepository(context) }
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
@@ -155,12 +156,12 @@ fun StopsScreen(
         }
     }
 
-    // Busca de enderecos, paradas e locais do DF em tempo real estilo Google Maps com debouncing
+    // Busca de enderecos e locais do DF em tempo real com debouncing de 400ms e minimo de 3 caracteres
     LaunchedEffect(searchQuery, isDropdownDismissed) {
-        if (isDropdownDismissed || searchQuery.isBlank() || searchQuery.trim().length < 2) {
+        if (isDropdownDismissed || searchQuery.isBlank() || searchQuery.trim().length < 3) {
             searchResults = emptyList()
         } else {
-            delay(280L)
+            delay(400L)
             searchResults = repository.searchLocations(searchQuery)
         }
     }

@@ -124,9 +124,9 @@ class TripPlannerViewModel(
         }
 
         locationSearchJob?.cancel()
-        if (text.trim().length >= 2) {
+        if (text.trim().length >= 3) {
             locationSearchJob = viewModelScope.launch {
-                delay(120)
+                delay(400)
                 _uiState.update { it.copy(isSearchingLocations = true) }
                 val results = repository.searchLocations(text.trim())
                 _uiState.update { it.copy(searchResults = results, isSearchingLocations = false) }

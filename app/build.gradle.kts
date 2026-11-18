@@ -14,6 +14,9 @@ val localProperties = Properties().apply {
 val cartoApiKey: String = localProperties.getProperty("CARTO_API_KEY")
     ?: System.getenv("CARTO_API_KEY")
     ?: ""
+val stadiaApiKey: String = localProperties.getProperty("STADIA_API_KEY")
+    ?: System.getenv("STADIA_API_KEY")
+    ?: "d09566e4-2f4d-4a5c-8b32-adb43a4f44ad"
 val moovitApiKey: String = localProperties.getProperty("MOOVIT_API_KEY")
     ?: System.getenv("MOOVIT_API_KEY")
     ?: ""
@@ -29,10 +32,11 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "1.3.0"
+        versionCode = 30
+        versionName = "1.4.0"
 
         buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
+        buildConfigField("String", "STADIA_API_KEY", "\"$stadiaApiKey\"")
         buildConfigField("String", "MOOVIT_API_KEY", "\"$moovitApiKey\"")
         buildConfigField("String", "MOOVIT_USER_KEY", "\"$moovitUserKey\"")
 

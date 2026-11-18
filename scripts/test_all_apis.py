@@ -277,6 +277,30 @@ def test_cartodb_tiles():
         print_result("CartoDB: Retina @2x (512px)", False, 0, elapsed, f"Erro: {e}")
         return False
 
+def test_stadia_maps():
+    api_key = "d09566e4-2f4d-4a5c-8b32-adb43a4f44ad"
+    tile_url = f"https://tiles.stadiamaps.com/tiles/alidade_smooth/12/1503/2179@2x.png?api_key={api_key}"
+    search_url = f"https://api.stadiamaps.com/geocoding/v1/autocomplete?text=UnB&focus.point.lat=-15.7939&focus.point.lon=-47.8828&boundary.country=BRA&api_key={api_key}"
+
+    t0 = time.perf_counter()
+    try:
+        req = urllib.request.Request(tile_url, headers={"User-Agent": "DFmob-Android"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+            tile_bytes = len(resp.read())
+
+        req2 = urllib.request.Request(search_url, headers={"User-Agent": "DFmob-Android"})
+        with urllib.request.urlopen(req2, timeout=TIMEOUT_SECONDS) as resp2:
+            search_data = json.loads(resp2.read().decode("utf-8"))
+            features_count = len(search_data.get("features", []))
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        print_result("Stadia: Tiles @2x & Autocomplete", True, 200, elapsed, f"Tile: {tile_bytes} bytes, Busca UnB: {features_count} locais")
+        return True
+    except Exception as e:
+        elapsed = (time.perf_counter() - t0) * 1000
+        print_result("Stadia: Tiles @2x & Autocomplete", False, 0, elapsed, f"Erro: {e}")
+        return False
+
 def test_github_updater():
     url = "https://api.github.com/repos/Cl0udShifter/DFmob/releases/latest"
     req = urllib.request.Request(url, headers={"User-Agent": "DFmob-Updater"})
@@ -311,6 +335,7 @@ def main():
         test_semob_wfs_ultima_posicao,
         test_semob_wfs_percurso,
         test_osm_nominatim_search,
+        test_stadia_maps,
         test_cartodb_tiles,
         test_github_updater,
     ]

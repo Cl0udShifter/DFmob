@@ -47,29 +47,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// Basemaps minimalistas CartoDB no estilo Google Maps / Uber com injecao segura de API key via BuildConfig
-private class CartoTileSource(
+// Basemaps minimalistas Stadia Maps no estilo Transit App com injecao segura de API key via BuildConfig
+private class StadiaTileSource(
     name: String,
     style: String
 ) : XYTileSource(
     name,
     0, 20, 512, "@2x.png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://b.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://c.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://d.basemaps.cartocdn.com/rastertiles/$style/"
-    )
+    arrayOf("https://tiles.stadiamaps.com/tiles/$style/")
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
         val base = super.getTileURLString(pMapTileIndex)
-        val apiKey = BuildConfig.CARTO_API_KEY
-        return if (apiKey.isNotBlank()) "$base?key=$apiKey" else base
+        val apiKey = BuildConfig.STADIA_API_KEY
+        return if (apiKey.isNotBlank()) "$base?api_key=$apiKey" else base
     }
 }
 
-private val CARTO_POSITRON = CartoTileSource("CartoPositronHD", "light_all")
-private val CARTO_DARK_MATTER = CartoTileSource("CartoDarkMatterHD", "dark_all")
+private val STADIA_SMOOTH = StadiaTileSource("StadiaSmoothHD", "alidade_smooth")
+private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark")
 
 /**
  * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.
@@ -136,7 +131,7 @@ fun RealOpenStreetMap(
         Configuration.getInstance().userAgentValue = "com.dfmob"
 
         MapView(context).apply {
-            val initialSource = if (isDarkTheme) CARTO_DARK_MATTER else CARTO_POSITRON
+            val initialSource = if (isDarkTheme) STADIA_DARK else STADIA_SMOOTH
             setTileSource(initialSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
@@ -214,9 +209,9 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Adaptacao dinamica de tema Claro / Escuro usando basemaps CartoDB dedicados
+    // Adaptacao dinamica de tema Claro / Escuro usando basemaps Stadia Maps dedicados
     LaunchedEffect(isDarkTheme) {
-        val tileSource = if (isDarkTheme) CARTO_DARK_MATTER else CARTO_POSITRON
+        val tileSource = if (isDarkTheme) STADIA_DARK else STADIA_SMOOTH
         mapView.setTileSource(tileSource)
         mapView.overlayManager.tilesOverlay.setColorFilter(null)
         mapView.invalidate()

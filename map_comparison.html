@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DFmob - Comparativo de Mapas: CARTO vs OpenFreeMap vs Stadia Maps</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <style>
+        :root {
+            --primary: #00A859;
+            --primary-variant: #008746;
+            --surface-dark: #121417;
+            --surface-card: #1E2228;
+            --surface-elevated: #282E37;
+            --text-main: #F0F3F6;
+            --text-muted: #9BA3AF;
+            --border: #2C323D;
+            --accent-stadia: #FF5722;
+            --accent-carto: #2A8BF2;
+            --accent-ofm: #00A859;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--surface-dark);
+            color: var(--text-main);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Top Bar */
+        header {
+            background-color: var(--surface-card);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 100;
+            flex-shrink: 0;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .header-title-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-badge {
+            background-color: var(--primary);
+            color: #FFFFFF;
+            font-weight: 800;
+            font-size: 13px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        h1 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Search Autocomplete via Stadia Geocoding */
+        .search-container {
+            position: relative;
+            flex: 1;
+            max-width: 380px;
+            min-width: 220px;
+        }
+
+        .search-input-box {
+            display: flex;
+            align-items: center;
+            background-color: var(--surface-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 10px;
+            gap: 8px;
+            transition: border-color 0.2s;
+        }
+
+        .search-input-box:focus-within {
+            border-color: var(--primary);
+        }
+
+        .search-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 13px;
+            width: 100%;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-tag {
+            font-size: 10px;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: var(--accent-stadia);
+            background: rgba(255, 87, 34, 0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .search-results {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background-color: var(--surface-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            max-height: 280px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .search-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--text-main);
+            transition: background 0.15s;
+        }
+
+        .search-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-item:hover {
+            background-color: var(--surface-elevated);
+            color: var(--primary);
+        }
+
+        .search-item-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Controls Area */
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-mode {
+            background-color: var(--surface-dark);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-mode:hover {
+            border-color: var(--text-muted);
+            color: var(--text-main);
+        }
+
+        .btn-mode.active {
+            background-color: var(--primary);
+            color: #FFFFFF;
+            border-color: var(--primary);
+        }
+
+        .btn-action {
+            background-color: var(--surface-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-action:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        /* Second Toolbar: Stadia Options & Bookmarks */
+        .sub-toolbar {
+            background-color: #171A1F;
+            border-bottom: 1px solid var(--border);
+            padding: 6px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            gap: 12px;
+            z-index: 90;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+
+        .toolbar-section {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .toolbar-label {
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .chip-style {
+            background-color: var(--surface-dark);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .chip-style:hover {
+            color: var(--text-main);
+            border-color: var(--text-muted);
+        }
+
+        .chip-style.active {
+            background-color: var(--accent-stadia);
+            color: #FFFFFF;
+            border-color: var(--accent-stadia);
+        }
+
+        .chip-loc {
+            background-color: var(--surface-card);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .chip-loc:hover {
+            color: var(--text-main);
+            border-color: var(--primary);
+        }
+
+        .chip-loc.active {
+            background-color: rgba(0, 168, 89, 0.15);
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        /* Workspace Map Canvas */
+        #workspace {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        .map-pane {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Mode: Triple Columns */
+        body.mode-triple #map-col-carto {
+            left: 0;
+            width: 33.333%;
+            border-right: 1px solid var(--border);
+        }
+
+        body.mode-triple #map-col-ofm {
+            left: 33.333%;
+            width: 33.333%;
+            border-right: 1px solid var(--border);
+        }
+
+        body.mode-triple #map-col-stadia {
+            left: 66.666%;
+            width: 33.334%;
+        }
+
+        /* Mode: Split Curtain (Compares 2 chosen providers) */
+        body.mode-split #map-col-carto {
+            left: 0;
+            width: 100%;
+            z-index: 10;
+        }
+
+        body.mode-split #map-col-ofm {
+            display: none;
+        }
+
+        body.mode-split #map-col-stadia {
+            left: 0;
+            width: 100%;
+            z-index: 20;
+            clip-path: polygon(50% 0%, 100% 0%, 100% 100%, 50% 100%);
+        }
+
+        #slider-divider {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 4px;
+            margin-left: -2px;
+            background-color: #FFFFFF;
+            box-shadow: 0 0 10px rgba(0,0,0,0.6);
+            z-index: 35;
+            cursor: ew-resize;
+            display: none;
+        }
+
+        body.mode-split #slider-divider {
+            display: block;
+        }
+
+        .slider-handle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 36px;
+            height: 36px;
+            background-color: #FFFFFF;
+            color: #121417;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+            user-select: none;
+        }
+
+        /* Mode: Single Fullscreen */
+        body.mode-single-carto #map-col-carto { left: 0; width: 100%; z-index: 10; }
+        body.mode-single-carto #map-col-ofm { display: none; }
+        body.mode-single-carto #map-col-stadia { display: none; }
+
+        body.mode-single-ofm #map-col-carto { display: none; }
+        body.mode-single-ofm #map-col-ofm { left: 0; width: 100%; z-index: 10; }
+        body.mode-single-ofm #map-col-stadia { display: none; }
+
+        body.mode-single-stadia #map-col-carto { display: none; }
+        body.mode-single-stadia #map-col-ofm { display: none; }
+        body.mode-single-stadia #map-col-stadia { left: 0; width: 100%; z-index: 10; clip-path: none; }
+
+        /* Provider Legend Badges */
+        .provider-badge {
+            position: absolute;
+            top: 14px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: rgba(18, 20, 23, 0.88);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(8px);
+            z-index: 40;
+            font-size: 12px;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .provider-badge.carto {
+            left: 14px;
+            border-left: 3px solid var(--accent-carto);
+        }
+
+        .provider-badge.ofm {
+            left: calc(33.333% + 14px);
+            border-left: 3px solid var(--accent-ofm);
+        }
+
+        .provider-badge.stadia {
+            left: calc(66.666% + 14px);
+            border-left: 3px solid var(--accent-stadia);
+        }
+
+        body.mode-split .provider-badge.carto { left: 14px; }
+        body.mode-split .provider-badge.ofm { display: none; }
+        body.mode-split .provider-badge.stadia { right: 14px; left: auto; }
+
+        body.mode-single-carto .provider-badge.carto { left: 14px; }
+        body.mode-single-ofm .provider-badge.ofm { left: 14px; }
+        body.mode-single-stadia .provider-badge.stadia { left: 14px; }
+
+        .badge-title {
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .badge-subtitle {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        /* Route Stats Overlay Card */
+        #route-info-card {
+            position: absolute;
+            bottom: 60px;
+            left: 20px;
+            background-color: rgba(18, 20, 23, 0.92);
+            border: 1px solid var(--primary);
+            border-radius: 10px;
+            padding: 10px 14px;
+            z-index: 50;
+            display: none;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            max-width: 320px;
+            font-size: 12px;
+        }
+
+        .route-info-title {
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .route-info-stat {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .route-info-val {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* Bottom Technical Specs Drawer */
+        #specs-bar {
+            background-color: var(--surface-card);
+            border-top: 1px solid var(--border);
+            padding: 8px 16px;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 80;
+            flex-shrink: 0;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .specs-table {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .spec-item {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .spec-label {
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .tag-carto { color: var(--accent-carto); font-weight: 600; }
+        .tag-ofm { color: var(--accent-ofm); font-weight: 600; }
+        .tag-stadia { color: var(--accent-stadia); font-weight: 600; }
+
+        .btn-table-toggle {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        /* Detailed Modal / Panel */
+        #specs-modal {
+            position: absolute;
+            bottom: 45px;
+            right: 16px;
+            width: 620px;
+            max-width: calc(100vw - 32px);
+            background-color: var(--surface-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 120;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+            display: none;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        #specs-modal h3 {
+            font-size: 14px;
+            color: var(--text-main);
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-modal {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .comparison-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .comparison-grid th, .comparison-grid td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .comparison-grid th {
+            color: var(--text-muted);
+            font-weight: 700;
+            background-color: var(--surface-dark);
+        }
+
+        .comparison-grid td {
+            color: var(--text-main);
+        }
+
+        .comparison-grid tr:hover td {
+            background-color: var(--surface-elevated);
+        }
+    </style>
+</head>
+<body class="mode-triple">
+
+    <!-- Top Header -->
+    <header>
+        <div class="header-title-box">
+            <span class="logo-badge">DFmob</span>
+            <h1>Comparativo: CARTO vs OpenFreeMap vs Stadia Maps</h1>
+        </div>
+
+        <!-- Stadia Autocomplete Search Bar -->
+        <div class="search-container">
+            <div class="search-input-box">
+                <input type="text" id="stadia-search-input" class="search-input" placeholder="Buscar no DF (UnB, Rodoviária, Taguatinga)..." autocomplete="off">
+                <span class="search-tag">Stadia Search API</span>
+            </div>
+            <div id="search-results-box" class="search-results"></div>
+        </div>
+
+        <!-- Visualisation Controls -->
+        <div class="controls-group">
+            <button id="btn-mode-triple" class="btn-mode active" onclick="setMode('triple')">Triplo (3 Colunas)</button>
+            <button id="btn-mode-split" class="btn-mode" onclick="setMode('split')">Cortina Split (2)</button>
+            <button id="btn-mode-stadia" class="btn-mode" onclick="setMode('single-stadia')">Apenas Stadia</button>
+            <button id="btn-tilt" class="btn-action" onclick="toggleTilt()">Inclinar 3D (45°)</button>
+        </div>
+    </header>
+
+    <!-- Sub-Toolbar: Stadia API Features & DF Bookmarks -->
+    <div class="sub-toolbar">
+        <div class="toolbar-section">
+            <span class="toolbar-label">Estilos Stadia:</span>
+            <button class="chip-style active" onclick="setStadiaStyle('alidade_smooth')">Alidade Smooth (Claro)</button>
+            <button class="chip-style" onclick="setStadiaStyle('alidade_smooth_dark')">Alidade Dark (Escuro)</button>
+            <button class="chip-style" onclick="setStadiaStyle('outdoors')">Outdoors (Topográfico)</button>
+            <button class="chip-style" onclick="setStadiaStyle('alidade_satellite')">Satélite Real</button>
+            <button class="chip-style" onclick="setStadiaStyle('stamen_toner')">Stamen Toner</button>
+        </div>
+
+        <div class="toolbar-section">
+            <span class="toolbar-label">Rotas Stadia (Valhalla API):</span>
+            <button class="btn-action" onclick="requestStadiaRoute([-47.8828, -15.7939], [-47.8706, -15.7633], 'Rodoviária -> UnB ICC Sul')">Rota UnB</button>
+            <button class="btn-action" onclick="requestStadiaRoute([-47.8828, -15.7939], [-48.0569, -15.8335], 'Rodoviária -> Taguatinga')">Rota Taguatinga</button>
+            <button class="btn-action" onclick="clearRoutes()" style="color:#FF7070;">Limpar Rota</button>
+        </div>
+
+        <div class="toolbar-section">
+            <span class="toolbar-label">DF:</span>
+            <button class="chip-loc active" onclick="flyToLoc(-47.8828, -15.7939, 16.2)">Rodoviária</button>
+            <button class="chip-loc" onclick="flyToLoc(-47.8706, -15.7633, 16.5)">UnB (ICC)</button>
+            <button class="chip-loc" onclick="flyToLoc(-48.0280, -15.8340, 16.2)">Águas Claras</button>
+            <button class="chip-loc" onclick="flyToLoc(-48.0569, -15.8335, 16.2)">Taguatinga</button>
+            <button class="chip-loc" onclick="flyToLoc(-48.0191, -15.8775, 16.2)">Riacho Fundo</button>
+            <button class="chip-loc" onclick="flyToLoc(-48.1130, -15.8180, 16.0)">Ceilândia</button>
+            <button class="chip-loc" onclick="flyToLoc(-47.9172, -15.8697, 15.5)">Aeroporto</button>
+            <button class="chip-loc" onclick="flyToLoc(-47.8298, -15.8247, 15.8)">Ponte JK</button>
+        </div>
+    </div>
+
+    <!-- Map Canvas Workspace -->
+    <div id="workspace">
+        <!-- Coluna 1: CARTO Raster @2x -->
+        <div id="map-col-carto" class="map-pane"></div>
+        <div class="provider-badge carto">
+            <div class="badge-title">Opção 1: CARTO Raster @2x</div>
+            <div class="badge-subtitle">PNG 512px / Servidor Central</div>
+        </div>
+
+        <!-- Coluna 2: OpenFreeMap Vetorial -->
+        <div id="map-col-ofm" class="map-pane"></div>
+        <div class="provider-badge ofm">
+            <div class="badge-title">Opção 2: OpenFreeMap Vetorial</div>
+            <div class="badge-subtitle">MapLibre GPU / Open Source Gratuito</div>
+        </div>
+
+        <!-- Coluna 3: Stadia Maps Vetorial -->
+        <div id="map-col-stadia" class="map-pane"></div>
+        <div class="provider-badge stadia">
+            <div class="badge-title">Opção 3: Stadia Maps Vetorial</div>
+            <div class="badge-subtitle" id="stadia-badge-sub">Alidade Smooth / APIs Inclusas</div>
+        </div>
+
+        <!-- Cortina Divisoria (Modo Split) -->
+        <div id="slider-divider">
+            <div class="slider-handle">< ></div>
+        </div>
+
+        <!-- Card Flutuante de Rota Valhalla -->
+        <div id="route-info-card">
+            <div class="route-info-title" id="route-card-title">Rota Calculada via Stadia Maps</div>
+            <div class="route-info-stat"><span>Distância:</span> <span class="route-info-val" id="route-card-dist">0 km</span></div>
+            <div class="route-info-stat"><span>Tempo Estimado:</span> <span class="route-info-val" id="route-card-time">0 min</span></div>
+            <div class="route-info-stat"><span>Motor:</span> <span class="route-info-val">Valhalla Routing Engine</span></div>
+        </div>
+    </div>
+
+    <!-- Bottom Specs Drawer -->
+    <div id="specs-bar">
+        <div class="specs-table">
+            <div class="spec-item"><span class="spec-label">Opção 1 (CARTO):</span> <span class="tag-carto">Raster 512px</span> (sem rotação de textos, sem 3D)</div>
+            <div class="spec-item"><span class="spec-label">Opção 2 (OpenFreeMap):</span> <span class="tag-ofm">Vetor 100% Livre</span> (sem limite mensal, offline PMTiles)</div>
+            <div class="spec-item"><span class="spec-label">Opção 3 (Stadia Maps):</span> <span class="tag-stadia">Vetor + Busca + Rotas</span> (200k créditos/mês grátis)</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span id="camera-status" style="font-family:monospace; color:var(--text-main);">Zoom: 16.2 | Pitch: 0°</span>
+            <button class="btn-table-toggle" onclick="toggleModal()">Tabela Detalhada</button>
+        </div>
+    </div>
+
+    <!-- Modal Detalhado de Comparação Técnica -->
+    <div id="specs-modal">
+        <h3>
+            <span>Comparativo Técnico Completo das 3 Opções</span>
+            <button class="close-modal" onclick="toggleModal()">✕</button>
+        </h3>
+        <table class="comparison-grid">
+            <thead>
+                <tr>
+                    <th>Recurso</th>
+                    <th>CARTO (Opção 1)</th>
+                    <th>OpenFreeMap (Opção 2)</th>
+                    <th>Stadia Maps (Opção 3)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Formato dos Blocos</strong></td>
+                    <td>Raster PNG @2x (512x512)</td>
+                    <td>Vetor PBF / MVT (MapLibre)</td>
+                    <td>Vetor MVT / Protomaps (MapLibre)</td>
+                </tr>
+                <tr>
+                    <td><strong>Renderização</strong></td>
+                    <td>Imagens prontas na CPU</td>
+                    <td>Desenhado pela GPU do celular</td>
+                    <td>Desenhado pela GPU do celular</td>
+                </tr>
+                <tr>
+                    <td><strong>Nitidez e Resolução</strong></td>
+                    <td>Fixa em pixels (borra no zoom)</td>
+                    <td>Infinita (curvas matemáticas)</td>
+                    <td>Infinita (curvas matemáticas)</td>
+                </tr>
+                <tr>
+                    <td><strong>Rotação do Mapa</strong></td>
+                    <td>Nomes ficam invertidos</td>
+                    <td>Nomes sempre horizontais</td>
+                    <td>Nomes sempre horizontais</td>
+                </tr>
+                <tr>
+                    <td><strong>Edifícios 3D</strong></td>
+                    <td>Não suporta (plano)</td>
+                    <td>Extrusão volumétrica real</td>
+                    <td>Extrusão volumétrica real</td>
+                </tr>
+                <tr>
+                    <td><strong>Estilos Disponíveis</strong></td>
+                    <td>Positron e Dark Matter</td>
+                    <td>Positron, Liberty e Bright</td>
+                    <td>Alidade Smooth, Dark, Outdoors, Satélite e Toner</td>
+                </tr>
+                <tr>
+                    <td><strong>API de Busca (Geocoding)</strong></td>
+                    <td>Não inclusa no plano básico</td>
+                    <td>Não possui API de busca</td>
+                    <td><strong>Sim (Pelias Autocomplete/Search)</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>API de Roteamento / Navegação</strong></td>
+                    <td>Não inclusa</td>
+                    <td>Não possui API de rota</td>
+                    <td><strong>Sim (Valhalla Routing Engine)</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Limites de Custo</strong></td>
+                    <td>Chave gratuita com cota</td>
+                    <td><strong>Ilimitado e 100% gratuito</strong></td>
+                    <td>200.000 créditos/mês (plano grátis sem cobrança surpresa)</td>
+                </tr>
+                <tr>
+                    <td><strong>Consumo de Rede por Tela</strong></td>
+                    <td>~1.8 MB</td>
+                    <td>~380 KB (4,7x mais leve)</td>
+                    <td>~390 KB (4,6x mais leve)</td>
+                </tr>
+                <tr>
+                    <td><strong>Modo Offline no DF</strong></td>
+                    <td>Inviável (muitos PNGs)</td>
+                    <td><strong>Excelente (1 arquivo PMTiles de ~45 MB cobre o DF todo)</strong></td>
+                    <td>Possível com extração de MBTiles</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const CARTO_KEY = "cb1_5aim_1_0da00b46f9fe375dd500c522";
+        const STADIA_KEY = "d09566e4-2f4d-4a5c-8b32-adb43a4f44ad";
+        const INITIAL_COORDS = [-47.8828, -15.7939]; // Rodoviaria do Plano Piloto
+        const INITIAL_ZOOM = 16.2;
+
+        let currentMode = "triple";
+        let isTilted = false;
+        let isDragging = false;
+        let currentSplitPercent = 50;
+        let currentStadiaStyle = "alidade_smooth";
+
+        // 1. Instancia do Mapa 1: CARTO Raster @2x 512px
+        const mapCarto = new maplibregl.Map({
+            container: 'map-col-carto',
+            center: INITIAL_COORDS,
+            zoom: INITIAL_ZOOM,
+            attributionControl: false,
+            style: {
+                version: 8,
+                sources: {
+                    'carto-tiles': {
+                        type: 'raster',
+                        tiles: [
+                            `https://a.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}@2x.png?key=${CARTO_KEY}`,
+                            `https://b.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}@2x.png?key=${CARTO_KEY}`,
+                            `https://c.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}@2x.png?key=${CARTO_KEY}`,
+                            `https://d.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}@2x.png?key=${CARTO_KEY}`
+                        ],
+                        tileSize: 512,
+                        maxzoom: 20
+                    }
+                },
+                layers: [
+                    { id: 'carto-layer', type: 'raster', source: 'carto-tiles' }
+                ]
+            }
+        });
+
+        // 2. Instancia do Mapa 2: OpenFreeMap Vetorial
+        const mapOFM = new maplibregl.Map({
+            container: 'map-col-ofm',
+            center: INITIAL_COORDS,
+            zoom: INITIAL_ZOOM,
+            attributionControl: false,
+            style: 'https://tiles.openfreemap.org/styles/positron'
+        });
+
+        mapOFM.on('load', () => {
+            add3DBuildings(mapOFM, 'openmaptiles');
+        });
+
+        // 3. Instancia do Mapa 3: Stadia Maps Vetorial
+        const mapStadia = new maplibregl.Map({
+            container: 'map-col-stadia',
+            center: INITIAL_COORDS,
+            zoom: INITIAL_ZOOM,
+            attributionControl: false,
+            style: `https://tiles.stadiamaps.com/styles/${currentStadiaStyle}.json?api_key=${STADIA_KEY}`
+        });
+
+        mapStadia.on('load', () => {
+            add3DBuildings(mapStadia, 'openmaptiles');
+        });
+
+        // Funcao auxiliar para injetar edifícios em extrusão 3D
+        function add3DBuildings(map, sourceName) {
+            try {
+                const layers = map.getStyle().layers;
+                const labelLayerId = layers.find(l => l.type === 'symbol' && l.layout && l.layout['text-field'])?.id;
+                map.addLayer({
+                    'id': '3d-buildings-layer',
+                    'source': sourceName,
+                    'source-layer': 'building',
+                    'type': 'fill-extrusion',
+                    'minzoom': 15,
+                    'paint': {
+                        'fill-extrusion-color': '#D6DCE5',
+                        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 15, 0, 16.05, ['get', 'render_height']],
+                        'fill-extrusion-base': ['get', 'render_min_height'],
+                        'fill-extrusion-opacity': 0.75
+                    }
+                }, labelLayerId);
+            } catch (e) {
+                // Ignore if style handles buildings or structure differs
+            }
+        }
+
+        // Sincronizacao Tripla de Câmeras
+        const maps = [mapCarto, mapOFM, mapStadia];
+        let isSyncing = false;
+
+        maps.forEach(sourceMap => {
+            sourceMap.on('move', () => {
+                if (isSyncing) return;
+                isSyncing = true;
+                const center = sourceMap.getCenter();
+                const zoom = sourceMap.getZoom();
+                const bearing = sourceMap.getBearing();
+                const pitch = sourceMap.getPitch();
+
+                maps.forEach(targetMap => {
+                    if (targetMap !== sourceMap) {
+                        targetMap.jumpTo({ center, zoom, bearing, pitch });
+                    }
+                });
+
+                document.getElementById('camera-status').textContent = `Zoom: ${zoom.toFixed(1)} | Pitch: ${pitch.toFixed(0)}° | Rotação: ${bearing.toFixed(0)}°`;
+                isSyncing = false;
+            });
+        });
+
+        // Marcadores de Busca e Selecao
+        let activeMarkers = [];
+        function setMapMarker(lng, lat, label) {
+            activeMarkers.forEach(m => m.remove());
+            activeMarkers = [];
+
+            maps.forEach(map => {
+                const el = document.createElement('div');
+                el.style.width = '16px';
+                el.style.height = '16px';
+                el.style.backgroundColor = '#00A859';
+                el.style.border = '2px solid #FFFFFF';
+                el.style.borderRadius = '50%';
+                el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.5)';
+
+                const marker = new maplibregl.Marker({ element: el })
+                    .setLngLat([lng, lat])
+                    .setPopup(new maplibregl.Popup({ offset: 12 }).setText(label))
+                    .addTo(map);
+                activeMarkers.push(marker);
+            });
+        }
+
+        // Controle dos Modos de Visualizacao
+        function setMode(mode) {
+            currentMode = mode;
+            document.body.className = '';
+            document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+
+            const colStadia = document.getElementById('map-col-stadia');
+            const divider = document.getElementById('slider-divider');
+
+            if (mode === 'triple') {
+                document.getElementById('btn-mode-triple').classList.add('active');
+                document.body.classList.add('mode-triple');
+                colStadia.style.clipPath = 'none';
+                divider.style.display = 'none';
+            } else if (mode === 'split') {
+                document.getElementById('btn-mode-split').classList.add('active');
+                document.body.classList.add('mode-split');
+                divider.style.display = 'block';
+                updateSplit(currentSplitPercent);
+            } else if (mode === 'single-stadia') {
+                document.getElementById('btn-mode-stadia').classList.add('active');
+                document.body.classList.add('mode-single-stadia');
+                colStadia.style.clipPath = 'none';
+                divider.style.display = 'none';
+            }
+
+            setTimeout(() => {
+                mapCarto.resize();
+                mapOFM.resize();
+                mapStadia.resize();
+            }, 50);
+        }
+
+        // Cortina Slider (Modo Split)
+        const divider = document.getElementById('slider-divider');
+        const workspace = document.getElementById('workspace');
+
+        function updateSplit(percent) {
+            currentSplitPercent = Math.max(0, Math.min(100, percent));
+            if (currentMode === 'split') {
+                divider.style.left = `${currentSplitPercent}%`;
+                document.getElementById('map-col-stadia').style.clipPath = `polygon(${currentSplitPercent}% 0%, 100% 0%, 100% 100%, ${currentSplitPercent}% 100%)`;
+            }
+        }
+
+        function onPointerMove(e) {
+            if (!isDragging || currentMode !== 'split') return;
+            const rect = workspace.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const x = clientX - rect.left;
+            const percent = (x / rect.width) * 100;
+            updateSplit(percent);
+        }
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#slider-divider')) isDragging = true;
+        });
+        window.addEventListener('touchstart', (e) => {
+            if (e.target.closest('#slider-divider')) isDragging = true;
+        });
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('touchmove', onPointerMove);
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        window.addEventListener('touchend', () => { isDragging = false; });
+
+        // Inclinar 3D
+        function toggleTilt() {
+            isTilted = !isTilted;
+            const targetPitch = isTilted ? 45 : 0;
+            maps.forEach(m => m.easeTo({ pitch: targetPitch, duration: 800 }));
+            document.getElementById('btn-tilt').textContent = isTilted ? "Visão Plana (0°)" : "Inclinar 3D (45°)";
+        }
+
+        // Navegacao Rapida pelos Bookmarks do DF
+        function flyToLoc(lng, lat, zoom) {
+            document.querySelectorAll('.chip-loc').forEach(c => c.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            mapCarto.flyTo({ center: [lng, lat], zoom: zoom, speed: 1.4 });
+        }
+
+        // Alternar Estilo da Stadia Maps
+        function setStadiaStyle(styleName) {
+            currentStadiaStyle = styleName;
+            document.querySelectorAll('.chip-style').forEach(c => c.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+
+            const styleUrl = `https://tiles.stadiamaps.com/styles/${styleName}.json?api_key=${STADIA_KEY}`;
+            mapStadia.setStyle(styleUrl);
+
+            const badgeSub = document.getElementById('stadia-badge-sub');
+            if (styleName === 'alidade_smooth') badgeSub.textContent = 'Alidade Smooth / Minimalista Claro';
+            else if (styleName === 'alidade_smooth_dark') badgeSub.textContent = 'Alidade Dark / Modo Escuro';
+            else if (styleName === 'outdoors') badgeSub.textContent = 'Outdoors / Topografia & Ciclovias';
+            else if (styleName === 'alidade_satellite') badgeSub.textContent = 'Satélite de Alta Resolução';
+            else if (styleName === 'stamen_toner') badgeSub.textContent = 'Stamen Toner / Alto Contraste';
+
+            mapStadia.once('style.load', () => {
+                if (styleName !== 'alidade_satellite') {
+                    add3DBuildings(mapStadia, 'openmaptiles');
+                }
+                reapplyRoutes();
+            });
+        }
+
+        // ==========================================
+        // STADIA MAPS SEARCH / GEOCODING (PELIAS)
+        // ==========================================
+        const searchInput = document.getElementById('stadia-search-input');
+        const resultsBox = document.getElementById('search-results-box');
+        let searchDebounceTimer = null;
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            clearTimeout(searchDebounceTimer);
+
+            if (query.length < 2) {
+                resultsBox.style.display = 'none';
+                return;
+            }
+
+            searchDebounceTimer = setTimeout(() => {
+                executeStadiaSearch(query);
+            }, 280);
+        });
+
+        async function executeStadiaSearch(text) {
+            const center = mapStadia.getCenter();
+            const url = `https://api.stadiamaps.com/geocoding/v1/autocomplete?text=${encodeURIComponent(text)}&focus.point.lat=${center.lat}&focus.point.lon=${center.lng}&boundary.country=BRA&api_key=${STADIA_KEY}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                renderSearchResults(data.features || []);
+            } catch (err) {
+                console.error("Stadia search error:", err);
+            }
+        }
+
+        function renderSearchResults(features) {
+            resultsBox.innerHTML = '';
+            if (!features || features.length === 0) {
+                resultsBox.style.display = 'none';
+                return;
+            }
+
+            features.forEach(feat => {
+                const props = feat.properties || {};
+                const coords = feat.geometry?.coordinates;
+                if (!coords) return;
+
+                const item = document.createElement('div');
+                item.className = 'search-item';
+                item.innerHTML = `
+                    <div style="font-weight:600;">${props.name || props.label}</div>
+                    <div class="search-item-sub">${props.county || ''} ${props.region || ''} ${props.locality || ''}</div>
+                `;
+
+                item.addEventListener('click', () => {
+                    searchInput.value = props.name || props.label;
+                    resultsBox.style.display = 'none';
+                    mapCarto.flyTo({ center: coords, zoom: 16.5, speed: 1.4 });
+                    setMapMarker(coords[0], coords[1], props.name || props.label);
+                });
+
+                resultsBox.appendChild(item);
+            });
+
+            resultsBox.style.display = 'block';
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-container')) {
+                resultsBox.style.display = 'none';
+            }
+        });
+
+        // ==========================================
+        // STADIA MAPS ROUTING (VALHALLA ENGINE)
+        // ==========================================
+        let currentRouteGeoJson = null;
+
+        function decodePolyline6(str) {
+            let index = 0, len = str.length;
+            let lat = 0, lng = 0;
+            const coordinates = [];
+            while (index < len) {
+                let b, shift = 0, result = 0;
+                do {
+                    b = str.charCodeAt(index++) - 63;
+                    result |= (b & 0x1f) << shift;
+                    shift += 5;
+                } while (b >= 0x20);
+                const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                lat += dlat;
+
+                shift = 0;
+                result = 0;
+                do {
+                    b = str.charCodeAt(index++) - 63;
+                    result |= (b & 0x1f) << shift;
+                    shift += 5;
+                } while (b >= 0x20);
+                const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                lng += dlng;
+
+                coordinates.push([lng * 1e-6, lat * 1e-6]);
+            }
+            return coordinates;
+        }
+
+        async function requestStadiaRoute(startCoord, endCoord, label) {
+            const body = {
+                locations: [
+                    { lon: startCoord[0], lat: startCoord[1], type: 'break' },
+                    { lon: endCoord[0], lat: endCoord[1], type: 'break' }
+                ],
+                costing: 'auto',
+                directions_options: { units: 'kilometers', language: 'pt-BR' }
+            };
+
+            try {
+                const response = await fetch(`https://api.stadiamaps.com/route/v1?api_key=${STADIA_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json();
+                const trip = data.trip;
+                if (!trip || !trip.legs || trip.legs.length === 0) return;
+
+                const encodedShape = trip.legs[0].shape;
+                const coords = decodePolyline6(encodedShape);
+
+                currentRouteGeoJson = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: coords
+                    }
+                };
+
+                reapplyRoutes();
+
+                // Atualiza painel flutuante
+                const distKm = trip.summary.length.toFixed(1);
+                const timeMin = Math.round(trip.summary.time / 60);
+                document.getElementById('route-card-title').textContent = label;
+                document.getElementById('route-card-dist').textContent = `${distKm} km`;
+                document.getElementById('route-card-time').textContent = `${timeMin} minutos`;
+                document.getElementById('route-info-card').style.display = 'block';
+
+                // Ajusta limites de visão dos mapas para a rota
+                const bounds = coords.reduce((acc, coord) => {
+                    return [
+                        [Math.min(acc[0][0], coord[0]), Math.min(acc[0][1], coord[1])],
+                        [Math.max(acc[1][0], coord[0]), Math.max(acc[1][1], coord[1])]
+                    ];
+                }, [[coords[0][0], coords[0][1]], [coords[0][0], coords[0][1]]]);
+
+                mapCarto.fitBounds(bounds, { padding: 80, speed: 1.2 });
+            } catch (err) {
+                console.error("Stadia Routing error:", err);
+            }
+        }
+
+        function reapplyRoutes() {
+            if (!currentRouteGeoJson) return;
+
+            maps.forEach(map => {
+                if (!map.isStyleLoaded()) return;
+
+                if (map.getSource('stadia-route-src')) {
+                    map.getSource('stadia-route-src').setData(currentRouteGeoJson);
+                } else {
+                    map.addSource('stadia-route-src', {
+                        type: 'geojson',
+                        data: currentRouteGeoJson
+                    });
+
+                    // Linha branca de contorno
+                    map.addLayer({
+                        id: 'stadia-route-casing',
+                        type: 'line',
+                        source: 'stadia-route-src',
+                        layout: { 'line-join': 'round', 'line-cap': 'round' },
+                        paint: {
+                            'line-color': '#FFFFFF',
+                            'line-width': 7,
+                            'line-opacity': 0.85
+                        }
+                    });
+
+                    // Linha principal azul
+                    map.addLayer({
+                        id: 'stadia-route-line',
+                        type: 'line',
+                        source: 'stadia-route-src',
+                        layout: { 'line-join': 'round', 'line-cap': 'round' },
+                        paint: {
+                            'line-color': '#2A8BF2',
+                            'line-width': 4
+                        }
+                    });
+                }
+            });
+        }
+
+        function clearRoutes() {
+            currentRouteGeoJson = null;
+            document.getElementById('route-info-card').style.display = 'none';
+
+            maps.forEach(map => {
+                try {
+                    if (map.getLayer('stadia-route-line')) map.removeLayer('stadia-route-line');
+                    if (map.getLayer('stadia-route-casing')) map.removeLayer('stadia-route-casing');
+                    if (map.getSource('stadia-route-src')) map.removeSource('stadia-route-src');
+                } catch(e) {}
+            });
+        }
+
+        // Alternar Modal de Especificacoes
+        function toggleModal() {
+            const modal = document.getElementById('specs-modal');
+            modal.style.display = (modal.style.display === 'block') ? 'none' : 'block';
+        }
+    </script>
+</body>
+</html>

@@ -73,30 +73,26 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import androidx.compose.ui.graphics.luminance
 import java.util.Locale
 
-private class PickerCartoTileSource(
+private class PickerStadiaTileSource(
     name: String,
     style: String
 ) : XYTileSource(
     name,
     0, 20, 512, "@2x.png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://b.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://c.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://d.basemaps.cartocdn.com/rastertiles/$style/"
-    )
+    arrayOf("https://tiles.stadiamaps.com/tiles/$style/")
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
         val base = super.getTileURLString(pMapTileIndex)
-        val apiKey = BuildConfig.CARTO_API_KEY
-        return if (apiKey.isNotBlank()) "$base?key=$apiKey" else base
+        val apiKey = BuildConfig.STADIA_API_KEY
+        return if (apiKey.isNotBlank()) "$base?api_key=$apiKey" else base
     }
 }
 
-private val PICKER_CARTO_POSITRON = PickerCartoTileSource("PickerCartoPositronHD", "light_all")
-private val PICKER_CARTO_DARK_MATTER = PickerCartoTileSource("PickerCartoDarkMatterHD", "dark_all")
+private val PICKER_STADIA_SMOOTH = PickerStadiaTileSource("PickerStadiaSmoothHD", "alidade_smooth")
+private val PICKER_STADIA_DARK = PickerStadiaTileSource("PickerStadiaDarkHD", "alidade_smooth_dark")
 
 @Composable
 fun MapLocationPicker(
@@ -107,7 +103,7 @@ fun MapLocationPicker(
     onReverseGeocode: suspend (latE6: Int, lonE6: Int) -> String
 ) {
     val context = LocalContext.current
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
@@ -123,7 +119,7 @@ fun MapLocationPicker(
             context.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
         )
         MapView(context).apply {
-            val initialSource = if (isDarkTheme) PICKER_CARTO_DARK_MATTER else PICKER_CARTO_POSITRON
+            val initialSource = if (isDarkTheme) PICKER_STADIA_DARK else PICKER_STADIA_SMOOTH
             setTileSource(initialSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
@@ -139,6 +135,10 @@ fun MapLocationPicker(
     }
 
     // Gerencia ciclo de vida do MapView
+    LaunchedEffect(isDarkTheme) {
+        mapView.setTileSource(if (isDarkTheme) PICKER_STADIA_DARK else PICKER_STADIA_SMOOTH)
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {

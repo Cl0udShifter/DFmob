@@ -5,14 +5,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.dfmob.data.preferences.AppThemeMode
+import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
+import com.dfmob.ui.settings.SettingsScreen
 import com.dfmob.ui.stops.StopsScreen
 import com.dfmob.ui.tripplanner.TripPlannerScreen
 import com.dfmob.ui.theme.DFmobTheme
@@ -21,7 +26,8 @@ enum class AppScreen {
     HOME,
     LINES,
     STOPS,
-    TRIP_PLANNER
+    TRIP_PLANNER,
+    SETTINGS
 }
 
 class MainActivity : ComponentActivity() {
@@ -29,8 +35,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            DFmobTheme {
-                val context = LocalContext.current
+            val context = LocalContext.current
+            val themePreferences = remember { ThemePreferences(context) }
+            val themeMode by themePreferences.themeMode.collectAsState()
+            val systemDark = isSystemInDarkTheme()
+            val isDarkTheme = when (themeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+
+            DFmobTheme(darkTheme = isDarkTheme) {
                 val favoritesRepository = remember { FavoritesRepository(context) }
                 var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
                 var targetLineNumberForStops by remember { mutableStateOf<String?>(null) }
@@ -53,6 +68,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onNavigateToTripPlanner = {
                                 currentScreen = AppScreen.TRIP_PLANNER
+                            },
+                            onNavigateToSettings = {
+                                currentScreen = AppScreen.SETTINGS
                             }
                         )
                         AppScreen.LINES -> LinesScreen(
@@ -75,6 +93,11 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                         AppScreen.TRIP_PLANNER -> TripPlannerScreen(
+                            onBack = { currentScreen = AppScreen.HOME }
+                        )
+                        AppScreen.SETTINGS -> SettingsScreen(
+                            themePreferences = themePreferences,
+                            currentThemeMode = themeMode,
                             onBack = { currentScreen = AppScreen.HOME }
                         )
                     }

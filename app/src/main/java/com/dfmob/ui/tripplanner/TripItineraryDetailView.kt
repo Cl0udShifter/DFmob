@@ -123,31 +123,27 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.util.Calendar
+import androidx.compose.ui.graphics.luminance
 import java.util.Locale
 import java.util.TimeZone
 
-private class ItineraryCartoTileSource(
+private class ItineraryStadiaTileSource(
     name: String,
     style: String
 ) : XYTileSource(
     name,
     0, 20, 512, "@2x.png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://b.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://c.basemaps.cartocdn.com/rastertiles/$style/",
-        "https://d.basemaps.cartocdn.com/rastertiles/$style/"
-    )
+    arrayOf("https://tiles.stadiamaps.com/tiles/$style/")
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
         val base = super.getTileURLString(pMapTileIndex)
-        val apiKey = BuildConfig.CARTO_API_KEY
-        return if (apiKey.isNotBlank()) "$base?key=$apiKey" else base
+        val apiKey = BuildConfig.STADIA_API_KEY
+        return if (apiKey.isNotBlank()) "$base?api_key=$apiKey" else base
     }
 }
 
-private val ITIN_CARTO_POSITRON = ItineraryCartoTileSource("ItinPositronHD", "light_all")
-private val ITIN_CARTO_DARK_MATTER = ItineraryCartoTileSource("ItinDarkMatterHD", "dark_all")
+private val ITIN_STADIA_SMOOTH = ItineraryStadiaTileSource("ItinStadiaSmoothHD", "alidade_smooth")
+private val ITIN_STADIA_DARK = ItineraryStadiaTileSource("ItinStadiaDarkHD", "alidade_smooth_dark")
 
 sealed class NavigationStage {
     data class WalkToStop(
@@ -197,7 +193,7 @@ fun TripItineraryDetailView(
     onFinishTrip: () -> Unit = onBack
 ) {
     val context = LocalContext.current
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val lifecycleOwner = LocalLifecycleOwner.current
     val dbHelper = remember { DatabaseHelper(context) }
 
@@ -247,7 +243,7 @@ fun TripItineraryDetailView(
             context.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
         )
         MapView(context).apply {
-            val initialSource = if (isDarkTheme) ITIN_CARTO_DARK_MATTER else ITIN_CARTO_POSITRON
+            val initialSource = if (isDarkTheme) ITIN_STADIA_DARK else ITIN_STADIA_SMOOTH
             setTileSource(initialSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
@@ -290,6 +286,10 @@ fun TripItineraryDetailView(
     }
 
     // Gerenciamento de ciclo de vida do mapa
+    LaunchedEffect(isDarkTheme) {
+        mapView.setTileSource(if (isDarkTheme) ITIN_STADIA_DARK else ITIN_STADIA_SMOOTH)
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
