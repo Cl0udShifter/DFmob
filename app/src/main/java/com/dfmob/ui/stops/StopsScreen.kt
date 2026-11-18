@@ -280,6 +280,7 @@ fun StopsScreen(
                 activeRoute = activeRouteState,
                 focusLocation = focusLocation,
                 recenterTrigger = recenterTrigger,
+                isDarkTheme = isDarkTheme,
                 onStopSelected = { stop ->
                     if (activeRouteState != null) {
                         coroutineScope.launch {

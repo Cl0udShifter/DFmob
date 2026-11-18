@@ -137,6 +137,10 @@ fun MapLocationPicker(
     // Gerencia ciclo de vida do MapView
     LaunchedEffect(isDarkTheme) {
         mapView.setTileSource(if (isDarkTheme) PICKER_STADIA_DARK else PICKER_STADIA_SMOOTH)
+        try {
+            mapView.tileProvider.clearTileCache()
+        } catch (_: Exception) {}
+        mapView.postInvalidate()
     }
 
     DisposableEffect(lifecycleOwner) {

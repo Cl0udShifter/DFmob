@@ -11,7 +11,8 @@ import android.os.Handler
 import android.os.Looper
 import android.animation.ValueAnimator
 import android.view.animation.LinearInterpolator
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -108,10 +109,10 @@ fun RealOpenStreetMap(
     recenterTrigger: Long,
     onStopSelected: (TransitStop) -> Unit,
     activeRoute: LineRouteState? = null,
+    isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val isDarkTheme = isSystemInDarkTheme()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val pinCache = remember(context) { StopPinCache(context) }
@@ -213,8 +214,11 @@ fun RealOpenStreetMap(
     LaunchedEffect(isDarkTheme) {
         val tileSource = if (isDarkTheme) STADIA_DARK else STADIA_SMOOTH
         mapView.setTileSource(tileSource)
+        try {
+            mapView.tileProvider.clearTileCache()
+        } catch (_: Exception) {}
         mapView.overlayManager.tilesOverlay.setColorFilter(null)
-        mapView.invalidate()
+        mapView.postInvalidate()
     }
 
     // Foca suavemente a camera no local selecionado na barra de busca

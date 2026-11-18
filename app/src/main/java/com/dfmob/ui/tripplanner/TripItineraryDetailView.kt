@@ -288,6 +288,10 @@ fun TripItineraryDetailView(
     // Gerenciamento de ciclo de vida do mapa
     LaunchedEffect(isDarkTheme) {
         mapView.setTileSource(if (isDarkTheme) ITIN_STADIA_DARK else ITIN_STADIA_SMOOTH)
+        try {
+            mapView.tileProvider.clearTileCache()
+        } catch (_: Exception) {}
+        mapView.postInvalidate()
     }
 
     DisposableEffect(lifecycleOwner) {
