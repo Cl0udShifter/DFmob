@@ -587,11 +587,26 @@ class StopsRepository(private val context: Context) {
         stops: List<TransitStop>
     ): List<Pair<Double, Double>> {
         if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
-        if (shapes.size == 1) return shapes.values.first()
 
         val firstStop = stops.first()
         val lastStop = stops.last()
         val isCircular = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, lastStop.latE6, lastStop.lonE6) < 800
+
+        // Se houver apenas 1 tracado disponivel na SEMOB:
+        if (shapes.size == 1) {
+            val single = shapes.values.first()
+            if (!isCircular && single.size >= 2) {
+                val fStart = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
+                val fEnd = calculateDistanceMeters(lastStop.latE6, lastStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
+                val rStart = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
+                val rEnd = calculateDistanceMeters(lastStop.latE6, lastStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
+                if ((rStart + rEnd) < (fStart + fEnd) - 500) {
+                    return single.reversed()
+                }
+            }
+            return single
+        }
+
         val ida = shapes.entries.firstOrNull { it.key.contains("IDA", ignoreCase = true) }?.value
         val volta = shapes.entries.firstOrNull { it.key.contains("VOLTA", ignoreCase = true) }?.value
         if (isCircular && ida != null && volta != null) {
@@ -599,9 +614,14 @@ class StopsRepository(private val context: Context) {
         }
 
         var bestShape: List<Pair<Double, Double>>? = null
-        var bestScore = -1
+        var bestScore = -Double.MAX_VALUE
+
+        val step = (stops.size / 10).coerceAtLeast(1)
+        val sampleStops = stops.filterIndexed { index, _ -> index % step == 0 }
+
         for ((_, pts) in shapes) {
             if (pts.isEmpty()) continue
+
             var nearCount = 0
             for (s in stops) {
                 var minD = Double.MAX_VALUE
@@ -619,8 +639,53 @@ class StopsRepository(private val context: Context) {
                 }
                 if (minD <= 350.0) nearCount++
             }
-            if (nearCount > bestScore) {
-                bestScore = nearCount
+
+            val dStart = calculateDistanceMeters(
+                firstStop.latE6,
+                firstStop.lonE6,
+                (pts.first().first * 1_000_000).toInt(),
+                (pts.first().second * 1_000_000).toInt()
+            )
+            val dEnd = calculateDistanceMeters(
+                lastStop.latE6,
+                lastStop.lonE6,
+                (pts.last().first * 1_000_000).toInt(),
+                (pts.last().second * 1_000_000).toInt()
+            )
+            val endpointDist = dStart + dEnd
+
+            // Avalia monotonicidade da progressao das paradas ao longo dos pontos do shape
+            var monoInc = 0
+            var prevIdx = -1
+            for (s in sampleStops) {
+                var closestIdx = 0
+                var minD = Double.MAX_VALUE
+                for (k in pts.indices) {
+                    val pt = pts[k]
+                    val d = calculateDistanceMeters(
+                        s.latE6,
+                        s.lonE6,
+                        (pt.first * 1_000_000).toInt(),
+                        (pt.second * 1_000_000).toInt()
+                    )
+                    if (d < minD) {
+                        minD = d
+                        closestIdx = k
+                    }
+                }
+                if (prevIdx >= 0 && closestIdx >= prevIdx) {
+                    monoInc++
+                }
+                prevIdx = closestIdx
+            }
+            val totalPairs = (sampleStops.size - 1).coerceAtLeast(1)
+            val monoRatio = monoInc.toDouble() / totalPairs
+
+            val coverageRatio = nearCount.toDouble() / stops.size
+            val score = (coverageRatio * 1000.0) + (monoRatio * 500.0) - (endpointDist.coerceAtMost(20000.0) / 20.0)
+
+            if (score > bestScore) {
+                bestScore = score
                 bestShape = pts
             }
         }

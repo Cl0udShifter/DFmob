@@ -398,7 +398,11 @@ fun TripItineraryDetailView(
                 polylinesFolder.add(line)
             }
         }
-        directionOverlay.setPoints(transitDirectionPoints)
+        val firstTransitLeg = itinerary.legs.firstOrNull { it.type == TripLegType.TRANSIT }
+        val transitColor = firstTransitLeg?.lines?.firstOrNull()?.colorHex?.let {
+            try { android.graphics.Color.parseColor(it) } catch (_: Exception) { null }
+        } ?: android.graphics.Color.parseColor("#00A859")
+        directionOverlay.setPoints(transitDirectionPoints, transitColor)
 
         // Marcador de Origem
         if (origin != null) {

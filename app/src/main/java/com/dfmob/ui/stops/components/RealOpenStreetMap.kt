@@ -317,7 +317,7 @@ fun RealOpenStreetMap(
                 }
                 routePolyline.setPoints(geoPoints)
                 routePolyline.isEnabled = true
-                directionOverlay.setPoints(geoPoints)
+                directionOverlay.setPoints(geoPoints, strokeColor)
             } else {
                 routePolyline.setPoints(emptyList())
                 routePolyline.isEnabled = false

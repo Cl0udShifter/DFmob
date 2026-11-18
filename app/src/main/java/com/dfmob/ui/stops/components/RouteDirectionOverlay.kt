@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
+import androidx.core.graphics.ColorUtils
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
@@ -14,7 +15,7 @@ import kotlin.math.cos
 
 /**
  * Overlay otimizado que renderiza indicadores de fluxo/direcao estaticos
- * (circulo branco com seta preta grossa) ao longo da rota de onibus e metro no mapa.
+ * (circulo na cor oficial da linha com seta grossa preenchida) ao longo da rota.
  *
  * Utiliza a arquitetura e padrao do Moovit:
  * 1. Pontos estaticos calculados em coordenadas geograficas reais (a cada ~350m ao longo do percurso).
@@ -23,7 +24,7 @@ import kotlin.math.cos
  *    - zoom < 14.0: NO_DRAW (0 setas para manter a visao geral do DF limpa)
  *    - 14.0 <= zoom < 16.5: DRAW_HALF (apenas indices pares para evitar poluicao visual)
  *    - zoom >= 16.5: DRAW_ALL (todas as setas exibidas)
- * 4. Orientacao precisa em graus seguindo o azimute da via.
+ * 4. Circulo na cor da linha com seta grossa branca (ou preta para tons muito claros como amarelo).
  */
 class RouteDirectionOverlay(context: Context) : Overlay() {
 
@@ -37,40 +38,58 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
     @Volatile
     private var staticArrows: List<StaticArrow> = emptyList()
 
+    private var circleColor: Int = Color.parseColor("#1A73E8")
+
     private val circleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = circleColor
         style = Paint.Style.FILL
     }
 
     private val circleBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#40000000")
+        color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 1f * density
+        strokeWidth = 1.4f * density
     }
 
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(40, 0, 0, 0)
+        color = Color.argb(60, 0, 0, 0)
         style = Paint.Style.FILL
     }
 
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK
-        style = Paint.Style.STROKE
-        strokeWidth = 2.4f * density
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
+        color = Color.WHITE
+        style = Paint.Style.FILL
     }
 
+    // Seta grossa normal (corpo retangular e ponta triangular preenchida)
     private val arrowPath = Path().apply {
-        moveTo(-3.5f * density, -4.5f * density)
-        lineTo(3.2f * density, 0f)
-        lineTo(-3.5f * density, 4.5f * density)
+        moveTo(4.6f * density, 0f)
+        lineTo(0.5f * density, -3.8f * density)
+        lineTo(0.5f * density, -1.6f * density)
+        lineTo(-4.2f * density, -1.6f * density)
+        lineTo(-4.2f * density, 1.6f * density)
+        lineTo(0.5f * density, 1.6f * density)
+        lineTo(0.5f * density, 3.8f * density)
+        close()
     }
 
-    private val radius = 8.5f * density
+    private val radius = 9.5f * density
     private val screenPt = Point()
 
-    fun setPoints(newPoints: List<GeoPoint>) {
+    fun setColor(color: Int) {
+        if (this.circleColor != color) {
+            this.circleColor = color
+            circleFillPaint.color = color
+            val isBright = ColorUtils.calculateLuminance(color) > 0.65
+            arrowPaint.color = if (isBright) Color.BLACK else Color.WHITE
+            circleBorderPaint.color = if (isBright) Color.parseColor("#40000000") else Color.WHITE
+        }
+    }
+
+    fun setPoints(newPoints: List<GeoPoint>, color: Int? = null) {
+        if (color != null) {
+            setColor(color)
+        }
         if (newPoints.size < 2) {
             staticArrows = emptyList()
             return
@@ -133,15 +152,15 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
             canvas.translate(px.toFloat(), py.toFloat())
 
             // 1. Sombra suave
-            canvas.drawCircle(0f, 1f * density, radius, shadowPaint)
+            canvas.drawCircle(0f, 1.2f * density, radius, shadowPaint)
 
-            // 2. Circulo branco solido
+            // 2. Circulo com a cor oficial da linha
             canvas.drawCircle(0f, 0f, radius, circleFillPaint)
 
-            // 3. Borda fina de contorno
+            // 3. Borda de destaque
             canvas.drawCircle(0f, 0f, radius, circleBorderPaint)
 
-            // 4. Seta grossa preta alinhada ao sentido do percurso
+            // 4. Seta grossa normal preenchida apontando no sentido do fluxo
             canvas.rotate(arrow.angleDeg - mapOrientation)
             canvas.drawPath(arrowPath, arrowPaint)
 

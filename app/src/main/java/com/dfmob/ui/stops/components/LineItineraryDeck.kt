@@ -354,53 +354,7 @@ fun LineItineraryDeck(
                     }
                 }
 
-                // 5. Barra Inferior com Acao: Localizacao em Tempo Real
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Botao de Localizacao em Tempo Real dos Onibus
-                    val liveVehiclesCount = activeRoute.liveVehicles.size
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable(onClick = onLocateBuses),
-                        color = Color(0xFF1A73E8),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.DirectionsBus,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            val label = if (liveVehiclesCount > 0) {
-                                "Ônibus em tempo real ($liveVehiclesCount)"
-                            } else {
-                                "Localização em tempo real"
-                            }
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.5.sp
-                                ),
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
+
             }
         }
     }
