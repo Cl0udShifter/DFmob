@@ -127,7 +127,11 @@ fun TripPlannerScreen(
             itinerary = selectedItin,
             origin = state.origin,
             destination = state.destination,
-            onBack = { viewModel.selectItinerary(null) }
+            onBack = { viewModel.selectItinerary(null) },
+            onFinishTrip = {
+                viewModel.selectItinerary(null)
+                onBack()
+            }
         )
         return
     }
