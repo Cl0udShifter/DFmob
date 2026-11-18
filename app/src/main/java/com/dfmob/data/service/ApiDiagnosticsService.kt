@@ -1,6 +1,6 @@
 package com.dfmob.data.service
 
-import com.dfmob.BuildConfig
+import com.dfmob.data.telemetry.MoovitTransitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -30,13 +30,9 @@ class ApiDiagnosticsService(
         val start = System.currentTimeMillis()
         var ok = false
         try {
-            val url = URL("https://app.moovit.com/services/metroman/currentrevision?metroId=242&customerId=4928")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 4000
-                setRequestProperty("User-Agent", "Moovit/10.0 (Android)")
-            }
-            ok = (conn.responseCode in 200..399)
+            // Testa a chamada real do cliente Moovit do app consultando a Rodoviária do Plano Piloto (ID 6342602)
+            val arrivals = MoovitTransitClient.fetchArrivalsForStop(6342602)
+            ok = arrivals.isNotEmpty()
         } catch (_: Exception) {
             ok = false
         }
@@ -53,7 +49,8 @@ class ApiDiagnosticsService(
         val start = System.currentTimeMillis()
         var ok = false
         try {
-            val url = URL("https://geoserver.semob.df.gov.br/geoserver/wfs?service=wfs&version=2.0.0&request=GetFeature&typeNames=semob:vw_posicao_veiculo&outputFormat=application/json&count=1")
+            // URL WFS oficial usada diariamente pelo SemobTelemetryService
+            val url = URL("http://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=1")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 4000
                 readTimeout = 4000
