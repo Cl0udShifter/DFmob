@@ -21,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -256,12 +258,38 @@ fun TripItineraryDetailView(
         }
     }
 
+    // Overlay de localizacao atual do usuario (GPS Puck azul com anel branco e sombra)
+    val locationOverlay = remember(mapView) {
+        val provider = GpsMyLocationProvider(context).apply {
+            locationUpdateMinDistance = 2.0f
+            locationUpdateMinTime = 1000L
+        }
+        val overlay = DFLocationOverlay(provider, mapView, context)
+
+        val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+        val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+        (lastGps ?: lastNet)?.let { loc ->
+            overlay.onLocationChanged(loc, provider)
+        }
+        overlay
+    }
+
+    // Adiciona o overlay de localizacao acima das rotas e paradas
+    LaunchedEffect(mapView) {
+        if (!mapView.overlays.contains(locationOverlay)) {
+            mapView.overlays.add(locationOverlay)
+        }
+        mapView.invalidate()
+    }
+
     // Registra LocationListener para atualizar a posicao e velocidade do usuario continuamente
     DisposableEffect(context) {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         val locListener = object : LocationListener {
             override fun onLocationChanged(loc: Location) {
                 currentUserLocation = loc
+                locationOverlay.onLocationChanged(loc, null)
             }
             override fun onProviderEnabled(provider: String) {}
             override fun onProviderDisabled(provider: String) {}
@@ -274,7 +302,11 @@ fun TripItineraryDetailView(
             lm?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 5f, locListener)
             val lastGps = lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val lastNet = lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            currentUserLocation = lastGps ?: lastNet
+            val best = lastGps ?: lastNet
+            currentUserLocation = best
+            if (best != null) {
+                locationOverlay.onLocationChanged(best, null)
+            }
         } catch (_: SecurityException) {}
 
         onDispose {
@@ -284,7 +316,7 @@ fun TripItineraryDetailView(
         }
     }
 
-    // Gerenciamento de ciclo de vida do mapa
+    // Gerenciamento de ciclo de vida do mapa e GPS
     LaunchedEffect(isDarkTheme) {
         mapView.setTileSource(if (isDarkTheme) ITIN_STADIA_DARK else ITIN_STADIA_SMOOTH)
         try {
@@ -296,15 +328,25 @@ fun TripItineraryDetailView(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDetach()
+                Lifecycle.Event.ON_RESUME -> {
+                    mapView.onResume()
+                    locationOverlay.enableMyLocation()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    locationOverlay.disableMyLocation()
+                    mapView.onPause()
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    locationOverlay.disableMyLocation()
+                    mapView.onDetach()
+                }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            locationOverlay.disableMyLocation()
             mapView.onDetach()
         }
     }
@@ -710,9 +752,11 @@ fun TripItineraryDetailView(
             onStartNavigation = {
                 isNavigating = true
                 currentStageIndex = 0
+                val myLoc = locationOverlay.myLocation
                 val userLoc = currentUserLocation
-                if (userLoc != null) {
-                    mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude), 17.5, 800L)
+                val best = myLoc ?: userLoc?.let { GeoPoint(it.latitude, it.longitude) }
+                if (best != null) {
+                    mapView.controller.animateTo(best, 17.5, 800L)
                 }
             },
             onCancelNavigation = {
@@ -737,6 +781,48 @@ fun TripItineraryDetailView(
                 }
             }
         )
+
+        // Botao Flutuante de Centralizacao no GPS (Minha Localizacao)
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF))
+                .border(
+                    1.dp,
+                    if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB),
+                    CircleShape
+                )
+                .clickable {
+                    val myLoc = locationOverlay.myLocation
+                    if (myLoc != null) {
+                        mapView.controller.animateTo(myLoc, 17.0, 750L)
+                    } else {
+                        val userLoc = currentUserLocation
+                        if (userLoc != null) {
+                            mapView.controller.animateTo(GeoPoint(userLoc.latitude, userLoc.longitude), 17.0, 750L)
+                        } else {
+                            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                            val lastGps = try { lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+                            val lastNet = try { lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+                            val best = lastGps ?: lastNet
+                            if (best != null) {
+                                mapView.controller.animateTo(GeoPoint(best.latitude, best.longitude), 17.0, 750L)
+                            }
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MyLocation,
+                contentDescription = "Minha localização",
+                tint = TransitGreen,
+                modifier = Modifier.size(22.dp)
+            )
+        }
 
         // Painel inferior contextual
         if (!isNavigating) {
@@ -2058,4 +2144,60 @@ private fun formatEpochMsToHHMM(epochMs: Long): String {
     val h = cal.get(Calendar.HOUR_OF_DAY)
     val m = cal.get(Calendar.MINUTE)
     return String.format(Locale.ROOT, "%02d:%02d", h, m)
+}
+
+/**
+ * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.
+ */
+private class DFLocationOverlay(
+    provider: GpsMyLocationProvider,
+    mapView: MapView,
+    context: Context
+) : MyLocationNewOverlay(provider, mapView) {
+    init {
+        val puckBitmap = createLocationPuckBitmap(context)
+        setPersonIcon(puckBitmap)
+        setDirectionIcon(puckBitmap)
+        setPersonAnchor(0.5f, 0.5f)
+        setDirectionAnchor(0.5f, 0.5f)
+        enableMyLocation()
+        setDrawAccuracyEnabled(true)
+        mCirclePaint.apply {
+            color = android.graphics.Color.parseColor("#221A73E8")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+    }
+}
+
+/**
+ * Cria o puck moderno de localizacao do usuario com disco azul, borda branca e sombra.
+ */
+private fun createLocationPuckBitmap(context: Context): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (24 * density).toInt()
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = sizePx / 2f
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // 1. Sombra suave (Drop Shadow)
+    paint.color = android.graphics.Color.argb(45, 0, 0, 0)
+    paint.style = Paint.Style.FILL
+    canvas.drawCircle(center, center + (1f * density), 10.5f * density, paint)
+
+    // 2. Anel branco solido de alto contraste
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(center, center, 10f * density, paint)
+
+    // 3. Disco azul vibrante (Google / Transit Blue)
+    paint.color = android.graphics.Color.parseColor("#1A73E8")
+    canvas.drawCircle(center, center, 7.5f * density, paint)
+
+    // 4. Ponto central branco
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(center, center, 2.5f * density, paint)
+
+    return bitmap
 }
