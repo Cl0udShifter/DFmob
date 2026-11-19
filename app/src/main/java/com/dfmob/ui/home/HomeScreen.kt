@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,10 +18,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +41,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -45,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.FavoriteLineArrivalPrediction
 import com.dfmob.data.model.TransitLine
+import com.dfmob.data.repository.AlertsRepository
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
@@ -73,12 +80,14 @@ fun HomeScreen(
     onNavigateToStops: () -> Unit = {},
     onNavigateToLineRoute: (String, Int?) -> Unit = { _, _ -> },
     onNavigateToTripPlanner: (DFLocation?) -> Unit = {},
+    onNavigateToAlerts: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
     val stopsRepo = remember { StopsRepository(context) }
+    val alertsRepo = remember { AlertsRepository(context) }
     val scope = rememberCoroutineScope()
     val updateManager = remember { AppUpdateManager(context) }
 
@@ -89,6 +98,14 @@ fun HomeScreen(
     val recentSearches by recentRepo.recentSearches.collectAsState()
     val homePlace by recentRepo.homePlace.collectAsState()
     val workPlace by recentRepo.workPlace.collectAsState()
+
+    val seenAlertIds by alertsRepo.preferences.seenAlertIds.collectAsState()
+    var hasUnseenAlerts by remember { mutableStateOf(false) }
+
+    LaunchedEffect(seenAlertIds) {
+        val alerts = alertsRepo.getAlerts()
+        hasUnseenAlerts = alertsRepo.preferences.hasUnseenAlerts(alerts.map { it.id })
+    }
 
     var favoritePredictions by remember { mutableStateOf<Map<String, FavoriteLineArrivalPrediction>>(emptyMap()) }
 
@@ -257,15 +274,38 @@ fun HomeScreen(
                     )
                 }
 
-                IconButton(
-                    onClick = onNavigateToSettings,
-                    modifier = Modifier.padding(end = 2.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Configurações",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onNavigateToAlerts,
+                        modifier = Modifier.padding(end = 2.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            Icon(
+                                imageVector = Icons.Outlined.Campaign,
+                                contentDescription = "Avisos da SEMOB",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (hasUnseenAlerts) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFFF9800))
+                                )
+                            }
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onNavigateToSettings,
+                        modifier = Modifier.padding(end = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "Configurações",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 

@@ -10,11 +10,12 @@ Documento local de acompanhamento das melhorias recomendadas para o DFmob. Cada 
   * Exibir diretamente no card da linha favorita na tela inicial um chip com a previsão do próximo ônibus para a parada mais próxima da localização atual do usuário, sem precisar abrir a tela do mapa.
   * Considerar o sentido específico salvo para a linha (ou neutro se a linha for circular).
 
-- [ ] **1.2 Alertas operacionais da SEMOB**
+- [OK] **1.2 Alertas operacionais da SEMOB**
   * Adicionar ícone de alerta à esquerda da engrenagem de configurações no cabeçalho superior.
-  * Ícone deve possuir indicador visual (badge/ponto de destaque) quando houver alertas operacionais não visualizados pelo usuário.
-  * Ao ser clicado, navegar para a tela de Avisos seguindo o padrão visual do app (título com ponto verde "Avisos.").
-  * Exibir cards individuais para cada comunicado da SEMOB com texto explicativo e badges destacados contendo o número e a cor oficial de cada linha afetada.
+  * Ícone possui indicador visual (ponto âmbar de destaque) quando há alertas operacionais não visualizados pelo usuário.
+  * Ao ser clicado, navega para a tela de Avisos seguindo o padrão visual do app (título com ponto verde "Avisos.").
+  * Exibe cards individuais para cada comunicado da SEMOB com texto explicativo e badges destacados contendo o número e a cor oficial de cada linha afetada, permitindo abrir diretamente a linha no mapa ao tocar no badge.
+  * Escuta periódica em segundo plano mesmo com app fechado via WorkManager, disparando notificação local do sistema com navegação direta para a tela de Avisos ao tocar.
 
 ---
 

@@ -1,6 +1,8 @@
 package com.dfmob
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -9,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import org.osmdroid.config.Configuration
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,30 +24,58 @@ import com.dfmob.data.preferences.AppThemeMode
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
+import com.dfmob.ui.alerts.AlertsScreen
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
 import com.dfmob.ui.settings.SettingsScreen
 import com.dfmob.ui.stops.StopsScreen
 import com.dfmob.ui.tripplanner.TripPlannerScreen
 import com.dfmob.ui.theme.DFmobTheme
+import com.dfmob.worker.SemobAlertsWorker
 
 enum class AppScreen {
     HOME,
     LINES,
     STOPS,
     TRIP_PLANNER,
-    SETTINGS
+    SETTINGS,
+    ALERTS
 }
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_NAVIGATE_TO = "EXTRA_NAVIGATE_TO"
+    }
+
+    private var pendingScreen by mutableStateOf<AppScreen?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra(EXTRA_NAVIGATE_TO) == "ALERTS") {
+            pendingScreen = AppScreen.ALERTS
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Solicita permissao de notificacoes no Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
+        // Agenda o worker de escuta periódica dos comunicados operacionais da SEMOB
+        SemobAlertsWorker.schedule(applicationContext)
+
         // Configuracao global de download de tiles com persistencia vitalicia no osmdroid
         Configuration.getInstance().apply {
             load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
-            userAgentValue = "DFmob/1.4.5 (Android)"
+            userAgentValue = "DFmob/1.4.6 (Android)"
             tileDownloadThreads = 8.toShort()
             tileDownloadMaxQueueSize = 60.toShort()
             cacheMapTileCount = 64.toShort()
@@ -70,11 +101,19 @@ class MainActivity : ComponentActivity() {
             DFmobTheme(darkTheme = isDarkTheme) {
                 val favoritesRepository = remember { FavoritesRepository(context) }
                 val recentSearchesRepository = remember { RecentSearchesRepository(context) }
-                var currentScreen by rememberSaveable { mutableStateOf(AppScreen.HOME) }
+                val initialScreen = if (intent.getStringExtra(EXTRA_NAVIGATE_TO) == "ALERTS") AppScreen.ALERTS else AppScreen.HOME
+                var currentScreen by rememberSaveable { mutableStateOf(initialScreen) }
                 var targetLineNumberForStops by rememberSaveable { mutableStateOf<String?>(null) }
                 var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
                 var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
                 var stopsOpenedFromLines by rememberSaveable { mutableStateOf(false) }
+
+                LaunchedEffect(pendingScreen) {
+                    pendingScreen?.let {
+                        currentScreen = it
+                        pendingScreen = null
+                    }
+                }
 
                 BackHandler(enabled = currentScreen != AppScreen.HOME) {
                     if (currentScreen == AppScreen.STOPS && stopsOpenedFromLines) {
@@ -113,6 +152,9 @@ class MainActivity : ComponentActivity() {
                                 targetDestinationForTripPlanner = dest
                                 currentScreen = AppScreen.TRIP_PLANNER
                             },
+                            onNavigateToAlerts = {
+                                currentScreen = AppScreen.ALERTS
+                            },
                             onNavigateToSettings = {
                                 currentScreen = AppScreen.SETTINGS
                             }
@@ -146,6 +188,15 @@ class MainActivity : ComponentActivity() {
                             onBack = {
                                 targetDestinationForTripPlanner = null
                                 currentScreen = AppScreen.HOME
+                            }
+                        )
+                        AppScreen.ALERTS -> AlertsScreen(
+                            onBack = { currentScreen = AppScreen.HOME },
+                            onLineClick = { lineNum, lineId ->
+                                targetLineNumberForStops = lineNum
+                                targetLineIdForStops = lineId
+                                stopsOpenedFromLines = false
+                                currentScreen = AppScreen.STOPS
                             }
                         )
                         AppScreen.SETTINGS -> SettingsScreen(
