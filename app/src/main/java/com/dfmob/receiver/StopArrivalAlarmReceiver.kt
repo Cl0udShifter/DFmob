@@ -15,6 +15,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.dfmob.MainActivity
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.repository.StopAlarmsRepository
 
 class StopArrivalAlarmReceiver : BroadcastReceiver() {
@@ -40,6 +41,9 @@ class StopArrivalAlarmReceiver : BroadcastReceiver() {
             if (intent.action == "com.dfmob.ACTION_STOP_ALARM_MILESTONE") {
                 val milestone = intent.getIntExtra("milestoneMinutes", 0)
                 if (!repo.isAlarmActive(stopId, lineNumber, destination)) return
+
+                val notifPrefs = NotificationPreferences(context)
+                if (!notifPrefs.isMilestoneEnabled(milestone)) return
 
                 repo.markMilestoneNotified(stopId, lineNumber, destination, milestone)
                 showMilestoneNotification(context, stopId, stopName, lineNumber, destination, milestone)
@@ -85,8 +89,16 @@ class StopArrivalAlarmReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val title = "Linha $lineNumber a caminho ($minutes min)"
-            val body = "O ônibus sentido $destination está a $minutes min da parada $stopName."
+            val title = if (minutes <= 0) {
+                "Linha $lineNumber chegou à parada"
+            } else {
+                "Linha $lineNumber a caminho ($minutes min)"
+            }
+            val body = if (minutes <= 0) {
+                "O ônibus sentido $destination já está na parada $stopName."
+            } else {
+                "O ônibus sentido $destination está a $minutes min da parada $stopName."
+            }
 
             val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 

@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.core.app.NotificationManagerCompat
 import com.dfmob.data.model.StopArrivalAlarm
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.receiver.StopArrivalAlarmReceiver
@@ -81,49 +82,19 @@ class StopAlarmsRepository(private val context: Context) {
             maxOf(0, Math.round((alarm.targetEpochMs - now) / 60000.0).toInt())
         } else 0
 
-        // Disparo imediato caso o alarme tenha sido ativado com o onibus ja dentro do intervalo de um marco
-        val notifPrefs = NotificationPreferences(context)
+        // Marca marcos ja decorridos no passado como notificados de forma silenciosa, sem disparar notificacao imediata
         var updated = alarm
-        if (notifPrefs.isMilestoneEnabled(15) && !updated.notified15Min && effectiveMinutes in 11..15) {
+        if (effectiveMinutes <= 15) {
             updated = updated.copy(notified15Min = true)
-            StopArrivalAlarmReceiver.showMilestoneNotification(
-                context = context,
-                stopId = updated.stopId,
-                stopName = updated.stopName,
-                lineNumber = updated.lineNumber,
-                destination = updated.destination,
-                minutes = effectiveMinutes
-            )
-        } else if (notifPrefs.isMilestoneEnabled(10) && !updated.notified10Min && effectiveMinutes in 6..10) {
-            updated = updated.copy(notified15Min = true, notified10Min = true)
-            StopArrivalAlarmReceiver.showMilestoneNotification(
-                context = context,
-                stopId = updated.stopId,
-                stopName = updated.stopName,
-                lineNumber = updated.lineNumber,
-                destination = updated.destination,
-                minutes = effectiveMinutes
-            )
-        } else if (notifPrefs.isMilestoneEnabled(5) && !updated.notified5Min && effectiveMinutes in 3..5) {
-            updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true)
-            StopArrivalAlarmReceiver.showMilestoneNotification(
-                context = context,
-                stopId = updated.stopId,
-                stopName = updated.stopName,
-                lineNumber = updated.lineNumber,
-                destination = updated.destination,
-                minutes = effectiveMinutes
-            )
-        } else if (notifPrefs.isMilestoneEnabled(2) && !updated.notified2Min && effectiveMinutes in 1..2) {
-            updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true, notified2Min = true)
-            StopArrivalAlarmReceiver.showMilestoneNotification(
-                context = context,
-                stopId = updated.stopId,
-                stopName = updated.stopName,
-                lineNumber = updated.lineNumber,
-                destination = updated.destination,
-                minutes = effectiveMinutes
-            )
+        }
+        if (effectiveMinutes <= 10) {
+            updated = updated.copy(notified10Min = true)
+        }
+        if (effectiveMinutes <= 5) {
+            updated = updated.copy(notified5Min = true)
+        }
+        if (effectiveMinutes <= 2) {
+            updated = updated.copy(notified2Min = true)
         }
 
         saveToPrefs(updated)
@@ -151,6 +122,13 @@ class StopAlarmsRepository(private val context: Context) {
         val key = "${stopId}_${lineNumber}_${destination}"
         prefs.edit().remove(key).apply()
         cancelSystemAlarms(stopId, lineNumber, destination)
+
+        // Cancela qualquer notificacao de alerta ativa na gaveta para esta parada/linha
+        val notificationId = 20000 + (stopId * 31 + lineNumber.hashCode()).rem(10000).let { if (it < 0) -it else it }
+        try {
+            NotificationManagerCompat.from(context).cancel(notificationId)
+        } catch (_: Exception) {}
+
         if (getAllActiveAlarms().isEmpty()) {
             com.dfmob.service.StopArrivalTrackingService.stop(context)
         }

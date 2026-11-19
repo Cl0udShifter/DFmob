@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.dfmob.MainActivity
+import com.dfmob.data.database.DatabaseHelper
 import com.dfmob.data.model.StopArrivalAlarm
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.repository.StopAlarmsRepository
@@ -30,10 +31,12 @@ class StopArrivalTrackingService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var trackingJob: Job? = null
     private lateinit var repo: StopAlarmsRepository
+    private lateinit var dbHelper: DatabaseHelper
 
     override fun onCreate() {
         super.onCreate()
         repo = StopAlarmsRepository(applicationContext)
+        dbHelper = DatabaseHelper(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -104,22 +107,41 @@ class StopArrivalTrackingService : Service() {
                         emptyList()
                     }
 
+                    val linesAtStop = try {
+                        dbHelper.getLinesPassingAtStop(stopId).associateBy { it.lineId }
+                    } catch (_: Exception) {
+                        emptyMap()
+                    }
+
                     for (alarm in alarms) {
                         var updatedTargetEpoch = alarm.targetEpochMs
 
                         if (moovitData.isNotEmpty()) {
+                            var bestMatchEpoch: Long? = null
+                            var minDiffMs = Long.MAX_VALUE
+
                             for (lineArr in moovitData) {
-                                val valid = lineArr.arrivals.firstOrNull { arr ->
+                                val lineInfo = linesAtStop[lineArr.lineId]
+                                    ?: dbHelper.getLineInfoById(lineArr.lineId)
+                                    ?: continue
+
+                                // Filtra estritamente pela linha monitorada pelo alarme
+                                if (lineInfo.lineNumber.trim() != alarm.lineNumber.trim()) continue
+
+                                for (arr in lineArr.arrivals) {
                                     val etd = arr.rtEtdUTC ?: arr.staticEtdUTC
-                                    etd >= now - 120_000L
-                                }
-                                if (valid != null) {
-                                    val etd = valid.rtEtdUTC ?: valid.staticEtdUTC
-                                    if (Math.abs(etd - alarm.targetEpochMs) < 15 * 60_000L) {
-                                        updatedTargetEpoch = etd
-                                        break
+                                    if (etd >= now - 120_000L) {
+                                        val diff = Math.abs(etd - alarm.targetEpochMs)
+                                        if (diff < minDiffMs) {
+                                            minDiffMs = diff
+                                            bestMatchEpoch = etd
+                                        }
                                     }
                                 }
+                            }
+
+                            if (bestMatchEpoch != null) {
+                                updatedTargetEpoch = bestMatchEpoch
                             }
                         }
 
@@ -132,46 +154,57 @@ class StopArrivalTrackingService : Service() {
                             nearestAlarm = alarm
                         }
 
-                        if (notifPrefs.isMilestoneEnabled(15) && !alarm.notified15Min && currentMinutes <= 15) {
+                        if (!alarm.notified15Min && currentMinutes <= 15) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 15)
-                            StopArrivalAlarmReceiver.showMilestoneNotification(
-                                applicationContext,
-                                alarm.stopId,
-                                alarm.stopName,
-                                alarm.lineNumber,
-                                alarm.destination,
-                                currentMinutes
-                            )
-                        } else if (notifPrefs.isMilestoneEnabled(10) && !alarm.notified10Min && currentMinutes <= 10) {
+                            if (notifPrefs.isMilestoneEnabled(15)) {
+                                StopArrivalAlarmReceiver.showMilestoneNotification(
+                                    applicationContext,
+                                    alarm.stopId,
+                                    alarm.stopName,
+                                    alarm.lineNumber,
+                                    alarm.destination,
+                                    15
+                                )
+                            }
+                        }
+                        if (!alarm.notified10Min && currentMinutes <= 10) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 10)
-                            StopArrivalAlarmReceiver.showMilestoneNotification(
-                                applicationContext,
-                                alarm.stopId,
-                                alarm.stopName,
-                                alarm.lineNumber,
-                                alarm.destination,
-                                currentMinutes
-                            )
-                        } else if (notifPrefs.isMilestoneEnabled(5) && !alarm.notified5Min && currentMinutes <= 5) {
+                            if (notifPrefs.isMilestoneEnabled(10)) {
+                                StopArrivalAlarmReceiver.showMilestoneNotification(
+                                    applicationContext,
+                                    alarm.stopId,
+                                    alarm.stopName,
+                                    alarm.lineNumber,
+                                    alarm.destination,
+                                    10
+                                )
+                            }
+                        }
+                        if (!alarm.notified5Min && currentMinutes <= 5) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 5)
-                            StopArrivalAlarmReceiver.showMilestoneNotification(
-                                applicationContext,
-                                alarm.stopId,
-                                alarm.stopName,
-                                alarm.lineNumber,
-                                alarm.destination,
-                                currentMinutes
-                            )
-                        } else if (notifPrefs.isMilestoneEnabled(2) && !alarm.notified2Min && currentMinutes <= 2) {
+                            if (notifPrefs.isMilestoneEnabled(5)) {
+                                StopArrivalAlarmReceiver.showMilestoneNotification(
+                                    applicationContext,
+                                    alarm.stopId,
+                                    alarm.stopName,
+                                    alarm.lineNumber,
+                                    alarm.destination,
+                                    5
+                                )
+                            }
+                        }
+                        if (!alarm.notified2Min && currentMinutes <= 2) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 2)
-                            StopArrivalAlarmReceiver.showMilestoneNotification(
-                                applicationContext,
-                                alarm.stopId,
-                                alarm.stopName,
-                                alarm.lineNumber,
-                                alarm.destination,
-                                currentMinutes
-                            )
+                            if (notifPrefs.isMilestoneEnabled(2)) {
+                                StopArrivalAlarmReceiver.showMilestoneNotification(
+                                    applicationContext,
+                                    alarm.stopId,
+                                    alarm.stopName,
+                                    alarm.lineNumber,
+                                    alarm.destination,
+                                    2
+                                )
+                            }
                         }
 
                         if (currentMinutes <= 0 && (now - updatedTargetEpoch) > 45_000L) {
@@ -229,9 +262,9 @@ class StopArrivalTrackingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val etaStr = if (minutesAway <= 0) "Já na parada" else "em $minutesAway min"
-        val title = "DFmob: Linha ${alarm.lineNumber} ($etaStr)"
-        val content = "A caminho de ${alarm.stopName} • Sentido ${alarm.destination}"
+        val timeText = if (minutesAway <= 0) "já na parada" else "~$minutesAway min"
+        val title = "DFmob • Monitoramento ativo"
+        val content = "Linha ${alarm.lineNumber} a caminho de ${alarm.stopName} ($timeText)"
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_def_app_icon)
