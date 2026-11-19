@@ -60,6 +60,7 @@ import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.tripplanner.MapLocationPicker
+import com.dfmob.ui.home.components.ActiveTripModule
 import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
@@ -85,6 +86,7 @@ fun HomeScreen(
     onNavigateToLineRoute: (String, Int?) -> Unit = { _, _ -> },
     onNavigateToTripPlanner: (DFLocation?) -> Unit = {},
     onNavigateToTripPlannerWithTrip: (FavoriteTrip) -> Unit = {},
+    onNavigateToActiveTrip: () -> Unit = {},
     onNavigateToAlerts: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
@@ -320,6 +322,11 @@ fun HomeScreen(
             // Componente 1: Caixa de busca expansivel (Transit style)
             SearchPill(
                 onClick = { onNavigateToTripPlanner(null) }
+            )
+
+            // Modulo Transit App: Trajeto ativo em andamento
+            ActiveTripModule(
+                onClick = onNavigateToActiveTrip
             )
 
             // Componente 2: Botoes de modo Linhas e Paradas

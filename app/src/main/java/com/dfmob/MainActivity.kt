@@ -77,12 +77,16 @@ class MainActivity : ComponentActivity() {
                     pendingScreen = AppScreen.STOPS
                 }
             }
+            "TRIP_NAV" -> {
+                pendingScreen = AppScreen.TRIP_PLANNER
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        com.dfmob.service.NavigationStateHolder.restore(applicationContext)
         handleIntent(intent)
 
         // Solicita permissao de notificacoes no Android 13+
@@ -134,9 +138,13 @@ class MainActivity : ComponentActivity() {
                 val initialScreen = when (intent.getStringExtra(EXTRA_NAVIGATE_TO)) {
                     "ALERTS" -> AppScreen.ALERTS
                     "STOPS" -> AppScreen.STOPS
+                    "TRIP_NAV" -> AppScreen.TRIP_PLANNER
                     else -> AppScreen.HOME
                 }
                 var currentScreen by rememberSaveable { mutableStateOf(initialScreen) }
+                var resumeActiveTrip by rememberSaveable {
+                    mutableStateOf(intent.getStringExtra(EXTRA_NAVIGATE_TO) == "TRIP_NAV")
+                }
                 var targetStopIdForStops by rememberSaveable {
                     mutableStateOf(intent.getIntExtra(EXTRA_STOP_ID, -1).takeIf { it > 0 })
                 }
@@ -161,6 +169,8 @@ class MainActivity : ComponentActivity() {
                                 targetLineNumberForStops = pendingLineNumber
                                 targetDestinationForStops = pendingDestination
                             }
+                        } else if (it == AppScreen.TRIP_PLANNER) {
+                            resumeActiveTrip = true
                         }
                         pendingScreen = null
                         pendingStopId = null
@@ -216,6 +226,13 @@ class MainActivity : ComponentActivity() {
                                 targetDestinationForTripPlanner = null
                                 currentScreen = AppScreen.TRIP_PLANNER
                             },
+                            onNavigateToActiveTrip = {
+                                targetDestinationForTripPlanner = null
+                                targetOriginLocationForTripPlanner = null
+                                targetDestinationLocationForTripPlanner = null
+                                resumeActiveTrip = true
+                                currentScreen = AppScreen.TRIP_PLANNER
+                            },
                             onNavigateToAlerts = {
                                 currentScreen = AppScreen.ALERTS
                             },
@@ -254,9 +271,12 @@ class MainActivity : ComponentActivity() {
                             initialDestination = targetDestinationForTripPlanner,
                             initialOriginLocation = targetOriginLocationForTripPlanner,
                             initialDestinationLocation = targetDestinationLocationForTripPlanner,
+                            resumeActiveTrip = resumeActiveTrip,
+                            onActiveTripResumed = { resumeActiveTrip = false },
                             favoritesRepository = favoritesRepository,
                             recentSearchesRepository = recentSearchesRepository,
                             onBack = {
+                                resumeActiveTrip = false
                                 targetDestinationForTripPlanner = null
                                 targetOriginLocationForTripPlanner = null
                                 targetDestinationLocationForTripPlanner = null

@@ -108,6 +108,8 @@ fun TripPlannerScreen(
     initialDestination: DFLocation? = null,
     initialOriginLocation: TripPlanLocation? = null,
     initialDestinationLocation: TripPlanLocation? = null,
+    resumeActiveTrip: Boolean = false,
+    onActiveTripResumed: () -> Unit = {},
     favoritesRepository: FavoritesRepository? = null,
     recentSearchesRepository: RecentSearchesRepository? = null,
     repository: StopsRepository = StopsRepository(LocalContext.current)
@@ -127,6 +129,16 @@ fun TripPlannerScreen(
     }
     var showSaveTripDialog by remember { mutableStateOf(false) }
     var tripCustomNameInput by remember { mutableStateOf("") }
+
+    LaunchedEffect(resumeActiveTrip) {
+        if (resumeActiveTrip) {
+            val active = com.dfmob.service.NavigationStateHolder.activeItinerary
+            if (active != null) {
+                viewModel.selectItinerary(active)
+            }
+            onActiveTripResumed()
+        }
+    }
 
     LaunchedEffect(initialOriginLocation, initialDestinationLocation, initialDestination) {
         if (initialOriginLocation != null && initialDestinationLocation != null) {
@@ -158,15 +170,18 @@ fun TripPlannerScreen(
     }
 
     // 2. Tela de Detalhes do Trajeto Selecionado se estiver ativa
-    val selectedItin = state.selectedItinerary
+    val selectedItin = state.selectedItinerary ?: (if (com.dfmob.service.NavigationStateHolder.isNavigating.value) com.dfmob.service.NavigationStateHolder.activeItinerary else null)
     if (selectedItin != null) {
         TripItineraryDetailView(
             itinerary = selectedItin,
-            origin = state.origin,
-            destination = state.destination,
-            onBack = { viewModel.selectItinerary(null) },
+            origin = state.origin ?: com.dfmob.service.NavigationStateHolder.activeOrigin,
+            destination = state.destination ?: com.dfmob.service.NavigationStateHolder.activeDestination,
+            onBack = {
+                viewModel.selectItinerary(null)
+            },
             onFinishTrip = {
                 viewModel.selectItinerary(null)
+                com.dfmob.service.NavigationStateHolder.reset(context)
                 onBack()
             }
         )

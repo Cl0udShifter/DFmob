@@ -1,14 +1,42 @@
 package com.dfmob.service
 
 import android.content.Context
+import com.dfmob.data.model.TripPlanItinerary
+import com.dfmob.data.model.TripPlanLocation
+import com.dfmob.data.model.TripPlanModelsJson
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
+import org.json.JSONObject
 
 object NavigationStateHolder {
     val isNavigating = MutableStateFlow(false)
     val isDescentAlarmTriggered = MutableStateFlow(false)
     val currentRemainingStops = MutableStateFlow(0)
     val currentDistToDescentMeters = MutableStateFlow(0f)
+
+    var activeItinerary: TripPlanItinerary? = null
+    var activeOrigin: TripPlanLocation? = null
+    var activeDestination: TripPlanLocation? = null
+
+    val currentStageIndexFlow = MutableStateFlow(0)
+    var currentStageIndex: Int
+        get() = currentStageIndexFlow.value
+        set(value) { currentStageIndexFlow.value = value }
+
+    val currentStageTitleFlow = MutableStateFlow("")
+    var currentStageTitle: String
+        get() = currentStageTitleFlow.value
+        set(value) { currentStageTitleFlow.value = value }
+
+    val currentLineNumberFlow = MutableStateFlow("")
+    var currentLineNumber: String
+        get() = currentLineNumberFlow.value
+        set(value) { currentLineNumberFlow.value = value }
+
+    val currentLineColorHexFlow = MutableStateFlow("#00C853")
+    var currentLineColorHex: String
+        get() = currentLineColorHexFlow.value
+        set(value) { currentLineColorHexFlow.value = value }
 
     var targetStopName: String = ""
     var targetStopLat: Double = 0.0
@@ -25,9 +53,18 @@ object NavigationStateHolder {
         intermediateStops.forEach { (lat, lon) ->
             arr.put("$lat,$lon")
         }
+
+        val itinJson = activeItinerary?.let { TripPlanModelsJson.itineraryToJson(it) } ?: ""
+        val origJson = activeOrigin?.let { TripPlanModelsJson.locationToJson(it).toString() } ?: ""
+        val destJson = activeDestination?.let { TripPlanModelsJson.locationToJson(it).toString() } ?: ""
+
         prefs.edit()
             .putBoolean("isNavigating", isNavigating.value)
             .putBoolean("isRideTransit", isRideTransit)
+            .putInt("currentStageIndex", currentStageIndex)
+            .putString("currentStageTitle", currentStageTitle)
+            .putString("currentLineNumber", currentLineNumber)
+            .putString("currentLineColorHex", currentLineColorHex)
             .putString("targetStopName", targetStopName)
             .putLong("targetStopLatBits", java.lang.Double.doubleToRawLongBits(targetStopLat))
             .putLong("targetStopLonBits", java.lang.Double.doubleToRawLongBits(targetStopLon))
@@ -37,14 +74,24 @@ object NavigationStateHolder {
             .putInt("lastPassedStopIndex", lastPassedStopIndex)
             .putInt("remainingStops", currentRemainingStops.value)
             .putFloat("distToDescent", currentDistToDescentMeters.value)
+            .putString("activeItineraryJson", itinJson)
+            .putString("activeOriginJson", origJson)
+            .putString("activeDestinationJson", destJson)
             .apply()
     }
 
     fun restore(context: Context) {
         val prefs = context.getSharedPreferences("dfmob_navigation_state_prefs", Context.MODE_PRIVATE)
         if (!prefs.contains("isNavigating")) return
-        isNavigating.value = prefs.getBoolean("isNavigating", false)
+        val nav = prefs.getBoolean("isNavigating", false)
+        isNavigating.value = nav
+        if (!nav) return
+
         isRideTransit = prefs.getBoolean("isRideTransit", false)
+        currentStageIndex = prefs.getInt("currentStageIndex", 0)
+        currentStageTitle = prefs.getString("currentStageTitle", "") ?: ""
+        currentLineNumber = prefs.getString("currentLineNumber", "") ?: ""
+        currentLineColorHex = prefs.getString("currentLineColorHex", "#00C853") ?: "#00C853"
         targetStopName = prefs.getString("targetStopName", "") ?: ""
         targetStopLat = java.lang.Double.longBitsToDouble(prefs.getLong("targetStopLatBits", 0L))
         targetStopLon = java.lang.Double.longBitsToDouble(prefs.getLong("targetStopLonBits", 0L))
@@ -53,6 +100,23 @@ object NavigationStateHolder {
         lastPassedStopIndex = prefs.getInt("lastPassedStopIndex", -1)
         currentRemainingStops.value = prefs.getInt("remainingStops", 0)
         currentDistToDescentMeters.value = prefs.getFloat("distToDescent", 0f)
+
+        val itinJson = prefs.getString("activeItineraryJson", null)
+        if (!itinJson.isNullOrBlank()) {
+            activeItinerary = TripPlanModelsJson.itineraryFromJson(itinJson)
+        }
+        val origJson = prefs.getString("activeOriginJson", null)
+        if (!origJson.isNullOrBlank()) {
+            try {
+                activeOrigin = TripPlanModelsJson.locationFromJson(JSONObject(origJson))
+            } catch (_: Exception) {}
+        }
+        val destJson = prefs.getString("activeDestinationJson", null)
+        if (!destJson.isNullOrBlank()) {
+            try {
+                activeDestination = TripPlanModelsJson.locationFromJson(JSONObject(destJson))
+            } catch (_: Exception) {}
+        }
 
         val arrStr = prefs.getString("intermediateStops", null)
         if (!arrStr.isNullOrBlank()) {
@@ -75,6 +139,13 @@ object NavigationStateHolder {
         isDescentAlarmTriggered.value = false
         currentRemainingStops.value = 0
         currentDistToDescentMeters.value = 0f
+        activeItinerary = null
+        activeOrigin = null
+        activeDestination = null
+        currentStageIndex = 0
+        currentStageTitle = ""
+        currentLineNumber = ""
+        currentLineColorHex = "#00C853"
         targetStopName = ""
         targetStopLat = 0.0
         targetStopLon = 0.0

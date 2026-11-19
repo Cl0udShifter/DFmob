@@ -39,7 +39,12 @@ class TripNavigationTrackingService : Service(), LocationListener {
         TripDescentAlarmHelper.createNotificationChannels(this)
         val initialTitle = if (NavigationStateHolder.isRideTransit && NavigationStateHolder.currentRemainingStops.value > 0) {
             val rem = NavigationStateHolder.currentRemainingStops.value
-            if (rem == 1) "A bordo: 1 parada até descida" else "A bordo: $rem paradas até descida"
+            when (rem) {
+                1 -> "A bordo: Desça na próxima parada!"
+                else -> "A bordo: $rem paradas até descida"
+            }
+        } else if (NavigationStateHolder.isRideTransit) {
+            "A bordo: Desembarque agora!"
         } else {
             "Navegação guiada ativa"
         }
@@ -81,13 +86,13 @@ class TripNavigationTrackingService : Service(), LocationListener {
                 }
 
                 if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500L, 0f, this)
+                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
                 }
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1500L, 0f, this)
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 0f, this)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
-                    lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1500L, 0f, this)
+                    lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 0f, this)
                 }
             }
         } catch (_: SecurityException) {}
@@ -149,12 +154,10 @@ class TripNavigationTrackingService : Service(), LocationListener {
                         )
                     }
 
-                    val title = if (remaining == 0 || distToDest <= 120f) {
-                        "A bordo: Desembarque na próxima parada!"
-                    } else if (remaining == 1) {
-                        "A bordo: 1 parada até descida"
-                    } else {
-                        "A bordo: $remaining paradas até descida"
+                    val title = when {
+                        remaining == 0 || distToDest <= 80f -> "A bordo: Desembarque agora!"
+                        remaining == 1 -> "A bordo: Desça na próxima parada!"
+                        else -> "A bordo: $remaining paradas até descida"
                     }
                     val body = "Parada de descida: ${state.targetStopName} (~${distToDest.toInt()}m)"
                     updateOngoingNotification(title, body)
@@ -172,6 +175,7 @@ class TripNavigationTrackingService : Service(), LocationListener {
     private fun buildOngoingNotification(title: String, body: String): Notification {
         val notifyIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_NAVIGATE_TO, "TRIP_NAV")
         }
         val pendingIntent = PendingIntent.getActivity(
             this,

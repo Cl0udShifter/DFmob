@@ -216,16 +216,23 @@ fun TripItineraryDetailView(
     val dbHelper = remember { DatabaseHelper(context) }
 
     // Estados de Navegacao Ativa
-    var isNavigating by remember { mutableStateOf(false) }
-    var currentStageIndex by remember { mutableIntStateOf(0) }
+    var isNavigating by remember { mutableStateOf(NavigationStateHolder.isNavigating.value) }
+    var currentStageIndex by remember { mutableIntStateOf(NavigationStateHolder.currentStageIndex) }
     var isExpandedDeck by remember { mutableStateOf(false) }
     var selectedLineForRide by remember { mutableStateOf<TripTransitLineOption?>(null) }
     var isChoosingLineDialog by remember { mutableStateOf(false) }
     var linesToChooseFrom by remember { mutableStateOf<List<TripTransitLineOption>>(emptyList()) }
 
     // Rastreamento de Paradas Restantes na perna a bordo
-    var remainingStopsCount by remember { mutableIntStateOf(0) }
-    var lastPassedStopIndex by remember { mutableIntStateOf(-1) }
+    var remainingStopsCount by remember { mutableIntStateOf(NavigationStateHolder.currentRemainingStops.value) }
+    var lastPassedStopIndex by remember { mutableIntStateOf(NavigationStateHolder.lastPassedStopIndex) }
+
+    val globalRemainingStops by NavigationStateHolder.currentRemainingStops.collectAsState()
+    LaunchedEffect(globalRemainingStops) {
+        if (isNavigating) {
+            remainingStopsCount = globalRemainingStops
+        }
+    }
 
     // Previsoes em tempo real por linha e relogio continuo
     var liveDeparturesByLine by remember { mutableStateOf<Map<Int, List<TripDepartureItem>>>(emptyMap()) }
@@ -249,6 +256,14 @@ fun TripItineraryDetailView(
     val currentStage = if (isNavigating && currentStageIndex in stages.indices) {
         stages[currentStageIndex]
     } else null
+
+    LaunchedEffect(currentStageIndex, isNavigating) {
+        if (isNavigating && stages.isNotEmpty()) {
+            NavigationStateHolder.currentStageIndex = currentStageIndex
+            NavigationStateHolder.currentStageTitle = "Etapa ${currentStageIndex + 1} de ${(stages.size - 1).coerceAtLeast(1)}"
+            NavigationStateHolder.save(context)
+        }
+    }
 
     val isDescentAlarmTriggered by NavigationStateHolder.isDescentAlarmTriggered.collectAsState()
 
@@ -550,8 +565,15 @@ fun TripItineraryDetailView(
             is NavigationStage.RideTransit -> {
                 // Painel retrai para o tamanho normal e mapa centraliza no trajeto
                 isExpandedDeck = false
-                remainingStopsCount = stage.totalStopsCount
-                lastPassedStopIndex = -1
+                if (NavigationStateHolder.lastPassedStopIndex >= 0) {
+                    lastPassedStopIndex = NavigationStateHolder.lastPassedStopIndex
+                    remainingStopsCount = NavigationStateHolder.currentRemainingStops.value
+                } else {
+                    remainingStopsCount = stage.totalStopsCount
+                    lastPassedStopIndex = -1
+                    NavigationStateHolder.currentRemainingStops.value = stage.totalStopsCount
+                    NavigationStateHolder.lastPassedStopIndex = -1
+                }
 
                 // Configura monitoramento e alarme de desembarque
                 NavigationStateHolder.isRideTransit = true
@@ -560,9 +582,9 @@ fun TripItineraryDetailView(
                 NavigationStateHolder.targetStopLon = stage.destinationPoint?.longitude ?: 0.0
                 NavigationStateHolder.intermediateStops = stage.intermediateStops.map { it.latitude to it.longitude }
                 NavigationStateHolder.totalStopsCount = stage.totalStopsCount
-                NavigationStateHolder.hasAlertedCurrentLeg = false
-                NavigationStateHolder.isDescentAlarmTriggered.value = false
-                NavigationStateHolder.lastPassedStopIndex = -1
+                NavigationStateHolder.currentLineNumber = stage.selectedLine?.lineNumber ?: ""
+                NavigationStateHolder.currentLineColorHex = stage.selectedLine?.colorHex ?: "#00C853"
+                NavigationStateHolder.currentStageTitle = "Etapa ${currentStageIndex + 1} de ${(stages.size - 1).coerceAtLeast(1)}"
                 NavigationStateHolder.save(context)
 
                 // Assegura que as paradas intermediarias estao no mapa
@@ -782,13 +804,19 @@ fun TripItineraryDetailView(
                     }
 
                     val totalStopsInRide = fullStopList.size
-                    val remaining = if (lastPassedStopIndex >= 0) {
+                    val destPt = stage.destinationPoint
+                    val distToDest = if (destPt != null) distanceMeters(userLoc.latitude, userLoc.longitude, destPt.latitude, destPt.longitude) else Float.MAX_VALUE
+
+                    val remaining = if (distToDest <= 80f) {
+                        0
+                    } else if (lastPassedStopIndex >= 0) {
                         (totalStopsInRide - 1 - lastPassedStopIndex).coerceAtLeast(1)
                     } else {
                         stage.totalStopsCount.coerceAtLeast(1)
                     }
                     remainingStopsCount = remaining
                     NavigationStateHolder.currentRemainingStops.value = remaining
+                    NavigationStateHolder.save(context)
                 }
 
                 val destPt = stage.destinationPoint
@@ -857,6 +885,11 @@ fun TripItineraryDetailView(
                 isNavigating = true
                 currentStageIndex = 0
                 NavigationStateHolder.isNavigating.value = true
+                NavigationStateHolder.activeItinerary = itinerary
+                NavigationStateHolder.activeOrigin = origin
+                NavigationStateHolder.activeDestination = destination
+                NavigationStateHolder.currentStageIndex = 0
+                NavigationStateHolder.currentStageTitle = "Etapa 1 de ${(stages.size - 1).coerceAtLeast(1)}"
                 NavigationStateHolder.save(context)
                 TripNavigationTrackingService.startTracking(context)
                 val myLoc = locationOverlay.myLocation
@@ -878,6 +911,9 @@ fun TripItineraryDetailView(
             onPreviousStage = {
                 if (currentStageIndex > 0) {
                     currentStageIndex--
+                    NavigationStateHolder.currentStageIndex = currentStageIndex
+                    NavigationStateHolder.currentStageTitle = "Etapa ${currentStageIndex + 1} de ${(stages.size - 1).coerceAtLeast(1)}"
+                    NavigationStateHolder.save(context)
                 }
             },
             onNextStage = {
@@ -886,6 +922,9 @@ fun TripItineraryDetailView(
                     isChoosingLineDialog = true
                 } else if (currentStageIndex < stages.size - 1) {
                     currentStageIndex++
+                    NavigationStateHolder.currentStageIndex = currentStageIndex
+                    NavigationStateHolder.currentStageTitle = "Etapa ${currentStageIndex + 1} de ${(stages.size - 1).coerceAtLeast(1)}"
+                    NavigationStateHolder.save(context)
                 }
             }
         )
@@ -1642,10 +1681,21 @@ private fun ActiveNavigationDeck(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val remainingText = when {
+                                remainingStops <= 0 -> "Desembarque agora!"
+                                remainingStops == 1 -> "Desça na próxima parada!"
+                                else -> "$remainingStops paradas restantes até a descida"
+                            }
+                            val remainingColor = when {
+                                remainingStops <= 1 -> TransitGreen
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                             Text(
-                                text = "$remainingStops paradas restantes até a descida",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = remainingText,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = if (remainingStops <= 1) FontWeight.Black else FontWeight.Bold
+                                ),
+                                color = remainingColor
                             )
                         }
                     }
