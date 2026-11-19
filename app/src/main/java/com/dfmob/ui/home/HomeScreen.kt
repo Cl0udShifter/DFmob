@@ -86,6 +86,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
+    val recentLinesRepo = remember { com.dfmob.data.repository.RecentLinesRepository(context) }
     val stopsRepo = remember { StopsRepository(context) }
     val alertsRepo = remember { AlertsRepository(context) }
     val scope = rememberCoroutineScope()
@@ -355,7 +356,10 @@ fun HomeScreen(
                 onRecentSearchClick = { loc -> onNavigateToTripPlanner(loc) },
                 onTogglePin = { item -> recentRepo.togglePin(item) },
                 onClearRecent = { recentRepo.clearUnpinned() },
-                onLineClick = { line -> onNavigateToLineRoute(line.lineNumber, line.routeId.toIntOrNull()) },
+                onLineClick = { line ->
+                    recentLinesRepo.addLine(line)
+                    onNavigateToLineRoute(line.lineNumber, line.routeId.toIntOrNull())
+                },
                 onStopClick = { onNavigateToStops() }
             )
 

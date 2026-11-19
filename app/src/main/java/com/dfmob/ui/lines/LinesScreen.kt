@@ -60,8 +60,10 @@ import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitModeFilter
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.LinesRepository
+import com.dfmob.data.repository.RecentLinesRepository
 import com.dfmob.ui.lines.components.LineCardItem
 import com.dfmob.ui.lines.components.ModeSelector
+import com.dfmob.ui.lines.components.RecentLinesSection
 import com.dfmob.ui.theme.DFmobTheme
 import com.dfmob.ui.theme.TransitGreen
 
@@ -70,17 +72,20 @@ fun LinesScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     favoritesRepository: FavoritesRepository? = null,
+    recentLinesRepository: RecentLinesRepository? = null,
     onLineClick: (TransitLine) -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
+    val recentLinesRepo = recentLinesRepository ?: remember { RecentLinesRepository(context) }
     val focusManager = LocalFocusManager.current
     val repository = remember { LinesRepository(context) }
 
     var allLines by remember { mutableStateOf<List<TransitLine>>(emptyList()) }
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
+    val recentLines by recentLinesRepo.recentLines.collectAsState()
     val favoriteIds by remember {
         derivedStateOf { favoriteLines.map { it.routeId }.toSet() }
     }
@@ -98,6 +103,12 @@ fun LinesScreen(
     val filteredLines by remember {
         derivedStateOf {
             repository.searchLines(allLines, selectedMode, searchQuery)
+        }
+    }
+
+    val modeRecentLines by remember {
+        derivedStateOf {
+            recentLines.filter { if (selectedMode == TransitModeFilter.METRO) it.isMetro else it.isBus }
         }
     }
 
@@ -251,6 +262,21 @@ fun LinesScreen(
                 metroCount = metroCount
             )
 
+            // Secao retratil com as ultimas 3 linhas consultadas
+            if (searchQuery.isBlank() && modeRecentLines.isNotEmpty()) {
+                RecentLinesSection(
+                    recentLines = modeRecentLines,
+                    favoriteIds = favoriteIds,
+                    onToggleFavorite = { line ->
+                        favoritesRepo.toggleFavorite(line)
+                    },
+                    onLineClick = { line ->
+                        recentLinesRepo.addLine(line)
+                        onLineClick(line)
+                    }
+                )
+            }
+
             // Area de resultados
             if (isLoading) {
                 Box(
@@ -298,6 +324,7 @@ fun LinesScreen(
                                 favoritesRepo.toggleFavorite(line)
                             },
                             onClick = {
+                                recentLinesRepo.addLine(line)
                                 onLineClick(line)
                             }
                         )
