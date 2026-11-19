@@ -692,12 +692,15 @@ fun TripItineraryDetailView(
                             }
                         }
                     }
+                    val oppLineId = dbHelper.getOppositeDirectionLineId(lineOpt.lineId)
+                    val oppStops = oppLineId?.let { dbHelper.getStopsForLine(it) } ?: emptyList()
                     RouteLineContext(
                         lineId = lineOpt.lineId,
                         lineNumber = cleanNum,
                         expectedDirectionId = expectedDir,
                         stops = stops,
-                        targetStopIndex = targetIdx
+                        targetStopIndex = targetIdx,
+                        oppositeStops = oppStops
                     )
                 }
             }
@@ -706,7 +709,7 @@ fun TripItineraryDetailView(
 
             fun shouldIncludeVehicle(v: LiveVehicleMarker, routeCtx: RouteLineContext): Boolean {
                 // Regra 1: A linha ja corresponde
-                // Regra 3: Sentido correto da linha
+                // Regra 3 (a): Se a telemetria trouxer sentido e for explicitamente diferente do esperado
                 if (v.directionId != null && routeCtx.expectedDirectionId != null) {
                     if (v.directionId != routeCtx.expectedDirectionId) {
                         return false
@@ -730,6 +733,45 @@ fun TripItineraryDetailView(
                     // Se estiver a mais de 800m de qualquer parada da rota, nao faz parte deste itinerario
                     if (minStopDist > 800f) {
                         return false
+                    }
+
+                    // Regra 3 (b): Pistas duplas e opostas: se estiver mais proximo da rota de volta do que da rota atual
+                    val oppStops = routeCtx.oppositeStops
+                    if (oppStops.isNotEmpty()) {
+                        var minOppDist = Float.MAX_VALUE
+                        for (os in oppStops) {
+                            val od = distanceMeters(v.latitude, v.longitude, os.latitude, os.longitude)
+                            if (od < minOppDist) {
+                                minOppDist = od
+                            }
+                        }
+                        if (minOppDist + 12f < minStopDist) {
+                            return false
+                        }
+                    }
+
+                    // Regra 3 (c): Filtro Vetorial de Rumo (Bearing):
+                    // Se o onibus possuir rumo de direcao valido (v.bearing > 5f), compara com o vetor do trecho
+                    if (v.bearing > 5f) {
+                        val nextIdx = minOf(stops.size - 1, closestIdx + 1)
+                        val prevIdx = maxOf(0, closestIdx - 1)
+                        val routeHeading = if (closestIdx < stops.size - 1) {
+                            calculateBearing(stops[closestIdx].latitude, stops[closestIdx].longitude, stops[nextIdx].latitude, stops[nextIdx].longitude)
+                        } else {
+                            calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
+                        }
+
+                        val incomingHeading = if (prevIdx < closestIdx) {
+                            calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
+                        } else routeHeading
+
+                        val diffRoute = angleDifference(v.bearing, routeHeading)
+                        val diffIncoming = angleDifference(v.bearing, incomingHeading)
+
+                        // Se o rumo do onibus divergir mais de 70 graus dos vetores da rota neste trecho, esta no sentido contrario
+                        if (diffRoute > 70f && diffIncoming > 70f) {
+                            return false
+                        }
                     }
 
                     // Regra 2: Se a parada mais proxima for posterior a parada alvo, o onibus ja passou
@@ -1824,33 +1866,50 @@ private fun ActiveNavigationDeck(
                                                 modifier = Modifier.size(13.dp)
                                             )
                                             departures.take(5).forEach { dep ->
-                                                if (dep.isRealtime) {
+                                                val chipBg = if (dep.isRealtime) {
+                                                    if (isDark) Color(0x2400C853) else Color(0x1F00883E)
+                                                } else {
+                                                    if (isDark) Color(0xFF22242C) else Color(0xFFE5E7EB)
+                                                }
+                                                val textColor = if (dep.isRealtime) {
+                                                    liveGreenColor
+                                                } else {
+                                                    if (isDark) Color(0xFFC0C2CC) else Color(0xFF374151)
+                                                }
+                                                val label = if (dep.isRealtime) {
                                                     val mins = maxOf(0, Math.round((dep.targetEpochMs - currentTickerMs) / 60000.0).toInt())
-                                                    val dynamicRtText = if (mins <= 1) "Já" else "$mins min"
+                                                    if (mins <= 1) "Já" else "$mins min"
+                                                } else {
+                                                    dep.timeFormatted
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(5.dp))
+                                                        .background(chipBg)
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                                                     ) {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.Wifi,
-                                                            contentDescription = "GPS ao vivo",
-                                                            tint = liveGreenColor,
-                                                            modifier = Modifier.size(11.dp)
-                                                        )
+                                                        if (dep.isRealtime) {
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.Wifi,
+                                                                contentDescription = "GPS ao vivo",
+                                                                tint = liveGreenColor,
+                                                                modifier = Modifier.size(9.dp)
+                                                            )
+                                                        }
                                                         Text(
-                                                            text = dynamicRtText,
-                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                                                            color = liveGreenColor
+                                                            text = label,
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
+                                                                fontSize = 10.sp
+                                                            ),
+                                                            color = textColor
                                                         )
                                                     }
-                                                } else {
-                                                    Text(
-                                                        text = dep.timeFormatted,
-                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp),
-                                                        color = MaterialTheme.colorScheme.onSurface,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                    )
                                                 }
                                             }
                                         }
@@ -2357,8 +2416,24 @@ private data class RouteLineContext(
     val lineNumber: String,
     val expectedDirectionId: Int?,
     val stops: List<TransitStop>,
-    val targetStopIndex: Int
+    val targetStopIndex: Int,
+    val oppositeStops: List<TransitStop> = emptyList()
 )
+
+private fun calculateBearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+    val phi1 = Math.toRadians(lat1)
+    val phi2 = Math.toRadians(lat2)
+    val deltaLambda = Math.toRadians(lon2 - lon1)
+    val y = Math.sin(deltaLambda) * Math.cos(phi2)
+    val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda)
+    val theta = Math.atan2(y, x)
+    return ((Math.toDegrees(theta) + 360.0) % 360.0).toFloat()
+}
+
+private fun angleDifference(a: Float, b: Float): Float {
+    val diff = Math.abs((a - b) % 360f)
+    return if (diff > 180f) 360f - diff else diff
+}
 
 private fun createVehiclePuckDrawable(
     context: Context,

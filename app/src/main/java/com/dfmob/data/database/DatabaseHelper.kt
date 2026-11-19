@@ -250,6 +250,16 @@ class DatabaseHelper(private val context: Context) {
         } catch (_: Exception) { null }
     }
 
+    fun getOppositeDirectionLineId(lineId: Int): Int? {
+        val db = database ?: return null
+        val sql = "SELECT line_id FROM lines WHERE group_id = (SELECT group_id FROM lines WHERE line_id = ? LIMIT 1) AND line_id != ? LIMIT 1"
+        return try {
+            db.rawQuery(sql, arrayOf(lineId.toString(), lineId.toString())).use { c ->
+                if (c.moveToFirst()) c.getInt(0) else null
+            }
+        } catch (_: Exception) { null }
+    }
+
     fun getStopById(stopId: Int): TransitStop? {
         val db = database ?: return null
         val sql = "SELECT stop_id, stop_name, stop_code, lat_e6, lon_e6, is_metro, platform_code FROM stops WHERE stop_id = ? LIMIT 1"

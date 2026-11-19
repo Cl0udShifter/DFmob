@@ -32,8 +32,8 @@ android {
         applicationId = "com.dfmob"
         minSdk = 26
         targetSdk = 34
-        versionCode = 56
-        versionName = "1.4.26"
+        versionCode = 57
+        versionName = "1.4.27"
 
         buildConfigField("String", "CARTO_API_KEY", "\"$cartoApiKey\"")
         buildConfigField("String", "STADIA_API_KEY", "\"$stadiaApiKey\"")
