@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -754,6 +755,43 @@ fun TripItineraryDetailView(
                 return true
             }
 
+            fun calculateDistanceAlongRoute(
+                vLat: Double,
+                vLon: Double,
+                stops: List<TransitStop>,
+                closestIdx: Int,
+                targetIdx: Int
+            ): Float {
+                if (closestIdx >= targetIdx || stops.isEmpty()) {
+                    val target = stops.getOrNull(targetIdx) ?: return 0f
+                    return distanceMeters(vLat, vLon, target.latitude, target.longitude)
+                }
+                var totalDist = distanceMeters(vLat, vLon, stops[closestIdx].latitude, stops[closestIdx].longitude)
+                for (i in closestIdx until targetIdx) {
+                    totalDist += distanceMeters(stops[i].latitude, stops[i].longitude, stops[i + 1].latitude, stops[i + 1].longitude)
+                }
+                return totalDist
+            }
+
+            fun getVehicleDistanceToTarget(v: LiveVehicleMarker): Float {
+                val routeCtx = routeContextByNumber[v.lineNumber]
+                if (routeCtx != null && routeCtx.stops.isNotEmpty() && routeCtx.targetStopIndex >= 0) {
+                    val stops = routeCtx.stops
+                    val targetIdx = routeCtx.targetStopIndex
+                    var closestIdx = 0
+                    var minDist = Float.MAX_VALUE
+                    for (i in 0..targetIdx) {
+                        val d = distanceMeters(v.latitude, v.longitude, stops[i].latitude, stops[i].longitude)
+                        if (d < minDist) {
+                            minDist = d
+                            closestIdx = i
+                        }
+                    }
+                    return calculateDistanceAlongRoute(v.latitude, v.longitude, stops, closestIdx, targetIdx)
+                }
+                return targetStopGeoPoint?.let { distanceMeters(v.latitude, v.longitude, it.latitude, it.longitude) } ?: Float.MAX_VALUE
+            }
+
             while (isActive) {
                 val markers = mutableListOf<LiveVehicleMarker>()
 
@@ -782,9 +820,9 @@ fun TripItineraryDetailView(
 
                 // 2. Previsoes e coordenadas de veiculos via Moovit (se houver parada de embarque)
                 val newDeparturesMap = mutableMapOf<Int, List<TripDepartureItem>>()
+                val nowMs = System.currentTimeMillis()
                 if (boardingStopId != null) {
                     try {
-                        val nowMs = System.currentTimeMillis()
                         val lineIdSet = linesToTrack.map { it.lineId }.toSet()
                         val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(boardingStopId)
                         val matched = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
@@ -846,13 +884,43 @@ fun TripItineraryDetailView(
                     } catch (_: Exception) {}
                 }
 
+                // Sincroniza a posicao real dos onibus com os horarios do painel inferior
+                for (line in linesToTrack) {
+                    val lineNum = line.lineNumber.trim()
+                    val closestVeh = markers
+                        .filter { it.lineNumber == lineNum }
+                        .minByOrNull { getVehicleDistanceToTarget(it) }
+
+                    if (closestVeh != null) {
+                        val dist = getVehicleDistanceToTarget(closestVeh)
+                        val mins = if (dist <= 150f) 0 else maxOf(1, Math.round(dist / 360.0).toInt())
+                        val formatted = if (mins <= 1) "Já" else "$mins min"
+                        val liveTargetEpoch = nowMs + (mins * 60_000L)
+
+                        val liveDepItem = TripDepartureItem(
+                            lineNumber = lineNum,
+                            timeFormatted = formatted,
+                            isRealtime = true,
+                            targetEpochMs = liveTargetEpoch,
+                            lineId = line.lineId
+                        )
+
+                        val existing = newDeparturesMap[line.lineId] ?: emptyList()
+                        val remaining = existing.filter { it.targetEpochMs > (liveTargetEpoch + 90_000L) }
+                        newDeparturesMap[line.lineId] = (listOf(liveDepItem) + remaining).take(5)
+                    }
+                }
+
+                // Limita aos 5 onibus mais proximos da parada de embarque
+                val top5Vehicles = markers.sortedBy { getVehicleDistanceToTarget(it) }.take(5)
+
                 withContext(Dispatchers.Main) {
                     if (newDeparturesMap.isNotEmpty()) {
                         liveDeparturesByLine = newDeparturesMap
                     }
-                    liveVehicles = markers
+                    liveVehicles = top5Vehicles
                     vehiclesFolder.items.clear()
-                    for (v in markers) {
+                    for (v in top5Vehicles) {
                         val marker = Marker(mapView).apply {
                             position = GeoPoint(v.latitude, v.longitude)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -1629,6 +1697,28 @@ private fun ActiveNavigationDeck(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    val liveGreenColor = if (isDark) TransitGreen else Color(0xFF00883E)
+
+                    val sortedCandidateLines = remember(stage.candidateLines, liveDeparturesByLine, currentTickerMs / 30000L) {
+                        stage.candidateLines.sortedWith(
+                            compareBy<TripTransitLineOption> { line ->
+                                val deps = liveDeparturesByLine[line.lineId]?.ifEmpty { null }
+                                    ?: stage.initialUpcomingDepartures.filter { it.lineId == line.lineId }.ifEmpty { null }
+                                val first = deps?.firstOrNull()
+                                if (first != null) {
+                                    if (first.isRealtime) {
+                                        first.targetEpochMs
+                                    } else {
+                                        first.targetEpochMs + 100_000_000L
+                                    }
+                                } else {
+                                    Long.MAX_VALUE
+                                }
+                            }.thenBy { it.lineNumber }
+                        )
+                    }
+
                     // Lista de cartoes exclusivos das linhas deste trajeto com horarios
                     Column(
                         modifier = Modifier
@@ -1637,7 +1727,7 @@ private fun ActiveNavigationDeck(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        stage.candidateLines.forEach { line ->
+                        sortedCandidateLines.forEach { line ->
                             val lineCol = try {
                                 android.graphics.Color.parseColor(line.colorHex).let { Color(it) }
                             } catch (_: Exception) {
@@ -1739,36 +1829,28 @@ private fun ActiveNavigationDeck(
                                                     val dynamicRtText = if (mins <= 1) "Já" else "$mins min"
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(TransitGreen.copy(alpha = 0.15f))
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                                     ) {
                                                         Icon(
-                                                            imageVector = Icons.Rounded.Sensors,
-                                                            contentDescription = null,
-                                                            tint = TransitGreen,
+                                                            imageVector = Icons.Rounded.Wifi,
+                                                            contentDescription = "GPS ao vivo",
+                                                            tint = liveGreenColor,
                                                             modifier = Modifier.size(11.dp)
                                                         )
-                                                        Spacer(modifier = Modifier.width(3.dp))
                                                         Text(
                                                             text = dynamicRtText,
                                                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                                                            color = TransitGreen
+                                                            color = liveGreenColor
                                                         )
                                                     }
                                                 } else {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(6.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                                                    ) {
-                                                        Text(
-                                                            text = dep.timeFormatted,
-                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
-                                                            color = MaterialTheme.colorScheme.onSurface,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        )
-                                                    }
+                                                    Text(
+                                                        text = dep.timeFormatted,
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp),
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
                                                 }
                                             }
                                         }
