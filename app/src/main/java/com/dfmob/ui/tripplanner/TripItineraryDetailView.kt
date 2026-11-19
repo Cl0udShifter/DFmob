@@ -704,92 +704,86 @@ fun TripItineraryDetailView(
                     )
                 }
             }
-            val routeContextByNumber = routeContexts.associateBy { it.lineNumber }
             val routeContextById = routeContexts.associateBy { it.lineId }
 
             fun shouldIncludeVehicle(v: LiveVehicleMarker, routeCtx: RouteLineContext): Boolean {
-                // Regra 1: A linha ja corresponde
-                // Regra 3 (a): Se a telemetria trouxer sentido e for explicitamente diferente do esperado
-                if (v.directionId != null && routeCtx.expectedDirectionId != null) {
-                    if (v.directionId != routeCtx.expectedDirectionId) {
+                val stops = routeCtx.stops
+                val targetIdx = routeCtx.targetStopIndex
+                // Se a linha nao possuir paradas ou nao passar na parada alvo, descarta imediatamente
+                if (stops.isEmpty() || targetIdx < 0) {
+                    return false
+                }
+
+                var minStopDist = Float.MAX_VALUE
+                var closestIdx = -1
+                for (i in stops.indices) {
+                    val s = stops[i]
+                    val d = distanceMeters(v.latitude, v.longitude, s.latitude, s.longitude)
+                    if (d < minStopDist) {
+                        minStopDist = d
+                        closestIdx = i
+                    }
+                }
+
+                // Se estiver a mais de 650m de qualquer parada da rota, nao faz parte deste trecho
+                if (minStopDist > 650f) {
+                    return false
+                }
+
+                // Pistas duplas e opostas: se estiver mais proximo da rota de volta do que da rota atual
+                val oppStops = routeCtx.oppositeStops
+                if (oppStops.isNotEmpty()) {
+                    var minOppDist = Float.MAX_VALUE
+                    for (os in oppStops) {
+                        val od = distanceMeters(v.latitude, v.longitude, os.latitude, os.longitude)
+                        if (od < minOppDist) {
+                            minOppDist = od
+                        }
+                    }
+                    if (minOppDist + 15f < minStopDist) {
                         return false
                     }
                 }
 
-                val stops = routeCtx.stops
-                val targetIdx = routeCtx.targetStopIndex
-                if (stops.isNotEmpty() && targetIdx >= 0) {
-                    var minStopDist = Float.MAX_VALUE
-                    var closestIdx = -1
-                    for (i in stops.indices) {
-                        val s = stops[i]
-                        val d = distanceMeters(v.latitude, v.longitude, s.latitude, s.longitude)
-                        if (d < minStopDist) {
-                            minStopDist = d
-                            closestIdx = i
-                        }
+                // Filtro Vetorial de Rumo (Bearing):
+                // Se o onibus estiver em movimento (> 2 km/h) e possuir rumo de direcao valido (> 5 graus)
+                if (v.speedKmh > 2f && v.bearing > 5f) {
+                    val nextIdx = minOf(stops.size - 1, closestIdx + 1)
+                    val prevIdx = maxOf(0, closestIdx - 1)
+                    val routeHeading = if (closestIdx < stops.size - 1) {
+                        calculateBearing(stops[closestIdx].latitude, stops[closestIdx].longitude, stops[nextIdx].latitude, stops[nextIdx].longitude)
+                    } else {
+                        calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
                     }
 
-                    // Se estiver a mais de 800m de qualquer parada da rota, nao faz parte deste itinerario
-                    if (minStopDist > 800f) {
+                    val incomingHeading = if (prevIdx < closestIdx) {
+                        calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
+                    } else routeHeading
+
+                    val diffRoute = angleDifference(v.bearing, routeHeading)
+                    val diffIncoming = angleDifference(v.bearing, incomingHeading)
+
+                    // Se o rumo do onibus divergir mais de 75 graus dos vetores da rota neste trecho, esta no sentido contrario
+                    if (diffRoute > 75f && diffIncoming > 75f) {
                         return false
                     }
+                }
 
-                    // Regra 3 (b): Pistas duplas e opostas: se estiver mais proximo da rota de volta do que da rota atual
-                    val oppStops = routeCtx.oppositeStops
-                    if (oppStops.isNotEmpty()) {
-                        var minOppDist = Float.MAX_VALUE
-                        for (os in oppStops) {
-                            val od = distanceMeters(v.latitude, v.longitude, os.latitude, os.longitude)
-                            if (od < minOppDist) {
-                                minOppDist = od
-                            }
-                        }
-                        if (minOppDist + 12f < minStopDist) {
+                // Regra: Se a parada mais proxima for posterior a parada alvo, o onibus ja passou
+                if (closestIdx > targetIdx) {
+                    return false
+                }
+
+                // Se estiver na propria parada de embarque:
+                if (closestIdx == targetIdx) {
+                    val targetStop = stops[targetIdx]
+                    val distToTarget = distanceMeters(v.latitude, v.longitude, targetStop.latitude, targetStop.longitude)
+                    if (distToTarget > 80f && targetIdx + 1 < stops.size) {
+                        val nextStop = stops[targetIdx + 1]
+                        val distToNext = distanceMeters(v.latitude, v.longitude, nextStop.latitude, nextStop.longitude)
+                        val distTargetToNext = distanceMeters(targetStop.latitude, targetStop.longitude, nextStop.latitude, nextStop.longitude)
+                        if (distToNext < distTargetToNext) {
                             return false
-                        }
-                    }
-
-                    // Regra 3 (c): Filtro Vetorial de Rumo (Bearing):
-                    // Se o onibus possuir rumo de direcao valido (v.bearing > 5f), compara com o vetor do trecho
-                    if (v.bearing > 5f) {
-                        val nextIdx = minOf(stops.size - 1, closestIdx + 1)
-                        val prevIdx = maxOf(0, closestIdx - 1)
-                        val routeHeading = if (closestIdx < stops.size - 1) {
-                            calculateBearing(stops[closestIdx].latitude, stops[closestIdx].longitude, stops[nextIdx].latitude, stops[nextIdx].longitude)
-                        } else {
-                            calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
-                        }
-
-                        val incomingHeading = if (prevIdx < closestIdx) {
-                            calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
-                        } else routeHeading
-
-                        val diffRoute = angleDifference(v.bearing, routeHeading)
-                        val diffIncoming = angleDifference(v.bearing, incomingHeading)
-
-                        // Se o rumo do onibus divergir mais de 70 graus dos vetores da rota neste trecho, esta no sentido contrario
-                        if (diffRoute > 70f && diffIncoming > 70f) {
-                            return false
-                        }
-                    }
-
-                    // Regra 2: Se a parada mais proxima for posterior a parada alvo, o onibus ja passou
-                    if (closestIdx > targetIdx) {
-                        return false
-                    }
-
-                    // Se estiver na propria parada de embarque:
-                    if (closestIdx == targetIdx) {
-                        val targetStop = stops[targetIdx]
-                        val distToTarget = distanceMeters(v.latitude, v.longitude, targetStop.latitude, targetStop.longitude)
-                        if (distToTarget > 100f && targetIdx + 1 < stops.size) {
-                            val nextStop = stops[targetIdx + 1]
-                            val distToNext = distanceMeters(v.latitude, v.longitude, nextStop.latitude, nextStop.longitude)
-                            val distTargetToNext = distanceMeters(targetStop.latitude, targetStop.longitude, nextStop.latitude, nextStop.longitude)
-                            if (distToNext < distTargetToNext) {
-                                return false
-                            }
                         }
                     }
                 }
@@ -816,7 +810,7 @@ fun TripItineraryDetailView(
             }
 
             fun getVehicleDistanceToTarget(v: LiveVehicleMarker): Float {
-                val routeCtx = routeContextByNumber[v.lineNumber]
+                val routeCtx = routeContexts.firstOrNull { it.lineNumber == v.lineNumber && it.targetStopIndex >= 0 }
                 if (routeCtx != null && routeCtx.stops.isNotEmpty() && routeCtx.targetStopIndex >= 0) {
                     val stops = routeCtx.stops
                     val targetIdx = routeCtx.targetStopIndex
@@ -831,16 +825,17 @@ fun TripItineraryDetailView(
                     }
                     return calculateDistanceAlongRoute(v.latitude, v.longitude, stops, closestIdx, targetIdx)
                 }
-                return targetStopGeoPoint?.let { distanceMeters(v.latitude, v.longitude, it.latitude, it.longitude) } ?: Float.MAX_VALUE
+                return Float.MAX_VALUE
             }
 
             while (isActive) {
                 val markers = mutableListOf<LiveVehicleMarker>()
 
                 // 1. Telemetria oficial da SEMOB em tempo real por numero de linha
-                for (line in linesToTrack) {
+                val distinctLines = linesToTrack.distinctBy { it.lineNumber.trim() }
+                for (line in distinctLines) {
                     val cleanLine = line.lineNumber.trim()
-                    val routeCtx = routeContextByNumber[cleanLine] ?: continue
+                    val routeCtx = routeContexts.firstOrNull { it.lineNumber == cleanLine && it.targetStopIndex >= 0 } ?: continue
                     try {
                         val semobList = semobService.getLiveVehiclePositions(cleanLine)
                         for (sv in semobList) {
@@ -872,7 +867,8 @@ fun TripItineraryDetailView(
                         for (lArr in matched) {
                             val lineOpt = linesToTrack.firstOrNull { it.lineId == lArr.lineId }
                             val lineNum = lineOpt?.lineNumber ?: ""
-                            val routeCtx = routeContextById[lArr.lineId] ?: routeContextByNumber[lineNum]
+                            val routeCtx = routeContextById[lArr.lineId]
+                                ?: routeContexts.firstOrNull { it.lineNumber == lineNum && it.targetStopIndex >= 0 }
 
                             for (arr in lArr.arrivals) {
                                 // Se a previsao ao vivo contem a coordenada GPS do veiculo em aproximacao
@@ -881,7 +877,7 @@ fun TripItineraryDetailView(
                                     val alreadyExists = markers.any {
                                         it.vehicleId == vId || (Math.abs(it.latE6 - arr.vehicleLatE6) < 150 && Math.abs(it.lonE6 - arr.vehicleLonE6) < 150)
                                     }
-                                    if (!alreadyExists) {
+                                    if (!alreadyExists && routeCtx != null && routeCtx.targetStopIndex >= 0) {
                                         val mMarker = LiveVehicleMarker(
                                             vehicleId = vId,
                                             lineNumber = lineNum,
@@ -889,9 +885,9 @@ fun TripItineraryDetailView(
                                             lonE6 = arr.vehicleLonE6,
                                             speedKmh = 0f,
                                             bearing = 0f,
-                                            directionId = routeCtx?.expectedDirectionId
+                                            directionId = routeCtx.expectedDirectionId
                                         )
-                                        if (routeCtx == null || shouldIncludeVehicle(mMarker, routeCtx)) {
+                                        if (shouldIncludeVehicle(mMarker, routeCtx)) {
                                             markers.add(mMarker)
                                         }
                                     }
@@ -935,26 +931,32 @@ fun TripItineraryDetailView(
 
                     if (closestVeh != null) {
                         val dist = getVehicleDistanceToTarget(closestVeh)
-                        val mins = if (dist <= 150f) 0 else maxOf(1, Math.round(dist / 360.0).toInt())
-                        val formatted = if (mins <= 1) "Já" else "$mins min"
-                        val liveTargetEpoch = nowMs + (mins * 60_000L)
+                        if (dist < Float.MAX_VALUE) {
+                            val mins = if (dist <= 150f) 0 else maxOf(1, Math.round(dist / 360.0).toInt())
+                            val formatted = if (mins <= 1) "Já" else "$mins min"
+                            val liveTargetEpoch = nowMs + (mins * 60_000L)
 
-                        val liveDepItem = TripDepartureItem(
-                            lineNumber = lineNum,
-                            timeFormatted = formatted,
-                            isRealtime = true,
-                            targetEpochMs = liveTargetEpoch,
-                            lineId = line.lineId
-                        )
+                            val liveDepItem = TripDepartureItem(
+                                lineNumber = lineNum,
+                                timeFormatted = formatted,
+                                isRealtime = true,
+                                targetEpochMs = liveTargetEpoch,
+                                lineId = line.lineId
+                            )
 
-                        val existing = newDeparturesMap[line.lineId] ?: emptyList()
-                        val remaining = existing.filter { it.targetEpochMs > (liveTargetEpoch + 90_000L) }
-                        newDeparturesMap[line.lineId] = (listOf(liveDepItem) + remaining).take(5)
+                            val existing = newDeparturesMap[line.lineId] ?: emptyList()
+                            val remaining = existing.filter { it.targetEpochMs > (liveTargetEpoch + 90_000L) }
+                            newDeparturesMap[line.lineId] = (listOf(liveDepItem) + remaining).take(5)
+                        }
                     }
                 }
 
-                // Limita aos 5 onibus mais proximos da parada de embarque
-                val top5Vehicles = markers.sortedBy { getVehicleDistanceToTarget(it) }.take(5)
+                // Limita estritamente aos 5 onibus mais proximos da parada de embarque
+                val top5Vehicles = markers
+                    .distinctBy { it.vehicleId }
+                    .filter { getVehicleDistanceToTarget(it) < Float.MAX_VALUE }
+                    .sortedBy { getVehicleDistanceToTarget(it) }
+                    .take(5)
 
                 withContext(Dispatchers.Main) {
                     if (newDeparturesMap.isNotEmpty()) {

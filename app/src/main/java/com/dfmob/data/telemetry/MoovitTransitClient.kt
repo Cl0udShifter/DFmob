@@ -39,7 +39,7 @@ object MoovitTransitClient {
     private val OBFUSCATED_METRO_ID = byteArrayOf(107, 109, 106, 104)
 
     private val OBFUSCATED_METRO_REVISION = byteArrayOf(
-        107, 109, 99, 110, 99, 109, 110, 104, 104, 110, 109, 104, 105
+        107, 109, 99, 111, 106, 99, 108, 106, 105, 106, 109, 104, 108
     )
 
     private fun deobfuscate(bytes: ByteArray): String {
