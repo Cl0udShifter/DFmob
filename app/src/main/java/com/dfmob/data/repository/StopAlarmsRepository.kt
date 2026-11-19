@@ -99,7 +99,6 @@ class StopAlarmsRepository(private val context: Context) {
 
         saveToPrefs(updated)
         scheduleSystemAlarms(updated)
-        com.dfmob.service.StopArrivalTrackingService.start(context)
     }
 
     private fun saveToPrefs(alarm: StopArrivalAlarm) {
@@ -127,11 +126,9 @@ class StopAlarmsRepository(private val context: Context) {
         val notificationId = 20000 + (stopId * 31 + lineNumber.hashCode()).rem(10000).let { if (it < 0) -it else it }
         try {
             NotificationManagerCompat.from(context).cancel(notificationId)
-        } catch (_: Exception) {}
-
-        if (getAllActiveAlarms().isEmpty()) {
+            NotificationManagerCompat.from(context).cancel(29999)
             com.dfmob.service.StopArrivalTrackingService.stop(context)
-        }
+        } catch (_: Exception) {}
     }
 
     fun markMilestoneNotified(stopId: Int, lineNumber: String, destination: String, milestoneMin: Int) {

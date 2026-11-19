@@ -90,6 +90,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Limpa servico de rastreamento continuo residual e sua notificacao fixa
+        try {
+            com.dfmob.service.StopArrivalTrackingService.stop(applicationContext)
+            androidx.core.app.NotificationManagerCompat.from(applicationContext).cancel(29999)
+        } catch (_: Exception) {}
+
         // Agenda o worker de escuta periódica dos comunicados operacionais da SEMOB
         SemobAlertsWorker.schedule(applicationContext)
 
