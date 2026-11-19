@@ -46,6 +46,34 @@ class StopAlarmsRepository(private val context: Context) {
         }
     }
 
+    fun getAllActiveAlarms(): List<StopArrivalAlarm> {
+        val list = mutableListOf<StopArrivalAlarm>()
+        val allEntries = prefs.all
+        for ((_, value) in allEntries) {
+            val json = value as? String ?: continue
+            try {
+                val obj = JSONObject(json)
+                if (!obj.optBoolean("isAutoCancelled", false)) {
+                    list.add(
+                        StopArrivalAlarm(
+                            lineNumber = obj.getString("lineNumber"),
+                            destination = obj.getString("destination"),
+                            stopId = obj.getInt("stopId"),
+                            stopName = obj.getString("stopName"),
+                            targetEpochMs = obj.getLong("targetEpochMs"),
+                            notified15Min = obj.optBoolean("notified15Min", false),
+                            notified10Min = obj.optBoolean("notified10Min", false),
+                            notified5Min = obj.optBoolean("notified5Min", false),
+                            notified2Min = obj.optBoolean("notified2Min", false),
+                            isAutoCancelled = false
+                        )
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+        return list
+    }
+
     fun setAlarm(alarm: StopArrivalAlarm) {
         val now = System.currentTimeMillis()
         val effectiveMinutes = if (alarm.targetEpochMs > 0L) {
@@ -98,6 +126,7 @@ class StopAlarmsRepository(private val context: Context) {
 
         saveToPrefs(updated)
         scheduleSystemAlarms(updated)
+        com.dfmob.service.StopArrivalTrackingService.start(context)
     }
 
     private fun saveToPrefs(alarm: StopArrivalAlarm) {
@@ -120,6 +149,9 @@ class StopAlarmsRepository(private val context: Context) {
         val key = "${stopId}_${lineNumber}_${destination}"
         prefs.edit().remove(key).apply()
         cancelSystemAlarms(stopId, lineNumber, destination)
+        if (getAllActiveAlarms().isEmpty()) {
+            com.dfmob.service.StopArrivalTrackingService.stop(context)
+        }
     }
 
     fun markMilestoneNotified(stopId: Int, lineNumber: String, destination: String, milestoneMin: Int) {
