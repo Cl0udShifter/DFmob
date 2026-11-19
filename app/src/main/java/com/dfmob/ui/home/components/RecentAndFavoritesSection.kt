@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -350,30 +351,27 @@ private fun FavoriteLineMiniRow(
             if (prediction != null) {
                 Spacer(modifier = Modifier.width(8.dp))
                 val isRealtime = prediction.arrival.isRealtime
-                val chipBg = if (isRealtime) Color(0x2400D26A) else MaterialTheme.colorScheme.surface
-                val chipContentColor = if (isRealtime) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                val chipBorderColor = if (isRealtime) TransitGreen.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
+                val isDarkTheme = isSystemInDarkTheme()
+                val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+                val etaColor = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
 
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(chipBg)
-                        .border(1.dp, chipBorderColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
                         imageVector = if (isRealtime) Icons.Rounded.Wifi else Icons.Rounded.Schedule,
                         contentDescription = if (isRealtime) "GPS ao vivo" else "Programado",
-                        tint = chipContentColor,
-                        modifier = Modifier.size(11.dp)
+                        tint = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = prediction.arrival.getDisplayEta(),
-                        color = chipContentColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        color = etaColor,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        ),
                         maxLines = 1
                     )
                 }
