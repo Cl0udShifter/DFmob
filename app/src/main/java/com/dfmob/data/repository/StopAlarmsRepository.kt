@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.dfmob.data.model.StopArrivalAlarm
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.receiver.StopArrivalAlarmReceiver
 import org.json.JSONObject
 
@@ -81,8 +82,9 @@ class StopAlarmsRepository(private val context: Context) {
         } else 0
 
         // Disparo imediato caso o alarme tenha sido ativado com o onibus ja dentro do intervalo de um marco
+        val notifPrefs = NotificationPreferences(context)
         var updated = alarm
-        if (!updated.notified15Min && effectiveMinutes in 11..15) {
+        if (notifPrefs.isMilestoneEnabled(15) && !updated.notified15Min && effectiveMinutes in 11..15) {
             updated = updated.copy(notified15Min = true)
             StopArrivalAlarmReceiver.showMilestoneNotification(
                 context = context,
@@ -92,7 +94,7 @@ class StopAlarmsRepository(private val context: Context) {
                 destination = updated.destination,
                 minutes = effectiveMinutes
             )
-        } else if (!updated.notified10Min && effectiveMinutes in 6..10) {
+        } else if (notifPrefs.isMilestoneEnabled(10) && !updated.notified10Min && effectiveMinutes in 6..10) {
             updated = updated.copy(notified15Min = true, notified10Min = true)
             StopArrivalAlarmReceiver.showMilestoneNotification(
                 context = context,
@@ -102,7 +104,7 @@ class StopAlarmsRepository(private val context: Context) {
                 destination = updated.destination,
                 minutes = effectiveMinutes
             )
-        } else if (!updated.notified5Min && effectiveMinutes in 3..5) {
+        } else if (notifPrefs.isMilestoneEnabled(5) && !updated.notified5Min && effectiveMinutes in 3..5) {
             updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true)
             StopArrivalAlarmReceiver.showMilestoneNotification(
                 context = context,
@@ -112,7 +114,7 @@ class StopAlarmsRepository(private val context: Context) {
                 destination = updated.destination,
                 minutes = effectiveMinutes
             )
-        } else if (!updated.notified2Min && effectiveMinutes in 1..2) {
+        } else if (notifPrefs.isMilestoneEnabled(2) && !updated.notified2Min && effectiveMinutes in 1..2) {
             updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true, notified2Min = true)
             StopArrivalAlarmReceiver.showMilestoneNotification(
                 context = context,
@@ -170,8 +172,10 @@ class StopAlarmsRepository(private val context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val now = System.currentTimeMillis()
         val milestones = listOf(15, 10, 5, 2)
+        val notifPrefs = NotificationPreferences(context)
 
         for (m in milestones) {
+            if (!notifPrefs.isMilestoneEnabled(m)) continue
             val triggerTime = alarm.targetEpochMs - m * 60_000L
             val alreadyNotified = when (m) {
                 15 -> alarm.notified15Min

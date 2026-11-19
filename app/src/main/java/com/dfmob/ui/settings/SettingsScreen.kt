@@ -46,7 +46,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import com.dfmob.data.preferences.AppThemeMode
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.service.ApiDiagnosticsService
 import com.dfmob.data.service.ApiHealthStatus
@@ -57,10 +61,13 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     themePreferences: ThemePreferences,
     currentThemeMode: AppThemeMode,
+    notificationPreferences: NotificationPreferences,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val diagnosticsService = remember { ApiDiagnosticsService() }
+    val notifSettings by notificationPreferences.settings.collectAsState()
     var apiStatuses by remember { mutableStateOf<List<ApiHealthStatus>>(emptyList()) }
     var isCheckingApis by remember { mutableStateOf(false) }
 
@@ -161,11 +168,137 @@ fun SettingsScreen(
                 )
             }
 
-            // Espacamento limpo entre os dois componentes (sem cards aninhados)
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // ==========================================
+            // COMPONENTE 2: ALERTAS E NOTIFICAÇÕES
+            // ==========================================
+            Text(
+                text = "ALERTAS E NOTIFICAÇÕES",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    fontSize = 11.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Subseção: Alarme de desembarque
+            Text(
+                text = "Alarme de desembarque em viagens",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "Antecedência para emitir o alarme sonoro e vibrar antes da sua parada:",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Seletor de 1, 2 ou 3 paradas
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    1 to "1 parada (250m)",
+                    2 to "2 paradas (400m)",
+                    3 to "3 paradas (600m)"
+                ).forEach { (stops, label) ->
+                    ThemeOptionButton(
+                        text = label,
+                        isSelected = notifSettings.descentAdvanceStops == stops,
+                        modifier = Modifier.weight(1f),
+                        onClick = { notificationPreferences.setDescentAdvanceStops(stops) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Subseção: Avisos de aproximação na parada
+            Text(
+                text = "Avisos de aproximação na parada",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "Receber notificações quando o ônibus monitorado estiver a caminho:",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Chips com alternância rápida para cada faixa de aviso
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NotificationMilestoneChip(
+                    text = "15 min",
+                    isEnabled = notifSettings.notify15Min,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val ok = notificationPreferences.setNotify15Min(!notifSettings.notify15Min)
+                        if (!ok) {
+                            Toast.makeText(context, "Ao menos um intervalo deve permanecer ativo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                NotificationMilestoneChip(
+                    text = "10 min",
+                    isEnabled = notifSettings.notify10Min,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val ok = notificationPreferences.setNotify10Min(!notifSettings.notify10Min)
+                        if (!ok) {
+                            Toast.makeText(context, "Ao menos um intervalo deve permanecer ativo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                NotificationMilestoneChip(
+                    text = "5 min",
+                    isEnabled = notifSettings.notify5Min,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val ok = notificationPreferences.setNotify5Min(!notifSettings.notify5Min)
+                        if (!ok) {
+                            Toast.makeText(context, "Ao menos um intervalo deve permanecer ativo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                NotificationMilestoneChip(
+                    text = "2 min",
+                    isEnabled = notifSettings.notify2Min,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val ok = notificationPreferences.setNotify2Min(!notifSettings.notify2Min)
+                        if (!ok) {
+                            Toast.makeText(context, "Ao menos um intervalo deve permanecer ativo.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(36.dp))
 
             // ==========================================
-            // COMPONENTE 2: ESTADO DAS APIS
+            // COMPONENTE 3: ESTADO DAS APIS
             // ==========================================
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -329,5 +462,45 @@ private fun ApiStatusRow(status: ApiHealthStatus) {
                 color = statusColor
             )
         }
+    }
+}
+
+@Composable
+private fun NotificationMilestoneChip(
+    text: String,
+    isEnabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bgColor by animateColorAsState(
+        targetValue = if (isEnabled) TransitGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        label = "chipBg"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+        label = "chipBorder"
+    )
+    val textColor by animateColorAsState(
+        targetValue = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        label = "chipText"
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .background(bgColor)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = if (isEnabled) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 13.sp
+            ),
+            color = textColor
+        )
     }
 }

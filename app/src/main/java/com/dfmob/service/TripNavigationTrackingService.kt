@@ -16,6 +16,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.dfmob.MainActivity
+import com.dfmob.data.preferences.NotificationPreferences
 
 class TripNavigationTrackingService : Service(), LocationListener {
 
@@ -92,7 +93,11 @@ class TripNavigationTrackingService : Service(), LocationListener {
                     }
                     state.currentRemainingStops.value = remaining
 
-                    if ((remaining <= 2 || distToDest <= 400f) && !state.hasAlertedCurrentLeg) {
+                    val notifPrefs = NotificationPreferences(applicationContext)
+                    val advanceStops = notifPrefs.getSettings().descentAdvanceStops
+                    val maxDistMeters = notifPrefs.getDescentDistanceMeters()
+
+                    if ((remaining <= advanceStops || distToDest <= maxDistMeters) && !state.hasAlertedCurrentLeg) {
                         state.hasAlertedCurrentLeg = true
                         state.isDescentAlarmTriggered.value = true
                         TripDescentAlarmHelper.triggerDescentAlarm(

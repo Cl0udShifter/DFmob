@@ -109,6 +109,7 @@ import com.dfmob.data.model.TripPlanItinerary
 import com.dfmob.data.model.TripPlanLeg
 import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripTransitLineOption
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.service.NavigationStateHolder
 import com.dfmob.service.TripDescentAlarmHelper
@@ -796,8 +797,12 @@ fun TripItineraryDetailView(
                     val distToDest = distanceMeters(userLoc.latitude, userLoc.longitude, destPt.latitude, destPt.longitude)
                     NavigationStateHolder.currentDistToDescentMeters.value = distToDest
 
-                    // Disparo do Alarme de Desembarque (2 paradas ou <= 400m)
-                    if ((remainingStopsCount <= 2 || distToDest <= 400f) && !NavigationStateHolder.hasAlertedCurrentLeg) {
+                    val notifPrefs = NotificationPreferences(context)
+                    val advanceStops = notifPrefs.getSettings().descentAdvanceStops
+                    val maxDistMeters = notifPrefs.getDescentDistanceMeters()
+
+                    // Disparo do Alarme de Desembarque
+                    if ((remainingStopsCount <= advanceStops || distToDest <= maxDistMeters) && !NavigationStateHolder.hasAlertedCurrentLeg) {
                         NavigationStateHolder.hasAlertedCurrentLeg = true
                         NavigationStateHolder.isDescentAlarmTriggered.value = true
                         TripDescentAlarmHelper.triggerDescentAlarm(

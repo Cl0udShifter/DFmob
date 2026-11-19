@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.preferences.AppThemeMode
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             val themePreferences = remember { ThemePreferences(context) }
+            val notificationPreferences = remember { NotificationPreferences(context) }
             val themeMode by themePreferences.themeMode.collectAsState()
             val systemDark = isSystemInDarkTheme()
             val isDarkTheme = when (themeMode) {
@@ -258,6 +260,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.SETTINGS -> SettingsScreen(
                             themePreferences = themePreferences,
                             currentThemeMode = themeMode,
+                            notificationPreferences = notificationPreferences,
                             onBack = { currentScreen = AppScreen.HOME }
                         )
                     }

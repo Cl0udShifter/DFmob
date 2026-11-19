@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.dfmob.MainActivity
 import com.dfmob.data.model.StopArrivalAlarm
+import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.repository.StopAlarmsRepository
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.receiver.StopArrivalAlarmReceiver
@@ -94,6 +95,8 @@ class StopArrivalTrackingService : Service() {
 
                 val alarmsByStop = activeAlarms.groupBy { it.stopId }
 
+                val notifPrefs = NotificationPreferences(applicationContext)
+
                 for ((stopId, alarms) in alarmsByStop) {
                     val moovitData = try {
                         MoovitTransitClient.fetchArrivalsForStop(stopId)
@@ -129,7 +132,7 @@ class StopArrivalTrackingService : Service() {
                             nearestAlarm = alarm
                         }
 
-                        if (!alarm.notified15Min && currentMinutes <= 15) {
+                        if (notifPrefs.isMilestoneEnabled(15) && !alarm.notified15Min && currentMinutes <= 15) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 15)
                             StopArrivalAlarmReceiver.showMilestoneNotification(
                                 applicationContext,
@@ -139,7 +142,7 @@ class StopArrivalTrackingService : Service() {
                                 alarm.destination,
                                 currentMinutes
                             )
-                        } else if (!alarm.notified10Min && currentMinutes <= 10) {
+                        } else if (notifPrefs.isMilestoneEnabled(10) && !alarm.notified10Min && currentMinutes <= 10) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 10)
                             StopArrivalAlarmReceiver.showMilestoneNotification(
                                 applicationContext,
@@ -149,7 +152,7 @@ class StopArrivalTrackingService : Service() {
                                 alarm.destination,
                                 currentMinutes
                             )
-                        } else if (!alarm.notified5Min && currentMinutes <= 5) {
+                        } else if (notifPrefs.isMilestoneEnabled(5) && !alarm.notified5Min && currentMinutes <= 5) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 5)
                             StopArrivalAlarmReceiver.showMilestoneNotification(
                                 applicationContext,
@@ -159,7 +162,7 @@ class StopArrivalTrackingService : Service() {
                                 alarm.destination,
                                 currentMinutes
                             )
-                        } else if (!alarm.notified2Min && currentMinutes <= 2) {
+                        } else if (notifPrefs.isMilestoneEnabled(2) && !alarm.notified2Min && currentMinutes <= 2) {
                             repo.markMilestoneNotified(alarm.stopId, alarm.lineNumber, alarm.destination, 2)
                             StopArrivalAlarmReceiver.showMilestoneNotification(
                                 applicationContext,
