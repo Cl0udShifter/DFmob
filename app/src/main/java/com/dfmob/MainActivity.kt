@@ -135,6 +135,8 @@ class MainActivity : ComponentActivity() {
                 }
                 var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
                 var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
+                var targetOriginLocationForTripPlanner by remember { mutableStateOf<com.dfmob.data.model.TripPlanLocation?>(null) }
+                var targetDestinationLocationForTripPlanner by remember { mutableStateOf<com.dfmob.data.model.TripPlanLocation?>(null) }
                 var stopsOpenedFromLines by rememberSaveable { mutableStateOf(false) }
 
                 LaunchedEffect(pendingScreen) {
@@ -162,6 +164,8 @@ class MainActivity : ComponentActivity() {
                         targetLineNumberForStops = null
                         targetLineIdForStops = null
                         targetDestinationForTripPlanner = null
+                        targetOriginLocationForTripPlanner = null
+                        targetDestinationLocationForTripPlanner = null
                         stopsOpenedFromLines = false
                         currentScreen = AppScreen.HOME
                     }
@@ -187,6 +191,14 @@ class MainActivity : ComponentActivity() {
                             },
                             onNavigateToTripPlanner = { dest ->
                                 targetDestinationForTripPlanner = dest
+                                targetOriginLocationForTripPlanner = null
+                                targetDestinationLocationForTripPlanner = null
+                                currentScreen = AppScreen.TRIP_PLANNER
+                            },
+                            onNavigateToTripPlannerWithTrip = { trip ->
+                                targetOriginLocationForTripPlanner = trip.origin
+                                targetDestinationLocationForTripPlanner = trip.destination
+                                targetDestinationForTripPlanner = null
                                 currentScreen = AppScreen.TRIP_PLANNER
                             },
                             onNavigateToAlerts = {
@@ -223,9 +235,14 @@ class MainActivity : ComponentActivity() {
                         )
                         AppScreen.TRIP_PLANNER -> TripPlannerScreen(
                             initialDestination = targetDestinationForTripPlanner,
+                            initialOriginLocation = targetOriginLocationForTripPlanner,
+                            initialDestinationLocation = targetDestinationLocationForTripPlanner,
+                            favoritesRepository = favoritesRepository,
                             recentSearchesRepository = recentSearchesRepository,
                             onBack = {
                                 targetDestinationForTripPlanner = null
+                                targetOriginLocationForTripPlanner = null
+                                targetDestinationLocationForTripPlanner = null
                                 currentScreen = AppScreen.HOME
                             }
                         )

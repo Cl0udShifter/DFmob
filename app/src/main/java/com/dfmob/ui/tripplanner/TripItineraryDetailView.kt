@@ -1076,7 +1076,7 @@ private fun TopNavigationBar(
                     Text(
                         text = "$startHH - $endHH (${formatDuration(itinerary.totalDurationMinutes)}) • $fareDesc",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
-                        color = TransitGreen
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 

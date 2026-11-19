@@ -2,6 +2,7 @@ package com.dfmob.ui.home
 
 import android.content.Context
 import android.location.LocationManager
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,13 +44,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.FavoriteLineArrivalPrediction
+import com.dfmob.data.model.FavoriteTrip
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.repository.AlertsRepository
 import com.dfmob.data.repository.FavoritesRepository
@@ -80,6 +84,7 @@ fun HomeScreen(
     onNavigateToStops: () -> Unit = {},
     onNavigateToLineRoute: (String, Int?) -> Unit = { _, _ -> },
     onNavigateToTripPlanner: (DFLocation?) -> Unit = {},
+    onNavigateToTripPlannerWithTrip: (FavoriteTrip) -> Unit = {},
     onNavigateToAlerts: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
@@ -96,6 +101,8 @@ fun HomeScreen(
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
     val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
+    val favoriteTrips by favoritesRepo.favoriteTrips.collectAsState()
+    val haptic = LocalHapticFeedback.current
     val recentSearches by recentRepo.recentSearches.collectAsState()
     val homePlace by recentRepo.homePlace.collectAsState()
     val workPlace by recentRepo.workPlace.collectAsState()
@@ -352,6 +359,7 @@ fun HomeScreen(
                 recentSearches = recentSearches,
                 favoriteLines = favoriteLines,
                 favoriteStops = favoriteStops,
+                favoriteTrips = favoriteTrips,
                 favoritePredictions = favoritePredictions,
                 onRecentSearchClick = { loc -> onNavigateToTripPlanner(loc) },
                 onTogglePin = { item -> recentRepo.togglePin(item) },
@@ -360,7 +368,23 @@ fun HomeScreen(
                     recentLinesRepo.addLine(line)
                     onNavigateToLineRoute(line.lineNumber, line.routeId.toIntOrNull())
                 },
-                onStopClick = { onNavigateToStops() }
+                onStopClick = { onNavigateToStops() },
+                onTripClick = { trip -> onNavigateToTripPlannerWithTrip(trip) },
+                onRemoveTrip = { trip ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    favoritesRepo.removeFavoriteTrip(trip.id)
+                    Toast.makeText(context, "${trip.customName} removido dos favoritos", Toast.LENGTH_SHORT).show()
+                },
+                onRemoveStop = { stop ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    favoritesRepo.removeFavoriteStop(stop)
+                    Toast.makeText(context, "${stop.stopName} removido dos favoritos", Toast.LENGTH_SHORT).show()
+                },
+                onRemoveLine = { line ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    favoritesRepo.removeFavoriteLine(line)
+                    Toast.makeText(context, "Linha ${line.lineNumber} removida dos favoritos", Toast.LENGTH_SHORT).show()
+                }
             )
 
             Spacer(modifier = Modifier.height(20.dp))

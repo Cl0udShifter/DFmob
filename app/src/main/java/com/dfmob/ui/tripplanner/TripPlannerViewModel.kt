@@ -90,6 +90,37 @@ class TripPlannerViewModel(
         triggerTripSearchIfReady()
     }
 
+    fun setOriginAndDestination(orig: TripPlanLocation, dest: TripPlanLocation) {
+        val finalOrig = if (orig.isUserLocation) {
+            val userLoc = getLastKnownLocation()
+            if (userLoc != null) {
+                TripPlanLocation(
+                    caption = "Minha localização",
+                    latE6 = (userLoc.latitude * 1_000_000).toInt(),
+                    lonE6 = (userLoc.longitude * 1_000_000).toInt(),
+                    isUserLocation = true
+                )
+            } else {
+                orig
+            }
+        } else {
+            orig
+        }
+        savedOriginText = finalOrig.caption
+        savedDestinationText = dest.caption
+        _uiState.update {
+            it.copy(
+                origin = finalOrig,
+                originQuery = finalOrig.caption,
+                destination = dest,
+                destinationQuery = dest.caption,
+                searchResults = emptyList(),
+                activeField = ActiveField.NONE
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
     fun useCurrentLocationForOrigin() {
         val userLoc = getLastKnownLocation()
         if (userLoc != null) {

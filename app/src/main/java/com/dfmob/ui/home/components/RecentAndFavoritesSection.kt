@@ -1,8 +1,10 @@
 package com.dfmob.ui.home.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
@@ -40,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.FavoriteLineArrivalPrediction
+import com.dfmob.data.model.FavoriteTrip
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.repository.FavoritesRepository
@@ -51,12 +55,17 @@ fun RecentAndFavoritesSection(
     recentSearches: List<RecentSearchItem> = emptyList(),
     favoriteLines: List<TransitLine> = emptyList(),
     favoriteStops: List<TransitStop> = emptyList(),
+    favoriteTrips: List<FavoriteTrip> = emptyList(),
     favoritePredictions: Map<String, FavoriteLineArrivalPrediction> = emptyMap(),
     onRecentSearchClick: (DFLocation) -> Unit = {},
     onTogglePin: (RecentSearchItem) -> Unit = {},
     onClearRecent: () -> Unit = {},
     onLineClick: (TransitLine) -> Unit = {},
     onStopClick: (TransitStop) -> Unit = {},
+    onTripClick: (FavoriteTrip) -> Unit = {},
+    onRemoveTrip: (FavoriteTrip) -> Unit = {},
+    onRemoveLine: (TransitLine) -> Unit = {},
+    onRemoveStop: (TransitStop) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -71,13 +80,18 @@ fun RecentAndFavoritesSection(
             onClearRecent = onClearRecent
         )
 
-        // Modulo de Favoritos (linhas e paradas com diferenciacao visual)
+        // Modulo de Favoritos (linhas, paradas e trajetos com toque longo para excluir)
         FavoritesCard(
             favoriteLines = favoriteLines,
             favoriteStops = favoriteStops,
+            favoriteTrips = favoriteTrips,
             favoritePredictions = favoritePredictions,
             onLineClick = onLineClick,
-            onStopClick = onStopClick
+            onStopClick = onStopClick,
+            onTripClick = onTripClick,
+            onRemoveTrip = onRemoveTrip,
+            onRemoveLine = onRemoveLine,
+            onRemoveStop = onRemoveStop
         )
     }
 }
@@ -86,9 +100,14 @@ fun RecentAndFavoritesSection(
 private fun FavoritesCard(
     favoriteLines: List<TransitLine>,
     favoriteStops: List<TransitStop>,
+    favoriteTrips: List<FavoriteTrip>,
     favoritePredictions: Map<String, FavoriteLineArrivalPrediction>,
     onLineClick: (TransitLine) -> Unit,
     onStopClick: (TransitStop) -> Unit,
+    onTripClick: (FavoriteTrip) -> Unit,
+    onRemoveTrip: (FavoriteTrip) -> Unit,
+    onRemoveLine: (TransitLine) -> Unit,
+    onRemoveStop: (TransitStop) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(18.dp)
@@ -121,7 +140,7 @@ private fun FavoritesCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            if (favoriteLines.isEmpty() && favoriteStops.isEmpty()) {
+            if (favoriteLines.isEmpty() && favoriteStops.isEmpty() && favoriteTrips.isEmpty()) {
                 Text(
                     text = "Nenhum favorito salvo ainda",
                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -136,10 +155,18 @@ private fun FavoritesCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    favoriteTrips.forEach { trip ->
+                        FavoriteTripMiniRow(
+                            trip = trip,
+                            onClick = { onTripClick(trip) },
+                            onLongClick = { onRemoveTrip(trip) }
+                        )
+                    }
                     favoriteStops.forEach { stop ->
                         FavoriteStopMiniRow(
                             stop = stop,
-                            onClick = { onStopClick(stop) }
+                            onClick = { onStopClick(stop) },
+                            onLongClick = { onRemoveStop(stop) }
                         )
                     }
                     favoriteLines.forEach { line ->
@@ -147,7 +174,8 @@ private fun FavoritesCard(
                         FavoriteLineMiniRow(
                             line = line,
                             prediction = favoritePredictions[key],
-                            onClick = { onLineClick(line) }
+                            onClick = { onLineClick(line) },
+                            onLongClick = { onRemoveLine(line) }
                         )
                     }
                 }
@@ -156,10 +184,90 @@ private fun FavoritesCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FavoriteTripMiniRow(
+    trip: FavoriteTrip,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val rowShape = RoundedCornerShape(10.dp)
+    val badgeShape = RoundedCornerShape(8.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(rowShape)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = rememberRipple(bounded = true),
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .defaultMinSize(minWidth = 56.dp, minHeight = 34.dp)
+                .clip(badgeShape)
+                .background(TransitGreen)
+                .padding(horizontal = 7.dp, vertical = 5.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.AltRoute,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = trip.customName,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val originName = if (trip.origin.isUserLocation) "Minha localização" else trip.origin.caption
+            Text(
+                text = "$originName → ${trip.destination.caption}",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Icon(
+            imageVector = Icons.Rounded.Star,
+            contentDescription = "Trajeto Favorito",
+            tint = Color(0xFFFFB800),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FavoriteStopMiniRow(
     stop: TransitStop,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val rowShape = RoundedCornerShape(10.dp)
     val badgeShape = RoundedCornerShape(8.dp)
@@ -173,10 +281,11 @@ private fun FavoriteStopMiniRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(rowShape)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = rememberRipple(bounded = true),
-                onClick = onClick
+                onClick = onClick,
+                onLongClick = onLongClick
             )
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -243,11 +352,13 @@ private fun FavoriteStopMiniRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FavoriteLineMiniRow(
     line: TransitLine,
     prediction: FavoriteLineArrivalPrediction? = null,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {}
 ) {
     val rowShape = RoundedCornerShape(10.dp)
     val badgeShape = RoundedCornerShape(8.dp)
@@ -264,10 +375,11 @@ private fun FavoriteLineMiniRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(rowShape)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = rememberRipple(bounded = true),
-                onClick = onClick
+                onClick = onClick,
+                onLongClick = onLongClick
             )
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically

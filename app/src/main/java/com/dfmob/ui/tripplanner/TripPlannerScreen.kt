@@ -4,6 +4,7 @@ import android.app.TimePickerDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,16 +49,23 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.SyncAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -83,8 +91,10 @@ import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.TripLegType
 import com.dfmob.data.model.TripPlanItinerary
 import com.dfmob.data.model.TripPlanLeg
+import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripPreference
 import com.dfmob.data.model.TripTimeMode
+import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
@@ -96,19 +106,32 @@ import java.util.TimeZone
 fun TripPlannerScreen(
     onBack: () -> Unit,
     initialDestination: DFLocation? = null,
+    initialOriginLocation: TripPlanLocation? = null,
+    initialDestinationLocation: TripPlanLocation? = null,
+    favoritesRepository: FavoritesRepository? = null,
     recentSearchesRepository: RecentSearchesRepository? = null,
     repository: StopsRepository = StopsRepository(LocalContext.current)
 ) {
     val context = LocalContext.current
     val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
+    val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val viewModel = remember { TripPlannerViewModel(repository, context) }
     val state by viewModel.uiState.collectAsState()
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(initialDestination) {
-        if (initialDestination != null) {
+    val favoriteTrips by favoritesRepo.favoriteTrips.collectAsState()
+    val isCurrentTripFavorite = remember(state.origin, state.destination, favoriteTrips) {
+        favoritesRepo.isTripFavorite(state.origin, state.destination)
+    }
+    var showSaveTripDialog by remember { mutableStateOf(false) }
+    var tripCustomNameInput by remember { mutableStateOf("") }
+
+    LaunchedEffect(initialOriginLocation, initialDestinationLocation, initialDestination) {
+        if (initialOriginLocation != null && initialDestinationLocation != null) {
+            viewModel.setOriginAndDestination(initialOriginLocation, initialDestinationLocation)
+        } else if (initialDestination != null) {
             viewModel.setDestination(initialDestination)
             recentRepo.addSearch(initialDestination)
         }
@@ -199,6 +222,105 @@ fun TripPlannerScreen(
                         fontSize = 20.sp
                     ),
                     color = TransitGreen
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Botao de favoritar trajeto (quando origem e destino definidos)
+                if (state.origin != null && state.destination != null) {
+                    IconButton(
+                        onClick = {
+                            if (isCurrentTripFavorite) {
+                                val fav = favoritesRepo.getFavoriteTrip(state.origin, state.destination)
+                                if (fav != null) {
+                                    favoritesRepo.removeFavoriteTrip(fav.id)
+                                    Toast.makeText(context, "Trajeto removido dos favoritos", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                tripCustomNameInput = state.destination?.caption ?: "Meu Trajeto"
+                                showSaveTripDialog = true
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isCurrentTripFavorite) Icons.Rounded.Star else Icons.Rounded.StarOutline,
+                            contentDescription = if (isCurrentTripFavorite) "Remover trajeto dos favoritos" else "Salvar trajeto favorito",
+                            tint = if (isCurrentTripFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (showSaveTripDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSaveTripDialog = false },
+                    title = {
+                        Text(
+                            text = "Salvar trajeto favorito",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Escolha um nome para identificar este trajeto rapidamente:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Chips de sugestao rapida
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                listOf("Trabalho", "Faculdade", "Casa", "Academia").forEach { preset ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (tripCustomNameInput == preset) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.clickable { tripCustomNameInput = preset }
+                                    ) {
+                                        Text(
+                                            text = preset,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = if (tripCustomNameInput == preset) TransitGreen else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = tripCustomNameInput,
+                                onValueChange = { tripCustomNameInput = it },
+                                label = { Text("Nome do trajeto") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val name = tripCustomNameInput.trim().ifEmpty { state.destination?.caption ?: "Meu Trajeto" }
+                                val orig = state.origin
+                                val dest = state.destination
+                                if (orig != null && dest != null) {
+                                    favoritesRepo.addFavoriteTrip(name, orig, dest)
+                                    Toast.makeText(context, "$name salvo nos favoritos", Toast.LENGTH_SHORT).show()
+                                }
+                                showSaveTripDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TransitGreen)
+                        ) {
+                            Text("Salvar", color = Color.White)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSaveTripDialog = false }) {
+                            Text("Cancelar")
+                        }
+                    }
                 )
             }
 
@@ -924,13 +1046,9 @@ private fun TripItineraryCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Tarifa total estimada da viagem
+                    // Tarifa total estimada da viagem (sempre preta dentro da caixa cinza)
                     Surface(
-                        color = if (itinerary.isFareIntegrated) {
-                            TransitGreen.copy(alpha = 0.12f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Row(
@@ -942,7 +1060,7 @@ private fun TripItineraryCard(
                                 Icon(
                                     imageVector = Icons.Rounded.SyncAlt,
                                     contentDescription = "Tarifa integrada Bilhete Unico",
-                                    tint = TransitGreen,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(11.dp)
                                 )
                             }
@@ -952,11 +1070,7 @@ private fun TripItineraryCard(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.5.sp
                                 ),
-                                color = if (itinerary.isFareIntegrated) {
-                                    TransitGreen
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
