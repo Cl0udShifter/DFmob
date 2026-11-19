@@ -7,13 +7,19 @@ import android.graphics.Canvas
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
 import android.view.animation.LinearInterpolator
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -109,6 +115,7 @@ import com.dfmob.data.model.TripPlanItinerary
 import com.dfmob.data.model.TripPlanLeg
 import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripTransitLineOption
+import com.dfmob.data.model.TransitStop
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.data.telemetry.SemobTelemetryService
@@ -129,6 +136,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.infowindow.InfoWindow
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.util.Calendar
@@ -652,33 +660,124 @@ fun TripItineraryDetailView(
         }
 
         val boardingStopId = (currentStage as? NavigationStage.WaitForTransit)?.stopId
+        val targetStopGeoPoint = when (currentStage) {
+            is NavigationStage.WaitForTransit -> currentStage.stopPoint
+            is NavigationStage.RideTransit -> currentStage.destinationPoint
+            else -> null
+        }
 
         if (linesToTrack.isNotEmpty()) {
             val semobService = SemobTelemetryService()
+            val dbHelper = DatabaseHelper(context)
+
+            // Pre-carrega contexto de paradas e sentido para cada linha candidata
+            val routeContexts = withContext(Dispatchers.IO) {
+                linesToTrack.mapNotNull { lineOpt ->
+                    val cleanNum = lineOpt.lineNumber.trim()
+                    if (cleanNum.isBlank()) return@mapNotNull null
+                    val expectedDir = dbHelper.getLineDirectionId(lineOpt.lineId)
+                    val stops = dbHelper.getStopsForLine(lineOpt.lineId)
+                    var targetIdx = if (boardingStopId != null) stops.indexOfFirst { it.stopId == boardingStopId } else -1
+                    if (targetIdx == -1 && targetStopGeoPoint != null && stops.isNotEmpty()) {
+                        val closest = stops.indices.minByOrNull { idx ->
+                            val s = stops[idx]
+                            distanceMeters(targetStopGeoPoint.latitude, targetStopGeoPoint.longitude, s.latitude, s.longitude)
+                        }
+                        if (closest != null) {
+                            val s = stops[closest]
+                            val d = distanceMeters(targetStopGeoPoint.latitude, targetStopGeoPoint.longitude, s.latitude, s.longitude)
+                            if (d <= 350f) {
+                                targetIdx = closest
+                            }
+                        }
+                    }
+                    RouteLineContext(
+                        lineId = lineOpt.lineId,
+                        lineNumber = cleanNum,
+                        expectedDirectionId = expectedDir,
+                        stops = stops,
+                        targetStopIndex = targetIdx
+                    )
+                }
+            }
+            val routeContextByNumber = routeContexts.associateBy { it.lineNumber }
+            val routeContextById = routeContexts.associateBy { it.lineId }
+
+            fun shouldIncludeVehicle(v: LiveVehicleMarker, routeCtx: RouteLineContext): Boolean {
+                // Regra 1: A linha ja corresponde
+                // Regra 3: Sentido correto da linha
+                if (v.directionId != null && routeCtx.expectedDirectionId != null) {
+                    if (v.directionId != routeCtx.expectedDirectionId) {
+                        return false
+                    }
+                }
+
+                val stops = routeCtx.stops
+                val targetIdx = routeCtx.targetStopIndex
+                if (stops.isNotEmpty() && targetIdx >= 0) {
+                    var minStopDist = Float.MAX_VALUE
+                    var closestIdx = -1
+                    for (i in stops.indices) {
+                        val s = stops[i]
+                        val d = distanceMeters(v.latitude, v.longitude, s.latitude, s.longitude)
+                        if (d < minStopDist) {
+                            minStopDist = d
+                            closestIdx = i
+                        }
+                    }
+
+                    // Se estiver a mais de 800m de qualquer parada da rota, nao faz parte deste itinerario
+                    if (minStopDist > 800f) {
+                        return false
+                    }
+
+                    // Regra 2: Se a parada mais proxima for posterior a parada alvo, o onibus ja passou
+                    if (closestIdx > targetIdx) {
+                        return false
+                    }
+
+                    // Se estiver na propria parada de embarque:
+                    if (closestIdx == targetIdx) {
+                        val targetStop = stops[targetIdx]
+                        val distToTarget = distanceMeters(v.latitude, v.longitude, targetStop.latitude, targetStop.longitude)
+                        if (distToTarget > 100f && targetIdx + 1 < stops.size) {
+                            val nextStop = stops[targetIdx + 1]
+                            val distToNext = distanceMeters(v.latitude, v.longitude, nextStop.latitude, nextStop.longitude)
+                            val distTargetToNext = distanceMeters(targetStop.latitude, targetStop.longitude, nextStop.latitude, nextStop.longitude)
+                            if (distToNext < distTargetToNext) {
+                                return false
+                            }
+                        }
+                    }
+                }
+
+                return true
+            }
+
             while (isActive) {
                 val markers = mutableListOf<LiveVehicleMarker>()
 
                 // 1. Telemetria oficial da SEMOB em tempo real por numero de linha
                 for (line in linesToTrack) {
                     val cleanLine = line.lineNumber.trim()
-                    if (cleanLine.isNotBlank()) {
-                        try {
-                            val semobList = semobService.getLiveVehiclePositions(cleanLine)
-                            for (sv in semobList) {
-                                markers.add(
-                                    LiveVehicleMarker(
-                                        vehicleId = sv.vehicleId,
-                                        lineNumber = cleanLine,
-                                        latE6 = sv.latE6,
-                                        lonE6 = sv.lonE6,
-                                        speedKmh = sv.speedKmh,
-                                        bearing = sv.bearing,
-                                        directionId = sv.directionId ?: 0
-                                    )
-                                )
+                    val routeCtx = routeContextByNumber[cleanLine] ?: continue
+                    try {
+                        val semobList = semobService.getLiveVehiclePositions(cleanLine)
+                        for (sv in semobList) {
+                            val vMarker = LiveVehicleMarker(
+                                vehicleId = sv.vehicleId,
+                                lineNumber = cleanLine,
+                                latE6 = sv.latE6,
+                                lonE6 = sv.lonE6,
+                                speedKmh = sv.speedKmh,
+                                bearing = sv.bearing,
+                                directionId = sv.directionId
+                            )
+                            if (shouldIncludeVehicle(vMarker, routeCtx)) {
+                                markers.add(vMarker)
                             }
-                        } catch (_: Exception) {}
-                    }
+                        }
+                    } catch (_: Exception) {}
                 }
 
                 // 2. Previsoes e coordenadas de veiculos via Moovit (se houver parada de embarque)
@@ -693,23 +792,28 @@ fun TripItineraryDetailView(
                         for (lArr in matched) {
                             val lineOpt = linesToTrack.firstOrNull { it.lineId == lArr.lineId }
                             val lineNum = lineOpt?.lineNumber ?: ""
+                            val routeCtx = routeContextById[lArr.lineId] ?: routeContextByNumber[lineNum]
 
                             for (arr in lArr.arrivals) {
                                 // Se a previsao ao vivo contem a coordenada GPS do veiculo em aproximacao
                                 if (arr.vehicleLatE6 != null && arr.vehicleLonE6 != null) {
                                     val vId = arr.vehicleId ?: "moovit_${lArr.lineId}_${arr.vehicleLatE6}"
-                                    if (!markers.any { it.vehicleId == vId || (Math.abs(it.latE6 - arr.vehicleLatE6) < 150 && Math.abs(it.lonE6 - arr.vehicleLonE6) < 150) }) {
-                                        markers.add(
-                                            LiveVehicleMarker(
-                                                vehicleId = vId,
-                                                lineNumber = lineNum,
-                                                latE6 = arr.vehicleLatE6,
-                                                lonE6 = arr.vehicleLonE6,
-                                                speedKmh = 0f,
-                                                bearing = 0f,
-                                                directionId = 0
-                                            )
+                                    val alreadyExists = markers.any {
+                                        it.vehicleId == vId || (Math.abs(it.latE6 - arr.vehicleLatE6) < 150 && Math.abs(it.lonE6 - arr.vehicleLonE6) < 150)
+                                    }
+                                    if (!alreadyExists) {
+                                        val mMarker = LiveVehicleMarker(
+                                            vehicleId = vId,
+                                            lineNumber = lineNum,
+                                            latE6 = arr.vehicleLatE6,
+                                            lonE6 = arr.vehicleLonE6,
+                                            speedKmh = 0f,
+                                            bearing = 0f,
+                                            directionId = routeCtx?.expectedDirectionId
                                         )
+                                        if (routeCtx == null || shouldIncludeVehicle(mMarker, routeCtx)) {
+                                            markers.add(mMarker)
+                                        }
                                     }
                                 }
                             }
@@ -754,6 +858,14 @@ fun TripItineraryDetailView(
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon = createVehiclePuckDrawable(context, v.bearing)
                             title = "Linha ${v.lineNumber}"
+                            relatedObject = v
+                            infoWindow = TransitVehicleInfoWindow(mapView, isDarkTheme)
+                            setInfoWindowAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_TOP)
+                            setOnMarkerClickListener { m, _ ->
+                                InfoWindow.closeAllInfoWindowsOn(mapView)
+                                m.showInfoWindow()
+                                true
+                            }
                         }
                         vehiclesFolder.add(marker)
                     }
@@ -2158,26 +2270,54 @@ private fun createSmallDotDrawable(context: Context): Drawable {
     return BitmapDrawable(context.resources, bitmap)
 }
 
-private fun createVehiclePuckDrawable(context: Context, bearing: Float): BitmapDrawable {
+private data class RouteLineContext(
+    val lineId: Int,
+    val lineNumber: String,
+    val expectedDirectionId: Int?,
+    val stops: List<TransitStop>,
+    val targetStopIndex: Int
+)
+
+private fun createVehiclePuckDrawable(
+    context: Context,
+    bearing: Float
+): BitmapDrawable {
     val density = context.resources.displayMetrics.density
     val sizePx = (32 * density).toInt()
+
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val center = sizePx / 2f
 
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
 
+    // 1. Sombra externa suave
     paint.color = android.graphics.Color.argb(55, 0, 0, 0)
     canvas.drawCircle(center, center + (1.2f * density), 13.5f * density, paint)
 
+    // 2. Anel branco solido de alto contraste
     paint.color = android.graphics.Color.WHITE
     canvas.drawCircle(center, center, 13.0f * density, paint)
 
+    // 3. Preenchimento verde vibrante (#00C853)
     paint.color = android.graphics.Color.parseColor("#00C853")
     canvas.drawCircle(center, center, 10.5f * density, paint)
 
-    // Icone de onibus centralizado
-    val busPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // 4. Icone de onibus centralizado em vetor branco com recorte verde, farois e rodas
+    drawVehicleBusIcon(canvas, center, density)
+
+    // 5. Indicador direcional (chevron externo) se houver rumo valido
+    if (bearing > 0f) {
+        drawHeadingChevron(canvas, center, density, bearing)
+    }
+
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+private fun drawVehicleBusIcon(canvas: Canvas, center: Float, density: Float) {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.FILL
     }
@@ -2186,38 +2326,153 @@ private fun createVehiclePuckDrawable(context: Context, bearing: Float): BitmapD
     val left = center - w / 2f
     val top = center - h / 2f
     val right = center + w / 2f
+    val bodyH = h - 2f * density
+
+    // Corpo
+    canvas.drawRoundRect(left, top, right, top + bodyH, 2.2f * density, 2.2f * density, paint)
+
+    // Para-brisa (recorte verde #00C853)
+    paint.color = android.graphics.Color.parseColor("#00C853")
+    canvas.drawRoundRect(left + 1.2f * density, top + 1.4f * density, right - 1.2f * density, top + 4.8f * density, 1f * density, 1f * density, paint)
+
+    // Farois
+    val r = 0.8f * density
+    canvas.drawCircle(left + 2.2f * density, top + bodyH - 2f * density, r, paint)
+    canvas.drawCircle(right - 2.2f * density, top + bodyH - 2f * density, r, paint)
+
+    // Rodas
+    paint.color = android.graphics.Color.WHITE
     val bottom = center + h / 2f
-    val rad = 2.5f * density
-    canvas.drawRoundRect(left, top, right, bottom, rad, rad, busPaint)
+    canvas.drawRect(left + 1.2f * density, top + bodyH, left + 2.8f * density, bottom, paint)
+    canvas.drawRect(right - 2.8f * density, top + bodyH, right - 1.2f * density, bottom, paint)
+}
 
-    // Indicador direcional
-    if (bearing > 0f) {
-        val chevronPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.parseColor("#00C853")
-            style = Paint.Style.FILL
+private fun drawHeadingChevron(canvas: Canvas, center: Float, density: Float, bearing: Float) {
+    canvas.save()
+    canvas.rotate(bearing, center, center)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+    val path = Path().apply {
+        val tipY = center - 14.5f * density
+        val baseY = center - 10.5f * density
+        val halfW = 3.5f * density
+        moveTo(center, tipY)
+        lineTo(center + halfW, baseY)
+        lineTo(center - halfW, baseY)
+        close()
+    }
+    canvas.drawPath(path, paint)
+    canvas.restore()
+}
+
+private class TransitVehicleInfoWindow(
+    mapView: MapView,
+    private val isDarkTheme: Boolean
+) : InfoWindow(createLayout(mapView.context, isDarkTheme), mapView) {
+
+    private val badgeView: TextView = mView.findViewWithTag("badge")
+    private val titleView: TextView = mView.findViewWithTag("title")
+    private val subtitleView: TextView = mView.findViewWithTag("subtitle")
+
+    init {
+        mView.setOnClickListener {
+            close()
         }
-        val path = Path()
-        val tipDistance = 15.0f * density
-        val baseDistance = 11.5f * density
-        val halfAngle = 20.0
-        val bearingRad = Math.toRadians(bearing.toDouble())
-        val tipX = center + (tipDistance * Math.sin(bearingRad)).toFloat()
-        val tipY = center - (tipDistance * Math.cos(bearingRad)).toFloat()
-        val baseAngleLeft = bearingRad - Math.toRadians(halfAngle)
-        val leftX = center + (baseDistance * Math.sin(baseAngleLeft)).toFloat()
-        val leftY = center - (baseDistance * Math.cos(baseAngleLeft)).toFloat()
-        val baseAngleRight = bearingRad + Math.toRadians(halfAngle)
-        val rightX = center + (baseDistance * Math.sin(baseAngleRight)).toFloat()
-        val rightY = center - (baseDistance * Math.cos(baseAngleRight)).toFloat()
-
-        path.moveTo(tipX, tipY)
-        path.lineTo(leftX, leftY)
-        path.lineTo(rightX, rightY)
-        path.close()
-        canvas.drawPath(path, chevronPaint)
     }
 
-    return BitmapDrawable(context.resources, bitmap)
+    override fun onOpen(item: Any?) {
+        val marker = item as? Marker ?: return
+        val v = marker.relatedObject as? LiveVehicleMarker
+        if (v != null) {
+            badgeView.text = v.lineNumber
+            titleView.text = "Linha ${v.lineNumber}"
+            val speedText = if (v.speedKmh > 1f) " • ${v.speedKmh.toInt()} km/h" else ""
+            subtitleView.text = "Em aproximação$speedText"
+        } else {
+            badgeView.text = "Ônibus"
+            titleView.text = marker.title ?: "Em viagem"
+            subtitleView.text = "Em aproximação"
+        }
+    }
+
+    override fun onClose() {
+        // Nada a limpar
+    }
+
+    companion object {
+        private fun createLayout(context: Context, isDark: Boolean): View {
+            val density = context.resources.displayMetrics.density
+
+            val root = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val padH = (12 * density).toInt()
+                val padV = (8 * density).toInt()
+                setPadding(padH, padV, padH, padV)
+
+                val bg = GradientDrawable().apply {
+                    cornerRadius = 16 * density
+                    setColor(if (isDark) android.graphics.Color.parseColor("#1C1C1E") else android.graphics.Color.WHITE)
+                    setStroke(
+                        (1.2f * density).toInt(),
+                        if (isDark) android.graphics.Color.parseColor("#38383A") else android.graphics.Color.parseColor("#E5E5EA")
+                    )
+                }
+                background = bg
+                elevation = 6 * density
+            }
+
+            val badge = TextView(context).apply {
+                tag = "badge"
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 13f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                val bPadH = (8 * density).toInt()
+                val bPadV = (4 * density).toInt()
+                setPadding(bPadH, bPadV, bPadH, bPadV)
+
+                val badgeBg = GradientDrawable().apply {
+                    cornerRadius = 8 * density
+                    setColor(android.graphics.Color.parseColor("#00C853"))
+                }
+                background = badgeBg
+            }
+            root.addView(badge)
+
+            val textCol = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                val ml = (10 * density).toInt()
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    leftMargin = ml
+                }
+                layoutParams = params
+            }
+
+            val title = TextView(context).apply {
+                tag = "title"
+                textSize = 13f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#1C1C1E"))
+            }
+            textCol.addView(title)
+
+            val subtitle = TextView(context).apply {
+                tag = "subtitle"
+                textSize = 11f
+                setTextColor(if (isDark) android.graphics.Color.parseColor("#A0A0A5") else android.graphics.Color.parseColor("#6C6C70"))
+            }
+            textCol.addView(subtitle)
+
+            root.addView(textCol)
+            return root
+        }
+    }
 }
 
 private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
