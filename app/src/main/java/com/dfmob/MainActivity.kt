@@ -46,21 +46,41 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_NAVIGATE_TO = "EXTRA_NAVIGATE_TO"
+        const val EXTRA_STOP_ID = "EXTRA_STOP_ID"
+        const val EXTRA_LINE_NUMBER = "EXTRA_LINE_NUMBER"
+        const val EXTRA_DESTINATION = "EXTRA_DESTINATION"
     }
 
     private var pendingScreen by mutableStateOf<AppScreen?>(null)
+    private var pendingStopId by mutableStateOf<Int?>(null)
+    private var pendingLineNumber by mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getStringExtra(EXTRA_NAVIGATE_TO) == "ALERTS") {
-            pendingScreen = AppScreen.ALERTS
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        when (intent.getStringExtra(EXTRA_NAVIGATE_TO)) {
+            "ALERTS" -> {
+                pendingScreen = AppScreen.ALERTS
+            }
+            "STOPS" -> {
+                val sId = intent.getIntExtra(EXTRA_STOP_ID, -1)
+                if (sId > 0) {
+                    pendingStopId = sId
+                    pendingLineNumber = intent.getStringExtra(EXTRA_LINE_NUMBER)
+                    pendingScreen = AppScreen.STOPS
+                }
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIntent(intent)
 
         // Solicita permissao de notificacoes no Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -75,7 +95,7 @@ class MainActivity : ComponentActivity() {
         // Configuracao global de download de tiles com persistencia vitalicia no osmdroid
         Configuration.getInstance().apply {
             load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
-            userAgentValue = "DFmob/1.4.7 (Android)"
+            userAgentValue = "DFmob/1.4.10 (Android)"
             tileDownloadThreads = 8.toShort()
             tileDownloadMaxQueueSize = 60.toShort()
             cacheMapTileCount = 64.toShort()
@@ -101,9 +121,18 @@ class MainActivity : ComponentActivity() {
             DFmobTheme(darkTheme = isDarkTheme) {
                 val favoritesRepository = remember { FavoritesRepository(context) }
                 val recentSearchesRepository = remember { RecentSearchesRepository(context) }
-                val initialScreen = if (intent.getStringExtra(EXTRA_NAVIGATE_TO) == "ALERTS") AppScreen.ALERTS else AppScreen.HOME
+                val initialScreen = when (intent.getStringExtra(EXTRA_NAVIGATE_TO)) {
+                    "ALERTS" -> AppScreen.ALERTS
+                    "STOPS" -> AppScreen.STOPS
+                    else -> AppScreen.HOME
+                }
                 var currentScreen by rememberSaveable { mutableStateOf(initialScreen) }
-                var targetLineNumberForStops by rememberSaveable { mutableStateOf<String?>(null) }
+                var targetStopIdForStops by rememberSaveable {
+                    mutableStateOf(intent.getIntExtra(EXTRA_STOP_ID, -1).takeIf { it > 0 })
+                }
+                var targetLineNumberForStops by rememberSaveable {
+                    mutableStateOf<String?>(intent.getStringExtra(EXTRA_LINE_NUMBER))
+                }
                 var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
                 var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
                 var stopsOpenedFromLines by rememberSaveable { mutableStateOf(false) }
@@ -111,7 +140,15 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(pendingScreen) {
                     pendingScreen?.let {
                         currentScreen = it
+                        if (it == AppScreen.STOPS) {
+                            pendingStopId?.let { sId ->
+                                targetStopIdForStops = sId
+                                targetLineNumberForStops = pendingLineNumber
+                            }
+                        }
                         pendingScreen = null
+                        pendingStopId = null
+                        pendingLineNumber = null
                     }
                 }
 
@@ -173,11 +210,13 @@ class MainActivity : ComponentActivity() {
                             favoritesRepository = favoritesRepository,
                             initialLineNumber = targetLineNumberForStops,
                             initialLineId = targetLineIdForStops,
+                            initialStopId = targetStopIdForStops,
                             fromLinesScreen = stopsOpenedFromLines,
                             onBack = {
                                 val returnToLines = stopsOpenedFromLines
                                 targetLineNumberForStops = null
                                 targetLineIdForStops = null
+                                targetStopIdForStops = null
                                 stopsOpenedFromLines = false
                                 currentScreen = if (returnToLines) AppScreen.LINES else AppScreen.HOME
                             }

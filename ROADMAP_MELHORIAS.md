@@ -35,7 +35,7 @@ Documento local de acompanhamento das melhorias recomendadas para o DFmob. Cada 
   * Exibir no card da linha ícones compactos e sem texto indicando a categoria do ônibus a caminho: Padron, Articulado (BRT) ou Mini.
   * Exibir ícone discreto indicando se o veículo possui elevador/rampa de acessibilidade ativa.
 
-- [ ] **2.4 Botão de ativar aviso de aproximação**
+- [OK] **2.4 Botão de ativar aviso de aproximação**
   * Ícone de sino em cada card de linha no painel da parada.
   * Quando ativado, disparar notificações locais do Android quando o veículo estiver a 15, 10, 5 e 2 minutos de distância da parada, mesmo com o app fechado ou em segundo plano.
   * Linhas com aviso ativo sobem para o topo do painel da parada, ignorando a ordem padrão.

@@ -1,0 +1,175 @@
+package com.dfmob.data.repository
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import com.dfmob.data.model.StopArrivalAlarm
+import com.dfmob.receiver.StopArrivalAlarmReceiver
+import org.json.JSONObject
+
+class StopAlarmsRepository(private val context: Context) {
+
+    private val prefs = context.getSharedPreferences("dfmob_stop_alarms_prefs", Context.MODE_PRIVATE)
+
+    fun isAlarmActive(stopId: Int, lineNumber: String, destination: String): Boolean {
+        val key = "${stopId}_${lineNumber}_${destination}"
+        val json = prefs.getString(key, null) ?: return false
+        return try {
+            val obj = JSONObject(json)
+            !obj.optBoolean("isAutoCancelled", false)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun getAlarm(stopId: Int, lineNumber: String, destination: String): StopArrivalAlarm? {
+        val key = "${stopId}_${lineNumber}_${destination}"
+        val json = prefs.getString(key, null) ?: return null
+        return try {
+            val obj = JSONObject(json)
+            StopArrivalAlarm(
+                lineNumber = obj.getString("lineNumber"),
+                destination = obj.getString("destination"),
+                stopId = obj.getInt("stopId"),
+                stopName = obj.getString("stopName"),
+                targetEpochMs = obj.getLong("targetEpochMs"),
+                notified15Min = obj.optBoolean("notified15Min", false),
+                notified10Min = obj.optBoolean("notified10Min", false),
+                notified5Min = obj.optBoolean("notified5Min", false),
+                notified2Min = obj.optBoolean("notified2Min", false),
+                isAutoCancelled = obj.optBoolean("isAutoCancelled", false)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun setAlarm(alarm: StopArrivalAlarm) {
+        val obj = JSONObject().apply {
+            put("lineNumber", alarm.lineNumber)
+            put("destination", alarm.destination)
+            put("stopId", alarm.stopId)
+            put("stopName", alarm.stopName)
+            put("targetEpochMs", alarm.targetEpochMs)
+            put("notified15Min", alarm.notified15Min)
+            put("notified10Min", alarm.notified10Min)
+            put("notified5Min", alarm.notified5Min)
+            put("notified2Min", alarm.notified2Min)
+            put("isAutoCancelled", alarm.isAutoCancelled)
+        }
+        prefs.edit().putString(alarm.key, obj.toString()).apply()
+
+        // Agenda alarmes no AlarmManager para os marcos futuros (15, 10, 5, 2 min)
+        scheduleSystemAlarms(alarm)
+    }
+
+    fun removeAlarm(stopId: Int, lineNumber: String, destination: String) {
+        val key = "${stopId}_${lineNumber}_${destination}"
+        prefs.edit().remove(key).apply()
+        cancelSystemAlarms(stopId, lineNumber, destination)
+    }
+
+    fun markMilestoneNotified(stopId: Int, lineNumber: String, destination: String, milestoneMin: Int) {
+        val alarm = getAlarm(stopId, lineNumber, destination) ?: return
+        val updated = when (milestoneMin) {
+            15 -> alarm.copy(notified15Min = true)
+            10 -> alarm.copy(notified10Min = true)
+            5 -> alarm.copy(notified5Min = true)
+            2 -> alarm.copy(notified2Min = true)
+            else -> alarm
+        }
+        setAlarm(updated)
+    }
+
+    private fun scheduleSystemAlarms(alarm: StopArrivalAlarm) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val now = System.currentTimeMillis()
+        val milestones = listOf(15, 10, 5, 2)
+
+        for (m in milestones) {
+            val triggerTime = alarm.targetEpochMs - m * 60_000L
+            val alreadyNotified = when (m) {
+                15 -> alarm.notified15Min
+                10 -> alarm.notified10Min
+                5 -> alarm.notified5Min
+                2 -> alarm.notified2Min
+                else -> false
+            }
+            if (!alreadyNotified && triggerTime > now + 2000L) {
+                val intent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
+                    action = "com.dfmob.ACTION_STOP_ALARM_MILESTONE"
+                    putExtra("stopId", alarm.stopId)
+                    putExtra("stopName", alarm.stopName)
+                    putExtra("lineNumber", alarm.lineNumber)
+                    putExtra("destination", alarm.destination)
+                    putExtra("milestoneMinutes", m)
+                    putExtra("targetEpochMs", alarm.targetEpochMs)
+                }
+                val requestCode = (alarm.key.hashCode() * 31) + m
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    requestCode,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                    } else {
+                        alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                    }
+                } catch (_: SecurityException) {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                }
+            }
+        }
+
+        // Agendamento de auto-cancelamento (1 minuto apos o targetEpochMs)
+        val expireTime = alarm.targetEpochMs + 60_000L
+        if (expireTime > now) {
+            val expireIntent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
+                action = "com.dfmob.ACTION_STOP_ALARM_EXPIRE"
+                putExtra("stopId", alarm.stopId)
+                putExtra("lineNumber", alarm.lineNumber)
+                putExtra("destination", alarm.destination)
+            }
+            val expireCode = (alarm.key.hashCode() * 31) + 999
+            val expirePendingIntent = PendingIntent.getBroadcast(
+                context,
+                expireCode,
+                expireIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expireTime, expirePendingIntent)
+                } else {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, expireTime, expirePendingIntent)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun cancelSystemAlarms(stopId: Int, lineNumber: String, destination: String) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val key = "${stopId}_${lineNumber}_${destination}"
+        val milestones = listOf(15, 10, 5, 2, 999)
+        for (m in milestones) {
+            val requestCode = (key.hashCode() * 31) + m
+            val intent = Intent(context, StopArrivalAlarmReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+            }
+        }
+    }
+}

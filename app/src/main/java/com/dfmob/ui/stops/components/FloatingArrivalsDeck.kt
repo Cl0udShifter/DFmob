@@ -38,6 +38,8 @@ import androidx.compose.material.icons.rounded.AirportShuttle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
@@ -70,8 +72,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
+import com.dfmob.data.model.StopArrivalAlarm
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.model.VehicleType
+import com.dfmob.data.repository.StopAlarmsRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
 
@@ -95,6 +99,8 @@ fun FloatingArrivalsDeck(
 
     val context = LocalContext.current
     val stopsRepo = remember { StopsRepository(context) }
+    val stopAlarmsRepo = remember { StopAlarmsRepository(context) }
+    var alarmsRevision by remember { mutableStateOf(0) }
     var selectedScheduleArrival by remember { mutableStateOf<StopArrival?>(null) }
     var dailySchedule by remember { mutableStateOf<List<NextDeparture>>(emptyList()) }
     var isLoadingSchedule by remember { mutableStateOf(false) }
@@ -128,6 +134,23 @@ fun FloatingArrivalsDeck(
         while (isActive) {
             delay(1000L)
             currentClockMs = System.currentTimeMillis()
+        }
+    }
+
+    // Auto-cancelamento: desativa o aviso automaticamente após o ônibus passar do "Já"
+    LaunchedEffect(currentClockMs) {
+        var changed = false
+        for (arr in arrivals) {
+            if (stopAlarmsRepo.isAlarmActive(stop.stopId, arr.lineNumber, arr.destination)) {
+                val effectiveMins = arr.getEffectiveMinutes(currentClockMs)
+                if (effectiveMins <= 0 && (currentClockMs - arr.targetEpochMs) > 60_000L) {
+                    stopAlarmsRepo.removeAlarm(stop.stopId, arr.lineNumber, arr.destination)
+                    changed = true
+                }
+            }
+        }
+        if (changed) {
+            alarmsRevision++
         }
     }
 
@@ -361,6 +384,16 @@ fun FloatingArrivalsDeck(
                 }
             }
 
+            val sortedArrivals = remember(filteredArrivals, alarmsRevision, currentClockMs) {
+                filteredArrivals.sortedWith(
+                    compareByDescending<StopArrival> {
+                        stopAlarmsRepo.isAlarmActive(stop.stopId, it.lineNumber, it.destination)
+                    }.thenBy {
+                        it.getEffectiveMinutes(currentClockMs)
+                    }
+                )
+            }
+
             // Barra de pesquisa minimalista e rapida sem caixa envolvente cinza
             Row(
                 modifier = Modifier
@@ -458,15 +491,34 @@ fun FloatingArrivalsDeck(
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
                     itemsIndexed(
-                        items = filteredArrivals,
+                        items = sortedArrivals,
                         key = { index, it -> "${it.lineNumber}_${it.destination}_${it.minutesAway}_${it.scheduledTimeFormatted}_$index" }
                     ) { _, arrival ->
+                        val isAlarmActive = stopAlarmsRepo.isAlarmActive(stop.stopId, arrival.lineNumber, arrival.destination)
                         StopArrivalLineCard(
                             arrival = arrival,
                             currentClockMs = currentClockMs,
                             isDarkTheme = isDarkTheme,
+                            isAlarmActive = isAlarmActive,
                             onClick = { onLineClick(arrival) },
-                            onScheduleClick = { selectedScheduleArrival = arrival }
+                            onScheduleClick = { selectedScheduleArrival = arrival },
+                            onToggleAlarm = {
+                                if (isAlarmActive) {
+                                    stopAlarmsRepo.removeAlarm(stop.stopId, arrival.lineNumber, arrival.destination)
+                                } else {
+                                    val targetEpoch = if (arrival.targetEpochMs > 0L) arrival.targetEpochMs else (System.currentTimeMillis() + arrival.minutesAway * 60_000L)
+                                    stopAlarmsRepo.setAlarm(
+                                        StopArrivalAlarm(
+                                            lineNumber = arrival.lineNumber,
+                                            destination = arrival.destination,
+                                            stopId = stop.stopId,
+                                            stopName = stop.stopName,
+                                            targetEpochMs = targetEpoch
+                                        )
+                                    )
+                                }
+                                alarmsRevision++
+                            }
                         )
                     }
                 }
@@ -481,8 +533,10 @@ fun StopArrivalLineCard(
     arrival: StopArrival,
     currentClockMs: Long,
     isDarkTheme: Boolean,
+    isAlarmActive: Boolean = false,
     onClick: () -> Unit = {},
     onScheduleClick: () -> Unit = {},
+    onToggleAlarm: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(14.dp)
@@ -707,19 +761,40 @@ fun StopArrivalLineCard(
                     Spacer(modifier = Modifier.weight(1f))
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onScheduleClick),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Schedule,
-                        contentDescription = "Ver todas as saídas do dia",
-                        tint = if (isDarkTheme) Color(0xFF8E92A0) else Color(0xFF6B7280),
-                        modifier = Modifier.size(15.dp)
-                    )
+                    val alarmTint = if (isAlarmActive) liveGreen else (if (isDarkTheme) Color(0xFF8E92A0) else Color(0xFF6B7280))
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onToggleAlarm),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isAlarmActive) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsNone,
+                            contentDescription = if (isAlarmActive) "Desativar aviso de aproximação" else "Ativar aviso de aproximação",
+                            tint = alarmTint,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onScheduleClick),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Schedule,
+                            contentDescription = "Ver todas as saídas do dia",
+                            tint = if (isDarkTheme) Color(0xFF8E92A0) else Color(0xFF6B7280),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
             }
         }

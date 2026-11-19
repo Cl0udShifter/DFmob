@@ -96,6 +96,7 @@ fun StopsScreen(
     favoritesRepository: FavoritesRepository? = null,
     initialLineNumber: String? = null,
     initialLineId: Int? = null,
+    initialStopId: Int? = null,
     fromLinesScreen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -183,6 +184,17 @@ fun StopsScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(initialStopId, allStops) {
+        if (initialStopId != null && initialStopId > 0 && allStops.isNotEmpty()) {
+            val stop = allStops.firstOrNull { it.stopId == initialStopId }
+            if (stop != null) {
+                selectedStop = stop
+                arrivals = repository.getStaticArrivalsForStop(stop)
+                focusLocation = DFLocation(stop.stopName, "", stop.latE6, stop.lonE6)
+            }
         }
     }
 
