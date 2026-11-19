@@ -12,6 +12,7 @@ import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripPreference
 import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.repository.StopsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -300,6 +301,24 @@ class TripPlannerViewModel(
         triggerTripSearchIfReady()
     }
 
+    fun setTimeModeAndCustomTime(mode: TripTimeMode, hourOfDay: Int, minute: Int) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = _uiState.value.targetTimeUtc
+        cal.set(Calendar.HOUR_OF_DAY, hourOfDay)
+        cal.set(Calendar.MINUTE, minute)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+
+        val newTime = cal.timeInMillis
+        _uiState.update {
+            it.copy(
+                timeMode = mode,
+                targetTimeUtc = newTime
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
     fun setCustomTime(hourOfDay: Int, minute: Int) {
         val cal = Calendar.getInstance()
         cal.timeInMillis = _uiState.value.targetTimeUtc
@@ -342,13 +361,16 @@ class TripPlannerViewModel(
         _uiState.update { it.copy(selectedItinerary = itinerary) }
     }
 
-    fun searchTrips() {
+    fun searchTrips(debounceMs: Long = 0L) {
         val origin = _uiState.value.origin ?: return
         val destination = _uiState.value.destination ?: return
 
         liveDeparturesJob?.cancel()
         tripSearchJob?.cancel()
         tripSearchJob = viewModelScope.launch {
+            if (debounceMs > 0) {
+                delay(debounceMs)
+            }
             _uiState.update {
                 it.copy(
                     isSearchingTrips = true,
@@ -374,6 +396,9 @@ class TripPlannerViewModel(
                 if (results.isNotEmpty()) {
                     startLiveDeparturesTicker()
                 }
+            } catch (e: CancellationException) {
+                // Cancelamento normal de corrotina (mudanca de horario ou novo filtro)
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -402,9 +427,9 @@ class TripPlannerViewModel(
         }
     }
 
-    private fun triggerTripSearchIfReady() {
+    private fun triggerTripSearchIfReady(debounceMs: Long = 300L) {
         if (_uiState.value.origin != null && _uiState.value.destination != null) {
-            searchTrips()
+            searchTrips(debounceMs)
         }
     }
 

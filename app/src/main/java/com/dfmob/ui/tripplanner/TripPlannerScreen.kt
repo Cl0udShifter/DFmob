@@ -292,8 +292,7 @@ fun TripPlannerScreen(
                         TimePickerDialog(
                             context,
                             { _, hour, minute ->
-                                viewModel.setTimeMode(mode)
-                                viewModel.setCustomTime(hour, minute)
+                                viewModel.setTimeModeAndCustomTime(mode, hour, minute)
                             },
                             cal.get(Calendar.HOUR_OF_DAY),
                             cal.get(Calendar.MINUTE),
