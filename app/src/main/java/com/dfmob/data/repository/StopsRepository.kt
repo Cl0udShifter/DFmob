@@ -868,6 +868,72 @@ class StopsRepository(private val context: Context) {
         return String.format(Locale.ROOT, "%02d:%02d", hours, mins)
     }
 
+    suspend fun getDailyDeparturesForLineAtStop(
+        lineNumber: String,
+        stopId: Int
+    ): List<NextDeparture> = withContext(Dispatchers.IO) {
+        val detail = dbHelper.getLineDetailByNumber(lineNumber) ?: return@withContext emptyList()
+        val nowMs = System.currentTimeMillis()
+        val cal = Calendar.getInstance()
+        val currentSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
+        val todayStartMs = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        if (detail.isMetro) {
+            val list = mutableListOf<NextDeparture>()
+            var sec = currentSeconds + 240
+            val endSec = 23 * 3600 + 30 * 60
+            while (sec <= endSec && list.size < 60) {
+                val epoch = todayStartMs + sec * 1000L
+                val mins = maxOf(0, ((epoch - nowMs) + 30000L) / 60000L).toInt()
+                list.add(
+                    NextDeparture(
+                        timeFormatted = formatSecondsToHHMM(sec),
+                        minutesAway = mins,
+                        isRealtime = true,
+                        targetEpochMs = epoch
+                    )
+                )
+                sec += 360
+            }
+            return@withContext list
+        }
+
+        val lineIds = detail.directions.map { it.lineId }
+        val scheduledSeconds = mutableSetOf<Int>()
+        for (lid in lineIds) {
+            val deps = dbHelper.getNextScheduledDepartures(lid, stopId, currentSeconds, 80)
+            scheduledSeconds.addAll(deps)
+        }
+
+        val sortedSecs = scheduledSeconds.sorted()
+        if (sortedSecs.isEmpty()) return@withContext emptyList()
+
+        val liveVehicles = try {
+            telemetryService.getLiveVehiclePositions(lineNumber)
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        val hasLive = liveVehicles.isNotEmpty()
+
+        sortedSecs.mapIndexed { idx, depSec ->
+            val depEpoch = todayStartMs + depSec * 1000L
+            val depMins = maxOf(0, ((depEpoch - nowMs) + 30000L) / 60000L).toInt()
+            val isLive = hasLive && idx == 0 && depMins <= 35
+            NextDeparture(
+                timeFormatted = formatSecondsToHHMM(depSec),
+                minutesAway = depMins,
+                isRealtime = isLive,
+                targetEpochMs = depEpoch
+            )
+        }
+    }
+
     suspend fun getUpcomingDeparturesForStopAndLines(
         stopId: Int,
         lineIds: List<Int>,

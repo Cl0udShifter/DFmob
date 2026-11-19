@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
@@ -51,13 +54,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
 
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -78,9 +84,33 @@ fun FloatingArrivalsDeck(
     // Estado expandido (75% da tela sem margens de floating pill) vs colapsado (floating pill padrao)
     var isExpanded by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val stopsRepo = remember { StopsRepository(context) }
+    var selectedScheduleArrival by remember { mutableStateOf<StopArrival?>(null) }
+    var dailySchedule by remember { mutableStateOf<List<NextDeparture>>(emptyList()) }
+    var isLoadingSchedule by remember { mutableStateOf(false) }
+
     // Reseta para colapsado ao alternar a parada selecionada
     LaunchedEffect(stop.stopId) {
         isExpanded = false
+        selectedScheduleArrival = null
+    }
+
+    // Carrega todas as chegadas futuras do dia da linha ao abrir a tabela
+    LaunchedEffect(selectedScheduleArrival) {
+        val arrival = selectedScheduleArrival
+        if (arrival != null) {
+            isLoadingSchedule = true
+            dailySchedule = stopsRepo.getDailyDeparturesForLineAtStop(arrival.lineNumber, stop.stopId)
+            isLoadingSchedule = false
+        } else {
+            dailySchedule = emptyList()
+        }
+    }
+
+    // Intercepta o botao de voltar do Android para retornar à lista de linhas da parada
+    BackHandler(enabled = selectedScheduleArrival != null) {
+        selectedScheduleArrival = null
     }
 
     // Ticker a cada 1 segundo para atualizar minutos e texto 'Já' dinamicamente contra o relogio do sistema
@@ -95,7 +125,9 @@ fun FloatingArrivalsDeck(
     // Animacao ultra-responsiva (90ms com FastOutSlowInEasing) conforme solicitado
     val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
 
-    val targetHeight = if (isExpanded) {
+    val isDeckExpanded = isExpanded || selectedScheduleArrival != null
+
+    val targetHeight = if (isDeckExpanded) {
         if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp
     } else {
         320.dp
@@ -108,19 +140,19 @@ fun FloatingArrivalsDeck(
     )
 
     val animatedHorizontalPadding by animateDpAsState(
-        targetValue = if (isExpanded) 0.dp else 14.dp,
+        targetValue = if (isDeckExpanded) 0.dp else 14.dp,
         animationSpec = animSpec,
         label = "deckPaddingH"
     )
 
     val animatedBottomPadding by animateDpAsState(
-        targetValue = if (isExpanded) 0.dp else 12.dp,
+        targetValue = if (isDeckExpanded) 0.dp else 12.dp,
         animationSpec = animSpec,
         label = "deckPaddingB"
     )
 
     val animatedBottomRadius by animateDpAsState(
-        targetValue = if (isExpanded) 0.dp else 24.dp,
+        targetValue = if (isDeckExpanded) 0.dp else 24.dp,
         animationSpec = animSpec,
         label = "deckCornerBottom"
     )
@@ -150,7 +182,11 @@ fun FloatingArrivalsDeck(
                 if (dragOffsetY < -25f) {
                     isExpanded = true
                 } else if (dragOffsetY > 25f) {
-                    isExpanded = false
+                    if (selectedScheduleArrival != null) {
+                        selectedScheduleArrival = null
+                    } else {
+                        isExpanded = false
+                    }
                 }
                 dragOffsetY = 0f
             },
@@ -171,11 +207,11 @@ fun FloatingArrivalsDeck(
             )
             .clip(deckShape)
             .border(
-                width = if (isExpanded) 0.dp else 1.dp,
-                color = if (isExpanded) Color.Transparent else deckBorder,
+                width = if (isDeckExpanded) 0.dp else 1.dp,
+                color = if (isDeckExpanded) Color.Transparent else deckBorder,
                 shape = deckShape
             )
-            .then(if (!isExpanded) dragModifier else Modifier),
+            .then(if (!isDeckExpanded) dragModifier else Modifier),
         color = deckBackground,
         shape = deckShape,
         shadowElevation = if (isDarkTheme) 18.dp else 10.dp
@@ -187,7 +223,7 @@ fun FloatingArrivalsDeck(
                     start = 14.dp,
                     end = 14.dp,
                     top = 6.dp,
-                    bottom = if (isExpanded) 16.dp else 10.dp
+                    bottom = if (isDeckExpanded) 16.dp else 10.dp
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -195,7 +231,13 @@ fun FloatingArrivalsDeck(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded }
+                    .clickable {
+                        if (selectedScheduleArrival != null) {
+                            selectedScheduleArrival = null
+                        } else {
+                            isExpanded = !isExpanded
+                        }
+                    }
                     .then(dragModifier)
                     .padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center
@@ -209,7 +251,17 @@ fun FloatingArrivalsDeck(
                 )
             }
 
-            // Cabecalho da Parada (arrastavel para alternar expansao)
+            if (selectedScheduleArrival != null) {
+                LineDailyScheduleView(
+                    arrival = selectedScheduleArrival!!,
+                    dailySchedule = dailySchedule,
+                    isLoading = isLoadingSchedule,
+                    currentClockMs = currentClockMs,
+                    isDarkTheme = isDarkTheme,
+                    onBack = { selectedScheduleArrival = null }
+                )
+            } else {
+                // Cabecalho da Parada (arrastavel para alternar expansao)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -402,10 +454,12 @@ fun FloatingArrivalsDeck(
                             arrival = arrival,
                             currentClockMs = currentClockMs,
                             isDarkTheme = isDarkTheme,
-                            onClick = { onLineClick(arrival) }
+                            onClick = { onLineClick(arrival) },
+                            onScheduleClick = { selectedScheduleArrival = arrival }
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -417,6 +471,7 @@ fun StopArrivalLineCard(
     currentClockMs: Long,
     isDarkTheme: Boolean,
     onClick: () -> Unit = {},
+    onScheduleClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val cardShape = RoundedCornerShape(14.dp)
@@ -531,61 +586,283 @@ fun StopArrivalLineCard(
                 }
             }
 
-            // Proximos horarios da linha (com suporte a GPS ao vivo e "Já" nas partidas seguintes)
-            if (arrival.nextDepartures.isNotEmpty()) {
-                Row(
+            // Proximos horarios da linha e botao discreto para tabela de chegadas do dia
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (arrival.nextDepartures.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Text(
+                            text = "Seguintes:",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            ),
+                            color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
+                        )
+                        arrival.nextDepartures.take(3).forEach { dep ->
+                            val label = dep.displayLabel(currentClockMs)
+                            val chipBg = if (dep.isRealtime) {
+                                if (isDarkTheme) Color(0x2400C853) else Color(0x1F00883E)
+                            } else {
+                                if (isDarkTheme) Color(0xFF22242C) else Color(0xFFE5E7EB)
+                            }
+                            val textColor = if (dep.isRealtime) {
+                                liveGreen
+                            } else {
+                                if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(chipBg)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    if (dep.isRealtime) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Wifi,
+                                            contentDescription = "GPS ao vivo",
+                                            tint = liveGreen,
+                                            modifier = Modifier.size(9.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
+                                            fontSize = 10.sp
+                                        ),
+                                        color = textColor
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onScheduleClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Schedule,
+                        contentDescription = "Ver todas as saídas do dia",
+                        tint = if (isDarkTheme) Color(0xFF8E92A0) else Color(0xFF6B7280),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LineDailyScheduleView(
+    arrival: StopArrival,
+    dailySchedule: List<NextDeparture>,
+    isLoading: Boolean,
+    currentClockMs: Long,
+    isDarkTheme: Boolean,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+    val parsedColor = try {
+        Color(android.graphics.Color.parseColor(arrival.colorHex))
+    } catch (_: Exception) {
+        if (arrival.isMetro) Color(0xFF008037) else TransitGreen
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Cabecalho da visao de horarios do dia
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Voltar para paradas",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                val badgeShape = RoundedCornerShape(7.dp)
+                Surface(
+                    shape = badgeShape,
+                    color = parsedColor,
+                    modifier = Modifier.clip(badgeShape)
                 ) {
                     Text(
-                        text = "Seguintes:",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
+                        text = arrival.lineNumber,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp
                         ),
-                        color = if (isDarkTheme) Color(0xFF757885) else Color(0xFF6B7280)
+                        color = if (arrival.isMetro) Color.White else Color.Black,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
-                    arrival.nextDepartures.take(3).forEach { dep ->
-                        val label = dep.displayLabel(currentClockMs)
-                        val chipBg = if (dep.isRealtime) {
-                            if (isDarkTheme) Color(0x2400C853) else Color(0x1F00883E)
-                        } else {
-                            if (isDarkTheme) Color(0xFF22242C) else Color(0xFFE5E7EB)
-                        }
-                        val textColor = if (dep.isRealtime) {
-                            liveGreen
-                        } else {
-                            if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
-                        }
+                }
 
-                        Box(
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Chegadas do dia",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 15.sp,
+                            letterSpacing = (-0.3).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Sentido ${arrival.destination}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = liveGreen,
+                    strokeWidth = 2.5.dp,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        } else if (dailySchedule.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Nenhum horário restante encontrado para hoje",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            val itemBg = if (isDarkTheme) Color(0xFF16171C) else Color(0xFFF3F4F7)
+            val itemBorder = if (isDarkTheme) Color(0xFF262830) else Color(0xFFE2E4EB)
+            val shape = RoundedCornerShape(12.dp)
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(bottom = 6.dp)
+            ) {
+                itemsIndexed(
+                    items = dailySchedule,
+                    key = { index, dep -> "${dep.timeFormatted}_${dep.targetEpochMs}_$index" }
+                ) { _, dep ->
+                    val displayLabel = dep.displayLabel(currentClockMs)
+                    val isRealtime = dep.isRealtime
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shape)
+                            .border(1.dp, itemBorder, shape),
+                        color = itemBg,
+                        shape = shape
+                    ) {
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(chipBg)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                if (dep.isRealtime) {
+                                if (isRealtime) {
                                     Icon(
                                         imageVector = Icons.Rounded.Wifi,
                                         contentDescription = "GPS ao vivo",
                                         tint = liveGreen,
-                                        modifier = Modifier.size(9.dp)
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Schedule,
+                                        contentDescription = "Horário agendado",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                                 Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
-                                        fontSize = 10.sp
+                                    text = dep.timeFormatted,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
                                     ),
-                                    color = textColor
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = displayLabel,
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 14.sp
+                                    ),
+                                    color = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }

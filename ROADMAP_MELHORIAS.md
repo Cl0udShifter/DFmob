@@ -25,7 +25,7 @@ Documento local de acompanhamento das melhorias recomendadas para o DFmob. Cada 
   * Barra de pesquisa rápida e minimalista no topo do painel de chegadas (`FloatingArrivalsDeck`) para filtrar linhas instantaneamente em paradas com muitas opções (ex: EPNB, EPTG, W3, Rodoviária).
   * Exibição padrão, limpa e discreta em todas as paradas, sem caixa envolvente cinza.
 
-- [ ] **2.2 Tabela horária completa do dia na parada**
+- [OK] **2.2 Tabela horária completa do dia na parada**
   * Ícone discreto abaixo do horário principal de chegada, alinhado aos chips das próximas partidas ("Seguintes").
   * Ao tocar, expandir instantaneamente o painel para a altura de 75% da tela, listando todas as chegadas futuras do dia para aquela linha naquela parada específica.
   * Suporte a telemetria GPS ao vivo e atualização contínua com o passar do tempo.
