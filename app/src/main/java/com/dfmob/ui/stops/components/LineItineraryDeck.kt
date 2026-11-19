@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,7 +102,8 @@ fun LineItineraryDeck(
     val targetPadH = if (isExpanded) 0.dp else 14.dp
     val animatedPadH by animateDpAsState(targetValue = targetPadH, animationSpec = animSpec, label = "LineDeckPadH")
 
-    val targetPadBottom = if (isExpanded) 0.dp else 12.dp
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val targetPadBottom = if (isExpanded) 0.dp else 12.dp + navBarBottom
     val animatedPadBottom by animateDpAsState(targetValue = targetPadBottom, animationSpec = animSpec, label = "LineDeckPadB")
 
     val surfaceBg = if (isDarkTheme) Color(0xF514151B) else Color(0xF8FFFFFF)
@@ -163,7 +167,8 @@ fun LineItineraryDeck(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 10.dp, bottom = if (isExpanded) 10.dp + navBarBottom else 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 1. Barra superior para arrastar (Drag Handle)

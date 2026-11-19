@@ -31,7 +31,7 @@ Documento local de acompanhamento das melhorias recomendadas para o DFmob. Cada 
   * Suporte a telemetria GPS ao vivo e atualização contínua com o passar do tempo.
   * Retorno à visualização anterior da parada ao puxar o painel para baixo ou acionar o botão/gesto de voltar do Android.
 
-- [ ] **2.3 Tipo de veículo e acessibilidade**
+- [OK] **2.3 Tipo de veículo e acessibilidade**
   * Exibir no card da linha ícones compactos e sem texto indicando a categoria do ônibus a caminho: Padron, Articulado (BRT) ou Mini.
   * Exibir ícone discreto indicando se o veículo possui elevador/rampa de acessibilidade ativa.
 

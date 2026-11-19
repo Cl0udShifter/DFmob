@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Campaign
@@ -265,28 +266,23 @@ private fun AlertCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                 val categoryColor = when (alert.category.uppercase()) {
-                    "OBRAS" -> Color(0xFFE65100)
-                    "DESVIO" -> Color(0xFFD84315)
-                    "FERIADO" -> Color(0xFF1565C0)
-                    else -> Color(0xFF00883E)
+                    "OBRAS" -> if (isDark) Color(0xFFFF9800) else Color(0xFFC04000)
+                    "DESVIO" -> if (isDark) Color(0xFFFF5722) else Color(0xFFC62828)
+                    "FERIADO" -> if (isDark) Color(0xFF42A5F5) else Color(0xFF0D47A1)
+                    else -> if (isDark) Color(0xFF00E676) else Color(0xFF007530)
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(categoryColor.copy(alpha = 0.15f))
-                        .border(1.dp, categoryColor.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = alert.category.uppercase(),
-                        color = categoryColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
+                Text(
+                    text = alert.category.uppercase(),
+                    color = categoryColor,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 11.sp,
                         letterSpacing = 0.5.sp
                     )
-                }
+                )
 
                 Text(
                     text = alert.dateFormatted,

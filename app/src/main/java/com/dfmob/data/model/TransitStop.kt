@@ -19,12 +19,16 @@ data class NextDeparture(
     val isRealtime: Boolean,
     val targetEpochMs: Long = 0L
 ) {
-    fun displayLabel(currentNowMs: Long = System.currentTimeMillis()): String {
-        val diffMins = if (targetEpochMs > 0L) {
+    fun getEffectiveMinutes(currentNowMs: Long = System.currentTimeMillis()): Int {
+        return if (targetEpochMs > 0L) {
             maxOf(0, Math.round((targetEpochMs - currentNowMs) / 60000.0).toInt())
         } else {
             minutesAway
         }
+    }
+
+    fun displayLabel(currentNowMs: Long = System.currentTimeMillis()): String {
+        val diffMins = getEffectiveMinutes(currentNowMs)
 
         return if (isRealtime) {
             if (diffMins <= 0) "Já"
@@ -35,6 +39,13 @@ data class NextDeparture(
             else timeFormatted
         }
     }
+}
+
+enum class VehicleType {
+    MINI,
+    PADRON,
+    ARTICULADO,
+    METRO
 }
 
 data class StopArrival(
@@ -48,7 +59,9 @@ data class StopArrival(
     val isRealtime: Boolean,
     val scheduledTimeFormatted: String,
     val targetEpochMs: Long = 0L,
-    val nextDepartures: List<NextDeparture> = emptyList()
+    val nextDepartures: List<NextDeparture> = emptyList(),
+    val vehicleType: VehicleType = VehicleType.PADRON,
+    val hasAccessibility: Boolean = true
 ) {
     fun getEffectiveMinutes(currentNowMs: Long = System.currentTimeMillis()): Int {
         return if (targetEpochMs > 0L) {

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -275,7 +276,8 @@ fun StopsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = scaffoldBg
+        containerColor = scaffoldBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         BoxWithConstraints(
             modifier = Modifier
@@ -536,9 +538,7 @@ fun StopsScreen(
                 visible = activeRouteState != null || selectedStop != null,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
+                modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 val currentRoute = activeRouteState
                 if (currentRoute != null) {

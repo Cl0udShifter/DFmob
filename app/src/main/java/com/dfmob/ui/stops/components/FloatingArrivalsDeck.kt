@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,7 +33,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Accessible
+import androidx.compose.material.icons.rounded.AirportShuttle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.DirectionsSubway
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
@@ -63,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.model.VehicleType
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.theme.TransitGreen
 
@@ -101,7 +110,7 @@ fun FloatingArrivalsDeck(
         val arrival = selectedScheduleArrival
         if (arrival != null) {
             isLoadingSchedule = true
-            dailySchedule = stopsRepo.getDailyDeparturesForLineAtStop(arrival.lineNumber, stop.stopId)
+            dailySchedule = stopsRepo.getDailyDeparturesForLineAtStop(arrival, stop.stopId)
             isLoadingSchedule = false
         } else {
             dailySchedule = emptyList()
@@ -145,8 +154,10 @@ fun FloatingArrivalsDeck(
         label = "deckPaddingH"
     )
 
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     val animatedBottomPadding by animateDpAsState(
-        targetValue = if (isDeckExpanded) 0.dp else 12.dp,
+        targetValue = if (isDeckExpanded) 0.dp else 12.dp + navBarBottom,
         animationSpec = animSpec,
         label = "deckPaddingB"
     )
@@ -223,7 +234,7 @@ fun FloatingArrivalsDeck(
                     start = 14.dp,
                     end = 14.dp,
                     top = 6.dp,
-                    bottom = if (isDeckExpanded) 16.dp else 10.dp
+                    bottom = if (isDeckExpanded) 14.dp + navBarBottom else 10.dp
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -526,16 +537,57 @@ fun StopArrivalLineCard(
 
                 // Nome da Linha e Destino
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = arrival.lineName,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = arrival.lineName,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        val iconTint = if (isDarkTheme) Color(0xFF8E92A0) else Color(0xFF6B7280)
+                        when (arrival.vehicleType) {
+                            VehicleType.METRO -> Icon(
+                                imageVector = Icons.Rounded.DirectionsSubway,
+                                contentDescription = "Metrô",
+                                tint = iconTint,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            VehicleType.ARTICULADO -> ArticulatedBusIcon(
+                                tint = iconTint,
+                                modifier = Modifier.size(width = 16.dp, height = 11.dp)
+                            )
+                            VehicleType.MINI -> Icon(
+                                imageVector = Icons.Rounded.AirportShuttle,
+                                contentDescription = "Mini / Micro-ônibus",
+                                tint = iconTint,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            VehicleType.PADRON -> Icon(
+                                imageVector = Icons.Rounded.DirectionsBus,
+                                contentDescription = "Ônibus Padron",
+                                tint = iconTint,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+
+                        if (arrival.hasAccessibility) {
+                            Icon(
+                                imageVector = Icons.Rounded.Accessible,
+                                contentDescription = "Veículo acessível com elevador/rampa",
+                                tint = iconTint,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = "Sentido ${arrival.destination}",
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -793,13 +845,14 @@ fun LineDailyScheduleView(
             val itemBg = if (isDarkTheme) Color(0xFF16171C) else Color(0xFFF3F4F7)
             val itemBorder = if (isDarkTheme) Color(0xFF262830) else Color(0xFFE2E4EB)
             val shape = RoundedCornerShape(12.dp)
+            val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(bottom = 6.dp)
+                contentPadding = PaddingValues(bottom = 16.dp + navBarBottom)
             ) {
                 itemsIndexed(
                     items = dailySchedule,
@@ -852,23 +905,88 @@ fun LineDailyScheduleView(
                                 )
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = displayLabel,
-                                    style = MaterialTheme.typography.titleSmall.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 14.sp
-                                    ),
-                                    color = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            if (isRealtime) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isDarkTheme) Color(0x2400C853) else Color(0x1F00883E))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Wifi,
+                                        contentDescription = "GPS ao vivo",
+                                        tint = liveGreen,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = displayLabel,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        ),
+                                        color = liveGreen
+                                    )
+                                }
+                            } else {
+                                val effectiveMins = dep.getEffectiveMinutes(currentClockMs)
+                                if (effectiveMins in 0..45) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isDarkTheme) Color(0xFF22242C) else Color(0xFFE5E7EB))
+                                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = displayLabel,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.sp
+                                            ),
+                                            color = if (isDarkTheme) Color(0xFFC0C2CC) else Color(0xFF374151)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ArticulatedBusIcon(
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val frontW = w * 0.44f
+        val busH = h * 0.75f
+        val topY = h * 0.12f
+        drawRoundRect(
+            color = tint,
+            topLeft = androidx.compose.ui.geometry.Offset(0f, topY),
+            size = androidx.compose.ui.geometry.Size(frontW, busH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx(), 2.dp.toPx())
+        )
+        val bellowW = w * 0.12f
+        drawRect(
+            color = tint.copy(alpha = 0.5f),
+            topLeft = androidx.compose.ui.geometry.Offset(frontW, topY + busH * 0.15f),
+            size = androidx.compose.ui.geometry.Size(bellowW, busH * 0.7f)
+        )
+        val rearX = frontW + bellowW
+        val rearW = w - rearX
+        drawRoundRect(
+            color = tint,
+            topLeft = androidx.compose.ui.geometry.Offset(rearX, topY),
+            size = androidx.compose.ui.geometry.Size(rearW, busH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx(), 2.dp.toPx())
+        )
     }
 }

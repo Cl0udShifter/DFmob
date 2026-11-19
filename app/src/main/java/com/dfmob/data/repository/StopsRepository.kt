@@ -12,6 +12,7 @@ import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.model.VehicleType
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.data.telemetry.SemobTelemetryService
 import kotlinx.coroutines.Dispatchers
@@ -150,6 +151,19 @@ class StopsRepository(private val context: Context) {
         results.distinctBy { "${it.latE6 / 1000}_${it.lonE6 / 1000}" }.take(8)
     }
 
+    private fun resolveVehicleType(lineNumber: String, lineName: String, isMetro: Boolean): VehicleType {
+        if (isMetro) return VehicleType.METRO
+        val cleanNum = lineNumber.trim()
+        val cleanName = lineName.uppercase()
+        if (cleanName.contains("BRT") || cleanName.contains("EXPRESSA") || cleanNum.startsWith("22") || cleanNum.startsWith("23") || cleanNum in listOf("0.220", "0.221", "0.224", "0.225", "0.230", "0.231", "0.233", "0.234")) {
+            return VehicleType.ARTICULADO
+        }
+        if (cleanName.contains("CIRCULAR") || cleanName.contains("MICRO") || cleanName.contains("MINI") || cleanNum.startsWith("0.0") || (cleanNum.startsWith("0.1") && cleanNum.length > 5)) {
+            return VehicleType.MINI
+        }
+        return VehicleType.PADRON
+    }
+
     /**
      * Carregamento IMEDIATO das chegadas programadas a partir do SQLite local (Padrao Moovit / Transit).
      * Executa em < 1ms sem tocar na rede, permitindo que a tela de paradas abra instantaneamente.
@@ -252,7 +266,9 @@ class StopsRepository(private val context: Context) {
                 isRealtime = isLive,
                 scheduledTimeFormatted = scheduledFormatted,
                 targetEpochMs = mainTargetEpochMs,
-                nextDepartures = nextDeparturesList
+                nextDepartures = nextDeparturesList,
+                vehicleType = resolveVehicleType(line.lineNumber, line.lineName, isMetro),
+                hasAccessibility = true
             )
         }
 
@@ -331,7 +347,9 @@ class StopsRepository(private val context: Context) {
                         isRealtime = hasLive,
                         scheduledTimeFormatted = formattedFirst,
                         targetEpochMs = targetEtd,
-                        nextDepartures = subsequentDepartures
+                        nextDepartures = subsequentDepartures,
+                        vehicleType = resolveVehicleType(lineInfo.lineNumber, lineInfo.lineName, lineInfo.isMetro),
+                        hasAccessibility = true
                     )
                 )
             }
@@ -784,7 +802,9 @@ class StopsRepository(private val context: Context) {
                         isRealtime = first.rtEtdUTC != null,
                         scheduledTimeFormatted = formatEpochMsToHHMM(targetEtd, tz),
                         targetEpochMs = targetEtd,
-                        nextDepartures = subsequent
+                        nextDepartures = subsequent,
+                        vehicleType = resolveVehicleType(lineInfo.lineNumber, lineInfo.lineName, lineInfo.isMetro),
+                        hasAccessibility = true
                     )
                 }
             }
@@ -869,9 +889,10 @@ class StopsRepository(private val context: Context) {
     }
 
     suspend fun getDailyDeparturesForLineAtStop(
-        lineNumber: String,
+        arrival: StopArrival,
         stopId: Int
     ): List<NextDeparture> = withContext(Dispatchers.IO) {
+        val lineNumber = arrival.lineNumber
         val detail = dbHelper.getLineDetailByNumber(lineNumber) ?: return@withContext emptyList()
         val nowMs = System.currentTimeMillis()
         val cal = Calendar.getInstance()
@@ -903,35 +924,58 @@ class StopsRepository(private val context: Context) {
             return@withContext list
         }
 
-        val lineIds = detail.directions.map { it.lineId }
-        val scheduledSeconds = mutableSetOf<Int>()
-        for (lid in lineIds) {
-            val deps = dbHelper.getNextScheduledDepartures(lid, stopId, currentSeconds, 80)
-            scheduledSeconds.addAll(deps)
-        }
+        // 1. Identifica a linha e direcao EXATA que passa nesta parada para este card (evita misturar ida e volta)
+        val linesPassing = dbHelper.getLinesPassingAtStop(stopId)
+        val matchedLine = linesPassing.firstOrNull {
+            it.lineNumber == lineNumber && (arrival.destination.isBlank() || it.destinationName == arrival.destination)
+        } ?: linesPassing.firstOrNull { it.lineNumber == lineNumber }
 
-        val sortedSecs = scheduledSeconds.sorted()
-        if (sortedSecs.isEmpty()) return@withContext emptyList()
+        val targetLineId = matchedLine?.lineId ?: detail.directions.firstOrNull()?.lineId ?: return@withContext emptyList()
 
-        val liveVehicles = try {
-            telemetryService.getLiveVehiclePositions(lineNumber)
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val resultList = mutableListOf<NextDeparture>()
+        val seenTimes = mutableSetOf<String>()
 
-        val hasLive = liveVehicles.isNotEmpty()
-
-        sortedSecs.mapIndexed { idx, depSec ->
-            val depEpoch = todayStartMs + depSec * 1000L
-            val depMins = maxOf(0, ((depEpoch - nowMs) + 30000L) / 60000L).toInt()
-            val isLive = hasLive && idx == 0 && depMins <= 35
-            NextDeparture(
-                timeFormatted = formatSecondsToHHMM(depSec),
-                minutesAway = depMins,
-                isRealtime = isLive,
-                targetEpochMs = depEpoch
+        // 2. Garante paridade total: os horarios ja exibidos no card (chegada principal e 'Seguintes') aparecem no topo
+        if (arrival.scheduledTimeFormatted.isNotBlank() && arrival.getEffectiveMinutes(nowMs) >= 0) {
+            seenTimes.add(arrival.scheduledTimeFormatted)
+            resultList.add(
+                NextDeparture(
+                    timeFormatted = arrival.scheduledTimeFormatted,
+                    minutesAway = arrival.getEffectiveMinutes(nowMs),
+                    isRealtime = arrival.isRealtime,
+                    targetEpochMs = arrival.targetEpochMs
+                )
             )
         }
+
+        for (nextDep in arrival.nextDepartures) {
+            if (seenTimes.add(nextDep.timeFormatted)) {
+                resultList.add(nextDep)
+            }
+        }
+
+        // 3. Busca partidas programadas restantes do dia especificamente para a linha e sentido correspondente
+        val startSec = maxOf(0, currentSeconds - 180)
+        val scheduledSecs = dbHelper.getNextScheduledDepartures(targetLineId, stopId, startSec, 80)
+
+        for (depSec in scheduledSecs) {
+            val depFormatted = formatSecondsToHHMM(depSec)
+            if (seenTimes.add(depFormatted)) {
+                val depEpoch = todayStartMs + depSec * 1000L
+                val depMins = maxOf(0, ((depEpoch - nowMs) + 30000L) / 60000L).toInt()
+                resultList.add(
+                    NextDeparture(
+                        timeFormatted = depFormatted,
+                        minutesAway = depMins,
+                        isRealtime = false,
+                        targetEpochMs = depEpoch
+                    )
+                )
+            }
+        }
+
+        resultList.sortBy { it.targetEpochMs }
+        resultList
     }
 
     suspend fun getUpcomingDeparturesForStopAndLines(
