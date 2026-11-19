@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var pendingScreen by mutableStateOf<AppScreen?>(null)
     private var pendingStopId by mutableStateOf<Int?>(null)
     private var pendingLineNumber by mutableStateOf<String?>(null)
+    private var pendingDestination by mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 if (sId > 0) {
                     pendingStopId = sId
                     pendingLineNumber = intent.getStringExtra(EXTRA_LINE_NUMBER)
+                    pendingDestination = intent.getStringExtra(EXTRA_DESTINATION)
                     pendingScreen = AppScreen.STOPS
                 }
             }
@@ -141,6 +143,9 @@ class MainActivity : ComponentActivity() {
                 var targetLineNumberForStops by rememberSaveable {
                     mutableStateOf<String?>(intent.getStringExtra(EXTRA_LINE_NUMBER))
                 }
+                var targetDestinationForStops by rememberSaveable {
+                    mutableStateOf<String?>(intent.getStringExtra(EXTRA_DESTINATION))
+                }
                 var targetLineIdForStops by rememberSaveable { mutableStateOf<Int?>(null) }
                 var targetDestinationForTripPlanner by remember { mutableStateOf<DFLocation?>(null) }
                 var targetOriginLocationForTripPlanner by remember { mutableStateOf<com.dfmob.data.model.TripPlanLocation?>(null) }
@@ -154,11 +159,13 @@ class MainActivity : ComponentActivity() {
                             pendingStopId?.let { sId ->
                                 targetStopIdForStops = sId
                                 targetLineNumberForStops = pendingLineNumber
+                                targetDestinationForStops = pendingDestination
                             }
                         }
                         pendingScreen = null
                         pendingStopId = null
                         pendingLineNumber = null
+                        pendingDestination = null
                     }
                 }
 
@@ -231,12 +238,14 @@ class MainActivity : ComponentActivity() {
                             initialLineNumber = targetLineNumberForStops,
                             initialLineId = targetLineIdForStops,
                             initialStopId = targetStopIdForStops,
+                            initialDestination = targetDestinationForStops,
                             fromLinesScreen = stopsOpenedFromLines,
                             onBack = {
                                 val returnToLines = stopsOpenedFromLines
                                 targetLineNumberForStops = null
                                 targetLineIdForStops = null
                                 targetStopIdForStops = null
+                                targetDestinationForStops = null
                                 stopsOpenedFromLines = false
                                 currentScreen = if (returnToLines) AppScreen.LINES else AppScreen.HOME
                             }

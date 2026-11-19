@@ -376,6 +376,18 @@ class StopsRepository(private val context: Context) {
         }
     }
 
+    fun resolveLineIdForStop(stopId: Int, lineNumber: String, destination: String?): Int? {
+        val linesPassing = dbHelper.getLinesPassingAtStop(stopId)
+        val cleanLine = lineNumber.trim()
+        val match = linesPassing.firstOrNull { line ->
+            line.lineNumber.trim().equals(cleanLine, ignoreCase = true) &&
+            (!destination.isNullOrBlank() && (line.destinationName.contains(destination, ignoreCase = true) || destination.contains(line.destinationName, ignoreCase = true)))
+        } ?: linesPassing.firstOrNull { line ->
+            line.lineNumber.trim().equals(cleanLine, ignoreCase = true)
+        }
+        return match?.lineId
+    }
+
     fun getLineRouteStateFast(
         lineNumber: String,
         preferredLineId: Int? = null,

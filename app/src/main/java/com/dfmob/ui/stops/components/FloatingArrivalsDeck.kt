@@ -145,7 +145,7 @@ fun FloatingArrivalsDeck(
         for (arr in arrivals) {
             if (stopAlarmsRepo.isAlarmActive(stop.stopId, arr.lineNumber, arr.destination)) {
                 val effectiveMins = arr.getEffectiveMinutes(currentClockMs)
-                if (effectiveMins <= 0 && (currentClockMs - arr.targetEpochMs) > 60_000L) {
+                if (arr.targetEpochMs > 0L && effectiveMins <= 0 && (currentClockMs - arr.targetEpochMs) > 180_000L) {
                     stopAlarmsRepo.removeAlarm(stop.stopId, arr.lineNumber, arr.destination)
                     changed = true
                 }

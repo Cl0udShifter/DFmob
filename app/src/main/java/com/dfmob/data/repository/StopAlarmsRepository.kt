@@ -15,37 +15,63 @@ class StopAlarmsRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("dfmob_stop_alarms_prefs", Context.MODE_PRIVATE)
 
-    fun isAlarmActive(stopId: Int, lineNumber: String, destination: String): Boolean {
-        val key = "${stopId}_${lineNumber}_${destination}"
-        val json = prefs.getString(key, null) ?: return false
-        return try {
-            val obj = JSONObject(json)
-            !obj.optBoolean("isAutoCancelled", false)
-        } catch (_: Exception) {
-            false
+    fun isAlarmActive(stopId: Int, lineNumber: String, destination: String = ""): Boolean {
+        val cleanLine = lineNumber.trim()
+        val allEntries = prefs.all
+        for ((_, value) in allEntries) {
+            val json = value as? String ?: continue
+            try {
+                val obj = JSONObject(json)
+                if (obj.optBoolean("isAutoCancelled", false)) continue
+                val sId = obj.optInt("stopId", -1)
+                val lNum = obj.optString("lineNumber", "").trim()
+                if (sId == stopId && lNum.equals(cleanLine, ignoreCase = true)) {
+                    val dest = obj.optString("destination", "").trim()
+                    if (destination.isBlank() || dest.isBlank() ||
+                        dest.equals(destination.trim(), ignoreCase = true) ||
+                        dest.contains(destination.trim(), ignoreCase = true) ||
+                        destination.trim().contains(dest, ignoreCase = true)) {
+                        return true
+                    }
+                }
+            } catch (_: Exception) {}
         }
+        return false
     }
 
-    fun getAlarm(stopId: Int, lineNumber: String, destination: String): StopArrivalAlarm? {
-        val key = "${stopId}_${lineNumber}_${destination}"
-        val json = prefs.getString(key, null) ?: return null
-        return try {
-            val obj = JSONObject(json)
-            StopArrivalAlarm(
-                lineNumber = obj.getString("lineNumber"),
-                destination = obj.getString("destination"),
-                stopId = obj.getInt("stopId"),
-                stopName = obj.getString("stopName"),
-                targetEpochMs = obj.getLong("targetEpochMs"),
-                notified15Min = obj.optBoolean("notified15Min", false),
-                notified10Min = obj.optBoolean("notified10Min", false),
-                notified5Min = obj.optBoolean("notified5Min", false),
-                notified2Min = obj.optBoolean("notified2Min", false),
-                isAutoCancelled = obj.optBoolean("isAutoCancelled", false)
-            )
-        } catch (_: Exception) {
-            null
+    fun getAlarm(stopId: Int, lineNumber: String, destination: String = ""): StopArrivalAlarm? {
+        val cleanLine = lineNumber.trim()
+        val allEntries = prefs.all
+        for ((_, value) in allEntries) {
+            val json = value as? String ?: continue
+            try {
+                val obj = JSONObject(json)
+                if (obj.optBoolean("isAutoCancelled", false)) continue
+                val sId = obj.optInt("stopId", -1)
+                val lNum = obj.optString("lineNumber", "").trim()
+                if (sId == stopId && lNum.equals(cleanLine, ignoreCase = true)) {
+                    val dest = obj.optString("destination", "").trim()
+                    if (destination.isBlank() || dest.isBlank() ||
+                        dest.equals(destination.trim(), ignoreCase = true) ||
+                        dest.contains(destination.trim(), ignoreCase = true) ||
+                        destination.trim().contains(dest, ignoreCase = true)) {
+                        return StopArrivalAlarm(
+                            lineNumber = obj.getString("lineNumber"),
+                            destination = obj.getString("destination"),
+                            stopId = obj.getInt("stopId"),
+                            stopName = obj.getString("stopName"),
+                            targetEpochMs = obj.getLong("targetEpochMs"),
+                            notified15Min = obj.optBoolean("notified15Min", false),
+                            notified10Min = obj.optBoolean("notified10Min", false),
+                            notified5Min = obj.optBoolean("notified5Min", false),
+                            notified2Min = obj.optBoolean("notified2Min", false),
+                            isAutoCancelled = false
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
         }
+        return null
     }
 
     fun getAllActiveAlarms(): List<StopArrivalAlarm> {
@@ -78,23 +104,21 @@ class StopAlarmsRepository(private val context: Context) {
 
     fun setAlarm(alarm: StopArrivalAlarm) {
         val now = System.currentTimeMillis()
-        val effectiveMinutes = if (alarm.targetEpochMs > 0L) {
-            maxOf(0, Math.round((alarm.targetEpochMs - now) / 60000.0).toInt())
-        } else 0
 
         // Marca marcos ja decorridos no passado como notificados de forma silenciosa, sem disparar notificacao imediata
         var updated = alarm
-        if (effectiveMinutes <= 15) {
-            updated = updated.copy(notified15Min = true)
-        }
-        if (effectiveMinutes <= 10) {
-            updated = updated.copy(notified10Min = true)
-        }
-        if (effectiveMinutes <= 5) {
-            updated = updated.copy(notified5Min = true)
-        }
-        if (effectiveMinutes <= 2) {
-            updated = updated.copy(notified2Min = true)
+        val milestones = listOf(15, 10, 5, 2)
+        for (m in milestones) {
+            val triggerTime = alarm.targetEpochMs - m * 60_000L
+            if (triggerTime <= now + 3000L) {
+                updated = when (m) {
+                    15 -> updated.copy(notified15Min = true)
+                    10 -> updated.copy(notified10Min = true)
+                    5 -> updated.copy(notified5Min = true)
+                    2 -> updated.copy(notified2Min = true)
+                    else -> updated
+                }
+            }
         }
 
         saveToPrefs(updated)
@@ -118,9 +142,28 @@ class StopAlarmsRepository(private val context: Context) {
     }
 
     fun removeAlarm(stopId: Int, lineNumber: String, destination: String) {
-        val key = "${stopId}_${lineNumber}_${destination}"
-        prefs.edit().remove(key).apply()
-        cancelSystemAlarms(stopId, lineNumber, destination)
+        val cleanLine = lineNumber.trim()
+        val allEntries = prefs.all
+        val editor = prefs.edit()
+        for ((key, value) in allEntries) {
+            val json = value as? String ?: continue
+            try {
+                val obj = JSONObject(json)
+                val sId = obj.optInt("stopId", -1)
+                val lNum = obj.optString("lineNumber", "").trim()
+                if (sId == stopId && lNum.equals(cleanLine, ignoreCase = true)) {
+                    val dest = obj.optString("destination", "").trim()
+                    if (destination.isBlank() || dest.isBlank() ||
+                        dest.equals(destination.trim(), ignoreCase = true) ||
+                        dest.contains(destination.trim(), ignoreCase = true) ||
+                        destination.trim().contains(dest, ignoreCase = true)) {
+                        editor.remove(key)
+                        cancelSystemAlarms(sId, lNum, dest)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        editor.apply()
 
         // Cancela qualquer notificacao de alerta ativa na gaveta para esta parada/linha
         val notificationId = 20000 + (stopId * 31 + lineNumber.hashCode()).rem(10000).let { if (it < 0) -it else it }
@@ -162,6 +205,7 @@ class StopAlarmsRepository(private val context: Context) {
             if (!alreadyNotified && triggerTime > now + 1000L) {
                 val intent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
                     action = "com.dfmob.ACTION_STOP_ALARM_MILESTONE"
+                    addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                     putExtra("stopId", alarm.stopId)
                     putExtra("stopName", alarm.stopName)
                     putExtra("lineNumber", alarm.lineNumber)
@@ -177,15 +221,30 @@ class StopAlarmsRepository(private val context: Context) {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                scheduleAlarmSafely(alarmManager, triggerTime, pendingIntent)
+                val showIntent = Intent(context, com.dfmob.MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra(com.dfmob.MainActivity.EXTRA_NAVIGATE_TO, "STOPS")
+                    putExtra(com.dfmob.MainActivity.EXTRA_STOP_ID, alarm.stopId)
+                    putExtra(com.dfmob.MainActivity.EXTRA_LINE_NUMBER, alarm.lineNumber)
+                    putExtra(com.dfmob.MainActivity.EXTRA_DESTINATION, alarm.destination)
+                }
+                val showPendingIntent = PendingIntent.getActivity(
+                    context,
+                    (alarm.key.hashCode() * 31) + m + 50000,
+                    showIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                scheduleAlarmSafely(alarmManager, triggerTime, pendingIntent, showPendingIntent)
             }
         }
 
-        // Agendamento de auto-cancelamento (1 minuto apos o targetEpochMs)
-        val expireTime = alarm.targetEpochMs + 60_000L
+        // Agendamento de auto-cancelamento (2 minutos apos o targetEpochMs)
+        val expireTime = alarm.targetEpochMs + 120_000L
         if (expireTime > now) {
             val expireIntent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
                 action = "com.dfmob.ACTION_STOP_ALARM_EXPIRE"
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                 putExtra("stopId", alarm.stopId)
                 putExtra("lineNumber", alarm.lineNumber)
                 putExtra("destination", alarm.destination)
@@ -197,42 +256,38 @@ class StopAlarmsRepository(private val context: Context) {
                 expireIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            scheduleAlarmSafely(alarmManager, expireTime, expirePendingIntent)
+            scheduleAlarmSafely(alarmManager, expireTime, expirePendingIntent, null)
         }
     }
 
     private fun scheduleAlarmSafely(
         alarmManager: AlarmManager,
         triggerTime: Long,
-        pendingIntent: PendingIntent
+        pendingIntent: PendingIntent,
+        showIntent: PendingIntent? = null
     ) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-                } else {
-                    val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
-                    alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-                }
+            if (showIntent != null) {
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             } else {
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             }
-        } catch (_: SecurityException) {
+        } catch (_: Exception) {
             try {
-                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
-                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                }
             } catch (_: Exception) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
                 } else {
                     alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
                 }
-            }
-        } catch (_: Exception) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             }
         }
     }

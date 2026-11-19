@@ -97,6 +97,7 @@ fun StopsScreen(
     initialLineNumber: String? = null,
     initialLineId: Int? = null,
     initialStopId: Int? = null,
+    initialDestination: String? = null,
     fromLinesScreen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -218,7 +219,7 @@ fun StopsScreen(
     }
 
     // Carregamento e inicializacao da Linha Selecionada vinda da Tela de Linhas ou atalho externo
-    LaunchedEffect(initialLineNumber) {
+    LaunchedEffect(initialLineNumber, initialStopId, initialDestination) {
         if (!initialLineNumber.isNullOrBlank()) {
             val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
@@ -227,15 +228,29 @@ fun StopsScreen(
             val userLatE6 = best?.let { (it.latitude * 1_000_000).toInt() }
             val userLonE6 = best?.let { (it.longitude * 1_000_000).toInt() }
 
+            val resolvedLineId = initialLineId ?: if (initialStopId != null && initialStopId > 0) {
+                repository.resolveLineIdForStop(initialStopId, initialLineNumber, initialDestination)
+            } else null
+
             val fastRoute = repository.getLineRouteStateFast(
                 lineNumber = initialLineNumber,
-                preferredLineId = initialLineId,
+                preferredLineId = resolvedLineId,
+                preferredStopId = initialStopId,
                 userLatE6 = userLatE6,
                 userLonE6 = userLonE6
             )
             if (fastRoute != null) {
                 activeRouteState = fastRoute
-                if (userLatE6 != null && userLonE6 != null) {
+                if (initialStopId != null && initialStopId > 0) {
+                    val stopMatch = fastRoute.stops.firstOrNull { it.stopId == initialStopId }
+                    if (stopMatch != null) {
+                        focusLocation = DFLocation(stopMatch.stopName, "", stopMatch.latE6, stopMatch.lonE6)
+                    } else {
+                        fastRoute.selectedStop?.let { sel ->
+                            focusLocation = DFLocation(sel.stopName, "", sel.latE6, sel.lonE6)
+                        }
+                    }
+                } else if (userLatE6 != null && userLonE6 != null) {
                     fastRoute.selectedStop?.let { sel ->
                         focusLocation = DFLocation(sel.stopName, "", sel.latE6, sel.lonE6)
                     }
