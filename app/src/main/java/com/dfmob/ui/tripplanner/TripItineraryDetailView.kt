@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -304,8 +305,12 @@ fun TripItineraryDetailView(
         val locManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         val lastGps = try { locManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
         val lastNet = try { locManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
-        (lastGps ?: lastNet)?.let { loc ->
-            overlay.onLocationChanged(loc, provider)
+        val lastFused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { locManager?.getLastKnownLocation(LocationManager.FUSED_PROVIDER) } catch (_: Exception) { null }
+        } else null
+        val best = listOfNotNull(lastGps, lastNet, lastFused).maxByOrNull { it.time }
+        if (best != null && (System.currentTimeMillis() - best.time) < 45_000L) {
+            overlay.onLocationChanged(best, provider)
         }
         overlay
     }
@@ -335,11 +340,17 @@ fun TripItineraryDetailView(
         try {
             lm?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, locListener)
             lm?.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 5f, locListener)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm?.isProviderEnabled(LocationManager.FUSED_PROVIDER) == true) {
+                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 1f, locListener)
+            }
             val lastGps = lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val lastNet = lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            val best = lastGps ?: lastNet
-            currentUserLocation = best
-            if (best != null) {
+            val lastFused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try { lm?.getLastKnownLocation(LocationManager.FUSED_PROVIDER) } catch (_: Exception) { null }
+            } else null
+            val best = listOfNotNull(lastGps, lastNet, lastFused).maxByOrNull { it.time }
+            if (best != null && (System.currentTimeMillis() - best.time) < 45_000L) {
+                currentUserLocation = best
                 locationOverlay.onLocationChanged(best, null)
             }
         } catch (_: SecurityException) {}

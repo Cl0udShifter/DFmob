@@ -2,7 +2,10 @@ package com.dfmob.ui.tripplanner
 
 import android.content.Context
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
+import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dfmob.data.model.DFLocation
@@ -60,12 +63,26 @@ class TripPlannerViewModel(
     private var locationSearchJob: Job? = null
     private var tripSearchJob: Job? = null
     private var liveDeparturesJob: Job? = null
+    private var fallbackJob: Job? = null
 
     private var savedOriginText: String = ""
     private var savedDestinationText: String = ""
 
     init {
+        startLocationUpdates()
         useCurrentLocationForOrigin()
+    }
+
+    fun refreshUserLocation() {
+        startLocationUpdates()
+        val userLoc = getBestLocation()
+        if (userLoc != null && isLocationFresh(userLoc)) {
+            handleFreshLocation(userLoc)
+        }
+    }
+
+    fun stopListeningLocation() {
+        stopLocationUpdates()
     }
 
     fun setDestination(dest: DFLocation) {
@@ -91,9 +108,11 @@ class TripPlannerViewModel(
     }
 
     fun setOriginAndDestination(orig: TripPlanLocation, dest: TripPlanLocation) {
+        startLocationUpdates()
+        val userLoc = getBestLocation()
+        val isFresh = isLocationFresh(userLoc)
         val finalOrig = if (orig.isUserLocation) {
-            val userLoc = getLastKnownLocation()
-            if (userLoc != null) {
+            if (isFresh && userLoc != null) {
                 TripPlanLocation(
                     caption = "Minha localização",
                     latE6 = (userLoc.latitude * 1_000_000).toInt(),
@@ -101,19 +120,35 @@ class TripPlannerViewModel(
                     isUserLocation = true
                 )
             } else {
-                orig
+                scheduleStaleLocationFallback()
+                orig.copy(latE6 = 0, lonE6 = 0)
             }
         } else {
             orig
         }
+        val finalDest = if (dest.isUserLocation) {
+            if (isFresh && userLoc != null) {
+                TripPlanLocation(
+                    caption = "Minha localização",
+                    latE6 = (userLoc.latitude * 1_000_000).toInt(),
+                    lonE6 = (userLoc.longitude * 1_000_000).toInt(),
+                    isUserLocation = true
+                )
+            } else {
+                scheduleStaleLocationFallback()
+                dest.copy(latE6 = 0, lonE6 = 0)
+            }
+        } else {
+            dest
+        }
         savedOriginText = finalOrig.caption
-        savedDestinationText = dest.caption
+        savedDestinationText = finalDest.caption
         _uiState.update {
             it.copy(
                 origin = finalOrig,
                 originQuery = finalOrig.caption,
-                destination = dest,
-                destinationQuery = dest.caption,
+                destination = finalDest,
+                destinationQuery = finalDest.caption,
                 searchResults = emptyList(),
                 activeField = ActiveField.NONE
             )
@@ -122,21 +157,29 @@ class TripPlannerViewModel(
     }
 
     fun useCurrentLocationForOrigin() {
-        val userLoc = getLastKnownLocation()
-        if (userLoc != null) {
-            val loc = TripPlanLocation(
-                caption = "Minha localização",
-                latE6 = (userLoc.latitude * 1_000_000).toInt(),
-                lonE6 = (userLoc.longitude * 1_000_000).toInt(),
-                isUserLocation = true
+        startLocationUpdates()
+        val userLoc = getBestLocation()
+        val isFresh = isLocationFresh(userLoc)
+        val latE6 = if (isFresh && userLoc != null) (userLoc.latitude * 1_000_000).toInt() else 0
+        val lonE6 = if (isFresh && userLoc != null) (userLoc.longitude * 1_000_000).toInt() else 0
+        val loc = TripPlanLocation(
+            caption = "Minha localização",
+            latE6 = latE6,
+            lonE6 = lonE6,
+            isUserLocation = true
+        )
+        savedOriginText = "Minha localização"
+        _uiState.update {
+            it.copy(
+                origin = loc,
+                originQuery = "Minha localização",
+                searchResults = emptyList()
             )
-            savedOriginText = "Minha localização"
-            _uiState.update {
-                it.copy(
-                    origin = loc,
-                    originQuery = "Minha localização"
-                )
-            }
+        }
+        if (isFresh) {
+            triggerTripSearchIfReady()
+        } else {
+            scheduleStaleLocationFallback()
         }
     }
 
@@ -244,11 +287,15 @@ class TripPlannerViewModel(
     }
 
     fun useCurrentLocationForActiveField() {
-        val userLoc = getLastKnownLocation() ?: return
+        startLocationUpdates()
+        val userLoc = getBestLocation()
+        val isFresh = isLocationFresh(userLoc)
+        val latE6 = if (isFresh && userLoc != null) (userLoc.latitude * 1_000_000).toInt() else 0
+        val lonE6 = if (isFresh && userLoc != null) (userLoc.longitude * 1_000_000).toInt() else 0
         val loc = TripPlanLocation(
             caption = "Minha localização",
-            latE6 = (userLoc.latitude * 1_000_000).toInt(),
-            lonE6 = (userLoc.longitude * 1_000_000).toInt(),
+            latE6 = latE6,
+            lonE6 = lonE6,
             isUserLocation = true
         )
         val currentField = _uiState.value.activeField
@@ -273,7 +320,11 @@ class TripPlannerViewModel(
                 )
             }
         }
-        triggerTripSearchIfReady()
+        if (isFresh) {
+            triggerTripSearchIfReady()
+        } else {
+            scheduleStaleLocationFallback()
+        }
     }
 
     fun startMapPicker(targetField: ActiveField) {
@@ -459,7 +510,17 @@ class TripPlannerViewModel(
     }
 
     private fun triggerTripSearchIfReady(debounceMs: Long = 300L) {
-        if (_uiState.value.origin != null && _uiState.value.destination != null) {
+        val orig = _uiState.value.origin
+        val dest = _uiState.value.destination
+        if (orig != null && dest != null) {
+            if (orig.isUserLocation && orig.latE6 == 0 && orig.lonE6 == 0) {
+                _uiState.update { it.copy(isSearchingTrips = true) }
+                return
+            }
+            if (dest.isUserLocation && dest.latE6 == 0 && dest.lonE6 == 0) {
+                _uiState.update { it.copy(isSearchingTrips = true) }
+                return
+            }
             searchTrips(debounceMs)
         }
     }
@@ -468,11 +529,137 @@ class TripPlannerViewModel(
         return repository.reverseGeocode(latE6, lonE6)
     }
 
-    private fun getLastKnownLocation(): Location? {
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            handleFreshLocation(loc)
+        }
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    }
+
+    private fun startLocationUpdates() {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+        try {
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
+            }
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 2f, locationListener)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 1f, locationListener)
+            }
+        } catch (_: SecurityException) {}
+    }
+
+    private fun stopLocationUpdates() {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+        try {
+            lm.removeUpdates(locationListener)
+        } catch (_: SecurityException) {}
+    }
+
+    private fun handleFreshLocation(loc: Location) {
+        val latE6 = (loc.latitude * 1_000_000).toInt()
+        val lonE6 = (loc.longitude * 1_000_000).toInt()
+        var updated = false
+
+        val currentOrigin = _uiState.value.origin
+        if (currentOrigin != null && currentOrigin.isUserLocation) {
+            val isUnset = currentOrigin.latE6 == 0 && currentOrigin.lonE6 == 0
+            val dist = FloatArray(1)
+            Location.distanceBetween(
+                currentOrigin.latitude, currentOrigin.longitude,
+                loc.latitude, loc.longitude, dist
+            )
+            if (isUnset || dist[0] > 10f) {
+                val newOrigin = currentOrigin.copy(latE6 = latE6, lonE6 = lonE6)
+                _uiState.update { it.copy(origin = newOrigin) }
+                updated = true
+            }
+        } else if (currentOrigin == null) {
+            val newOrigin = TripPlanLocation(
+                caption = "Minha localização",
+                latE6 = latE6,
+                lonE6 = lonE6,
+                isUserLocation = true
+            )
+            savedOriginText = "Minha localização"
+            _uiState.update {
+                it.copy(origin = newOrigin, originQuery = "Minha localização")
+            }
+            updated = true
+        }
+
+        val currentDest = _uiState.value.destination
+        if (currentDest != null && currentDest.isUserLocation) {
+            val isUnset = currentDest.latE6 == 0 && currentDest.lonE6 == 0
+            val dist = FloatArray(1)
+            Location.distanceBetween(
+                currentDest.latitude, currentDest.longitude,
+                loc.latitude, loc.longitude, dist
+            )
+            if (isUnset || dist[0] > 10f) {
+                val newDest = currentDest.copy(latE6 = latE6, lonE6 = lonE6)
+                _uiState.update { it.copy(destination = newDest) }
+                updated = true
+            }
+        }
+
+        if (updated) {
+            fallbackJob?.cancel()
+            triggerTripSearchIfReady(debounceMs = 150L)
+        }
+    }
+
+    private fun scheduleStaleLocationFallback() {
+        fallbackJob?.cancel()
+        fallbackJob = viewModelScope.launch {
+            delay(3500L)
+            val orig = _uiState.value.origin
+            val dest = _uiState.value.destination
+            val needsOrig = orig != null && orig.isUserLocation && orig.latE6 == 0 && orig.lonE6 == 0
+            val needsDest = dest != null && dest.isUserLocation && dest.latE6 == 0 && dest.lonE6 == 0
+            if (needsOrig || needsDest) {
+                val fallbackLoc = getBestLocation()
+                if (fallbackLoc != null) {
+                    val fbLat = (fallbackLoc.latitude * 1_000_000).toInt()
+                    val fbLon = (fallbackLoc.longitude * 1_000_000).toInt()
+                    _uiState.update { state ->
+                        var newOrig = state.origin
+                        var newDest = state.destination
+                        if (needsOrig && newOrig != null) {
+                            newOrig = newOrig.copy(latE6 = fbLat, lonE6 = fbLon)
+                        }
+                        if (needsDest && newDest != null) {
+                            newDest = newDest.copy(latE6 = fbLat, lonE6 = fbLon)
+                        }
+                        state.copy(origin = newOrig, destination = newDest)
+                    }
+                    triggerTripSearchIfReady(debounceMs = 0L)
+                }
+            }
+        }
+    }
+
+    private fun isLocationFresh(loc: Location?): Boolean {
+        if (loc == null) return false
+        val ageMs = System.currentTimeMillis() - loc.time
+        return ageMs in 0..45_000L
+    }
+
+    private fun getBestLocation(): Location? {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         return try {
-            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            val gps = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            val net = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            val fused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try { lm.getLastKnownLocation(LocationManager.FUSED_PROVIDER) } catch (_: Exception) { null }
+            } else null
+
+            listOfNotNull(gps, net, fused).maxByOrNull { it.time }
         } catch (_: SecurityException) {
             null
         }
@@ -480,6 +667,8 @@ class TripPlannerViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        stopLocationUpdates()
+        fallbackJob?.cancel()
         locationSearchJob?.cancel()
         tripSearchJob?.cancel()
         liveDeparturesJob?.cancel()
