@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.DirectionsSubway
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
+import androidx.compose.material.icons.rounded.SyncAlt
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -133,20 +136,46 @@ fun LineCardItem(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Tarifa oficial
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(6.dp)
+            // Tarifa oficial e etiquetas de integracao
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
             ) {
-                Text(
-                    text = line.formattedPrice,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = line.formattedPrice,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+
+                if (line.hasTariffIntegration) {
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (line.isMetro) Icons.Rounded.DirectionsBus else Icons.Rounded.DirectionsSubway,
+                            contentDescription = if (line.isMetro) "Integracao com onibus" else "Integracao com Metro-DF",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.SyncAlt,
+                            contentDescription = "Integracao tarifaria com Cartao Mobilidade",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))

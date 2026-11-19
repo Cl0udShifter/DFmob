@@ -17,6 +17,14 @@ data class TransitLine(
     val isBus: Boolean get() = transitType == 3
     val isMetro: Boolean get() = transitType == 1
 
+    val isExecutive: Boolean
+        get() = lineNumber == "0.108" ||
+                routeName.contains("Executivo", ignoreCase = true) ||
+                agencyName.contains("Executivo", ignoreCase = true)
+
+    val hasTariffIntegration: Boolean
+        get() = !isExecutive && (isBus || isMetro)
+
     val formattedPrice: String
         get() = if (price != null && price > 0.0) {
             String.format(java.util.Locale("pt", "BR"), "R$ %.2f", price)
