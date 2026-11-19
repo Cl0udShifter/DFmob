@@ -251,34 +251,12 @@ fun TripItineraryDetailView(
     } else null
 
     val isDescentAlarmTriggered by NavigationStateHolder.isDescentAlarmTriggered.collectAsState()
-    var liveVehicles by remember { mutableStateOf<List<LiveVehicleMarker>>(emptyList()) }
-    var isFocusOnVehicle by remember { mutableStateOf(false) }
-
-    val monitoredVehicle = remember(liveVehicles, currentStage, currentUserLocation) {
-        if (liveVehicles.isEmpty()) null
-        else {
-            val targetPoint = when (currentStage) {
-                is NavigationStage.WaitForTransit -> currentStage.stopPoint
-                is NavigationStage.RideTransit -> currentStage.destinationPoint
-                else -> null
-            } ?: currentUserLocation?.let { GeoPoint(it.latitude, it.longitude) }
-
-            if (targetPoint != null) {
-                liveVehicles.minByOrNull { v ->
-                    distanceMeters(v.latitude, v.longitude, targetPoint.latitude, targetPoint.longitude)
-                }
-            } else {
-                liveVehicles.firstOrNull()
-            }
-        }
-    }
 
     // Overlays do osmdroid
     val polylinesFolder = remember { FolderOverlay() }
     val directionOverlay = remember { RouteDirectionOverlay(context) }
     val markersFolder = remember { FolderOverlay() }
     val intermediateMarkersFolder = remember { FolderOverlay() }
-    val vehiclesFolder = remember { FolderOverlay() }
 
     val mapView = remember {
         Configuration.getInstance().load(
@@ -297,7 +275,6 @@ fun TripItineraryDetailView(
             overlays.add(directionOverlay)
             overlays.add(intermediateMarkersFolder)
             overlays.add(markersFolder)
-            overlays.add(vehiclesFolder)
         }
     }
 
@@ -552,8 +529,6 @@ fun TripItineraryDetailView(
         when (val stage = currentStage) {
             is NavigationStage.WalkToStop -> {
                 isExpandedDeck = false
-                vehiclesFolder.items.clear()
-                liveVehicles = emptyList()
                 NavigationStateHolder.isRideTransit = false
                 mapView.invalidate()
                 val target = stage.targetPoint
@@ -575,7 +550,6 @@ fun TripItineraryDetailView(
             is NavigationStage.RideTransit -> {
                 // Painel retrai para o tamanho normal e mapa centraliza no trajeto
                 isExpandedDeck = false
-                vehiclesFolder.items.clear()
                 remainingStopsCount = stage.totalStopsCount
                 lastPassedStopIndex = -1
 
@@ -625,8 +599,6 @@ fun TripItineraryDetailView(
 
             is NavigationStage.WalkToDestination -> {
                 isExpandedDeck = false
-                vehiclesFolder.items.clear()
-                liveVehicles = emptyList()
                 NavigationStateHolder.isRideTransit = false
                 mapView.invalidate()
                 val target = stage.destinationPoint
@@ -637,8 +609,6 @@ fun TripItineraryDetailView(
 
             is NavigationStage.Completed -> {
                 isExpandedDeck = false
-                vehiclesFolder.items.clear()
-                liveVehicles = emptyList()
                 NavigationStateHolder.reset(context)
                 TripNavigationTrackingService.stopTracking(context)
                 mapView.invalidate()
@@ -648,7 +618,7 @@ fun TripItineraryDetailView(
         }
     }
 
-    // Telemetria ao vivo dos onibus das linhas do trajeto durante a etapa WaitForTransit e RideTransit
+    // Previsoes em tempo real da parada de embarque sincronizadas com a tela de paradas
     LaunchedEffect(currentStage) {
         val linesToTrack = when (currentStage) {
             is NavigationStage.WaitForTransit -> (currentStage as NavigationStage.WaitForTransit).candidateLines
@@ -661,342 +631,98 @@ fun TripItineraryDetailView(
         }
 
         val boardingStopId = (currentStage as? NavigationStage.WaitForTransit)?.stopId
-        val targetStopGeoPoint = when (currentStage) {
-            is NavigationStage.WaitForTransit -> currentStage.stopPoint
-            is NavigationStage.RideTransit -> currentStage.destinationPoint
-            else -> null
-        }
 
-        if (linesToTrack.isNotEmpty()) {
-            val semobService = SemobTelemetryService()
+        if (linesToTrack.isNotEmpty() && boardingStopId != null) {
             val dbHelper = DatabaseHelper(context)
-
-            // Pre-carrega contexto de paradas e sentido para cada linha candidata
-            val routeContexts = withContext(Dispatchers.IO) {
-                linesToTrack.mapNotNull { lineOpt ->
-                    val cleanNum = lineOpt.lineNumber.trim()
-                    if (cleanNum.isBlank()) return@mapNotNull null
-                    val expectedDir = dbHelper.getLineDirectionId(lineOpt.lineId)
-                    val stops = dbHelper.getStopsForLine(lineOpt.lineId)
-                    var targetIdx = if (boardingStopId != null) stops.indexOfFirst { it.stopId == boardingStopId } else -1
-                    if (targetIdx == -1 && targetStopGeoPoint != null && stops.isNotEmpty()) {
-                        val closest = stops.indices.minByOrNull { idx ->
-                            val s = stops[idx]
-                            distanceMeters(targetStopGeoPoint.latitude, targetStopGeoPoint.longitude, s.latitude, s.longitude)
-                        }
-                        if (closest != null) {
-                            val s = stops[closest]
-                            val d = distanceMeters(targetStopGeoPoint.latitude, targetStopGeoPoint.longitude, s.latitude, s.longitude)
-                            if (d <= 350f) {
-                                targetIdx = closest
-                            }
-                        }
-                    }
-                    val oppLineId = dbHelper.getOppositeDirectionLineId(lineOpt.lineId)
-                    val oppStops = oppLineId?.let { dbHelper.getStopsForLine(it) } ?: emptyList()
-                    RouteLineContext(
-                        lineId = lineOpt.lineId,
-                        lineNumber = cleanNum,
-                        expectedDirectionId = expectedDir,
-                        stops = stops,
-                        targetStopIndex = targetIdx,
-                        oppositeStops = oppStops
-                    )
-                }
-            }
-            val routeContextById = routeContexts.associateBy { it.lineId }
-
-            fun shouldIncludeVehicle(v: LiveVehicleMarker, routeCtx: RouteLineContext): Boolean {
-                val stops = routeCtx.stops
-                val targetIdx = routeCtx.targetStopIndex
-                // Se a linha nao possuir paradas ou nao passar na parada alvo, descarta imediatamente
-                if (stops.isEmpty() || targetIdx < 0) {
-                    return false
-                }
-
-                var minStopDist = Float.MAX_VALUE
-                var closestIdx = -1
-                for (i in stops.indices) {
-                    val s = stops[i]
-                    val d = distanceMeters(v.latitude, v.longitude, s.latitude, s.longitude)
-                    if (d < minStopDist) {
-                        minStopDist = d
-                        closestIdx = i
-                    }
-                }
-
-                // Se estiver a mais de 650m de qualquer parada da rota, nao faz parte deste trecho
-                if (minStopDist > 650f) {
-                    return false
-                }
-
-                // Pistas duplas e opostas: se estiver mais proximo da rota de volta do que da rota atual
-                val oppStops = routeCtx.oppositeStops
-                if (oppStops.isNotEmpty()) {
-                    var minOppDist = Float.MAX_VALUE
-                    for (os in oppStops) {
-                        val od = distanceMeters(v.latitude, v.longitude, os.latitude, os.longitude)
-                        if (od < minOppDist) {
-                            minOppDist = od
-                        }
-                    }
-                    if (minOppDist + 15f < minStopDist) {
-                        return false
-                    }
-                }
-
-                // Filtro Vetorial de Rumo (Bearing):
-                // Se o onibus estiver em movimento (> 2 km/h) e possuir rumo de direcao valido (> 5 graus)
-                if (v.speedKmh > 2f && v.bearing > 5f) {
-                    val nextIdx = minOf(stops.size - 1, closestIdx + 1)
-                    val prevIdx = maxOf(0, closestIdx - 1)
-                    val routeHeading = if (closestIdx < stops.size - 1) {
-                        calculateBearing(stops[closestIdx].latitude, stops[closestIdx].longitude, stops[nextIdx].latitude, stops[nextIdx].longitude)
-                    } else {
-                        calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
-                    }
-
-                    val incomingHeading = if (prevIdx < closestIdx) {
-                        calculateBearing(stops[prevIdx].latitude, stops[prevIdx].longitude, stops[closestIdx].latitude, stops[closestIdx].longitude)
-                    } else routeHeading
-
-                    val diffRoute = angleDifference(v.bearing, routeHeading)
-                    val diffIncoming = angleDifference(v.bearing, incomingHeading)
-
-                    // Se o rumo do onibus divergir mais de 75 graus dos vetores da rota neste trecho, esta no sentido contrario
-                    if (diffRoute > 75f && diffIncoming > 75f) {
-                        return false
-                    }
-                }
-
-                // Regra: Se a parada mais proxima for posterior a parada alvo, o onibus ja passou
-                if (closestIdx > targetIdx) {
-                    return false
-                }
-
-                // Se estiver na propria parada de embarque:
-                if (closestIdx == targetIdx) {
-                    val targetStop = stops[targetIdx]
-                    val distToTarget = distanceMeters(v.latitude, v.longitude, targetStop.latitude, targetStop.longitude)
-                    if (distToTarget > 80f && targetIdx + 1 < stops.size) {
-                        val nextStop = stops[targetIdx + 1]
-                        val distToNext = distanceMeters(v.latitude, v.longitude, nextStop.latitude, nextStop.longitude)
-                        val distTargetToNext = distanceMeters(targetStop.latitude, targetStop.longitude, nextStop.latitude, nextStop.longitude)
-                        if (distToNext < distTargetToNext) {
-                            return false
-                        }
-                    }
-                }
-
-                return true
-            }
-
-            fun calculateDistanceAlongRoute(
-                vLat: Double,
-                vLon: Double,
-                stops: List<TransitStop>,
-                closestIdx: Int,
-                targetIdx: Int
-            ): Float {
-                if (closestIdx >= targetIdx || stops.isEmpty()) {
-                    val target = stops.getOrNull(targetIdx) ?: return 0f
-                    return distanceMeters(vLat, vLon, target.latitude, target.longitude)
-                }
-                var totalDist = distanceMeters(vLat, vLon, stops[closestIdx].latitude, stops[closestIdx].longitude)
-                for (i in closestIdx until targetIdx) {
-                    totalDist += distanceMeters(stops[i].latitude, stops[i].longitude, stops[i + 1].latitude, stops[i + 1].longitude)
-                }
-                return totalDist
-            }
-
-            fun getVehicleDistanceToTarget(v: LiveVehicleMarker): Float {
-                val routeCtx = routeContexts.firstOrNull { it.lineNumber == v.lineNumber && it.targetStopIndex >= 0 }
-                if (routeCtx != null && routeCtx.stops.isNotEmpty() && routeCtx.targetStopIndex >= 0) {
-                    val stops = routeCtx.stops
-                    val targetIdx = routeCtx.targetStopIndex
-                    var closestIdx = 0
-                    var minDist = Float.MAX_VALUE
-                    for (i in 0..targetIdx) {
-                        val d = distanceMeters(v.latitude, v.longitude, stops[i].latitude, stops[i].longitude)
-                        if (d < minDist) {
-                            minDist = d
-                            closestIdx = i
-                        }
-                    }
-                    return calculateDistanceAlongRoute(v.latitude, v.longitude, stops, closestIdx, targetIdx)
-                }
-                return Float.MAX_VALUE
-            }
+            val candidateLineIds = linesToTrack.map { it.lineId }.toSet()
 
             while (isActive) {
-                val markers = mutableListOf<LiveVehicleMarker>()
-
-                // 1. Telemetria oficial da SEMOB em tempo real por numero de linha
-                val distinctLines = linesToTrack.distinctBy { it.lineNumber.trim() }
-                for (line in distinctLines) {
-                    val cleanLine = line.lineNumber.trim()
-                    val routeCtx = routeContexts.firstOrNull { it.lineNumber == cleanLine && it.targetStopIndex >= 0 } ?: continue
-                    try {
-                        val semobList = semobService.getLiveVehiclePositions(cleanLine)
-                        for (sv in semobList) {
-                            val vMarker = LiveVehicleMarker(
-                                vehicleId = sv.vehicleId,
-                                lineNumber = cleanLine,
-                                latE6 = sv.latE6,
-                                lonE6 = sv.lonE6,
-                                speedKmh = sv.speedKmh,
-                                bearing = sv.bearing,
-                                directionId = sv.directionId
-                            )
-                            if (shouldIncludeVehicle(vMarker, routeCtx)) {
-                                markers.add(vMarker)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                // 2. Previsoes e coordenadas de veiculos via Moovit (se houver parada de embarque)
-                val newDeparturesMap = mutableMapOf<Int, List<TripDepartureItem>>()
                 val nowMs = System.currentTimeMillis()
-                if (boardingStopId != null) {
-                    try {
-                        val lineIdSet = linesToTrack.map { it.lineId }.toSet()
-                        val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(boardingStopId)
-                        val matched = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
+                val newDeparturesMap = mutableMapOf<Int, List<TripDepartureItem>>()
 
-                        for (lArr in matched) {
-                            val lineOpt = linesToTrack.firstOrNull { it.lineId == lArr.lineId }
-                            val lineNum = lineOpt?.lineNumber ?: ""
-                            val routeCtx = routeContextById[lArr.lineId]
-                                ?: routeContexts.firstOrNull { it.lineNumber == lineNum && it.targetStopIndex >= 0 }
+                try {
+                    // Consulta direta as chegadas da parada de embarque (mesma API e fonte da tela de parada)
+                    val moovitArrivals = withContext(Dispatchers.IO) {
+                        MoovitTransitClient.fetchArrivalsForStop(boardingStopId)
+                    }
 
-                            for (arr in lArr.arrivals) {
-                                // Se a previsao ao vivo contem a coordenada GPS do veiculo em aproximacao
-                                if (arr.vehicleLatE6 != null && arr.vehicleLonE6 != null) {
-                                    val vId = arr.vehicleId ?: "moovit_${lArr.lineId}_${arr.vehicleLatE6}"
-                                    val alreadyExists = markers.any {
-                                        it.vehicleId == vId || (Math.abs(it.latE6 - arr.vehicleLatE6) < 150 && Math.abs(it.lonE6 - arr.vehicleLonE6) < 150)
-                                    }
-                                    if (!alreadyExists && routeCtx != null && routeCtx.targetStopIndex >= 0) {
-                                        val mMarker = LiveVehicleMarker(
-                                            vehicleId = vId,
-                                            lineNumber = lineNum,
-                                            latE6 = arr.vehicleLatE6,
-                                            lonE6 = arr.vehicleLonE6,
-                                            speedKmh = 0f,
-                                            bearing = 0f,
-                                            directionId = routeCtx.expectedDirectionId
-                                        )
-                                        if (shouldIncludeVehicle(mMarker, routeCtx)) {
-                                            markers.add(mMarker)
-                                        }
-                                    }
-                                }
-                            }
+                    // Filtra estritamente pelas linhas candidatas deste trajeto
+                    val matchedArrivals = moovitArrivals.filter { lineArrival ->
+                        candidateLineIds.contains(lineArrival.lineId) ||
+                            linesToTrack.any { it.lineNumber.trim() == lineArrival.lineId.toString() }
+                    }
 
-                            val valid = lArr.arrivals.filter {
-                                val target = it.rtEtdUTC ?: it.staticEtdUTC
-                                target >= nowMs - 60_000L
-                            }
-                            val items = valid.map { arr ->
-                                val isRt = arr.rtEtdUTC != null
-                                val target = arr.rtEtdUTC ?: arr.staticEtdUTC
-                                val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
-                                val formatted = if (isRt) {
-                                    if (mins <= 1) "Já" else "$mins min"
-                                } else {
-                                    formatEpochMsToHHMM(target)
-                                }
-                                TripDepartureItem(
-                                    lineNumber = lineNum,
-                                    timeFormatted = formatted,
-                                    isRealtime = isRt,
-                                    targetEpochMs = target,
-                                    lineId = lArr.lineId
-                                )
-                            }.distinctBy { it.timeFormatted }.sortedBy { it.targetEpochMs }.take(5)
-                            if (items.isNotEmpty()) {
-                                newDeparturesMap[lArr.lineId] = items
-                            }
+                    for (lArr in matchedArrivals) {
+                        val lineOpt = linesToTrack.firstOrNull { it.lineId == lArr.lineId }
+                            ?: linesToTrack.firstOrNull { it.lineNumber.trim() == lArr.lineId.toString() }
+                        val lineNum = lineOpt?.lineNumber?.trim() ?: ""
+                        val targetLineId = lineOpt?.lineId ?: lArr.lineId
+
+                        // Filtra chegadas validas (partidas de ate 2 min atras em diante)
+                        val valid = lArr.arrivals.filter {
+                            val target = it.rtEtdUTC ?: it.staticEtdUTC
+                            target >= nowMs - 120_000L
                         }
-                    } catch (_: Exception) {}
-                }
 
-                // Sincroniza a posicao real dos onibus com os horarios do painel inferior
-                for (line in linesToTrack) {
-                    val lineNum = line.lineNumber.trim()
-                    val closestVeh = markers
-                        .filter { it.lineNumber == lineNum }
-                        .minByOrNull { getVehicleDistanceToTarget(it) }
-
-                    if (closestVeh != null) {
-                        val dist = getVehicleDistanceToTarget(closestVeh)
-                        if (dist < Float.MAX_VALUE) {
-                            val mins = if (dist <= 150f) 0 else maxOf(1, Math.round(dist / 360.0).toInt())
-                            val formatted = if (mins <= 1) "Já" else "$mins min"
-                            val liveTargetEpoch = nowMs + (mins * 60_000L)
-
-                            val liveDepItem = TripDepartureItem(
+                        val items = valid.map { arr ->
+                            val isRt = arr.rtEtdUTC != null
+                            val target = arr.rtEtdUTC ?: arr.staticEtdUTC
+                            val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
+                            val formatted = if (isRt) {
+                                if (mins <= 1) "Já" else "$mins min"
+                            } else {
+                                formatEpochMsToHHMM(target)
+                            }
+                            TripDepartureItem(
                                 lineNumber = lineNum,
                                 timeFormatted = formatted,
-                                isRealtime = true,
-                                targetEpochMs = liveTargetEpoch,
-                                lineId = line.lineId
+                                isRealtime = isRt,
+                                targetEpochMs = target,
+                                lineId = targetLineId
                             )
+                        }.distinctBy { it.targetEpochMs }.sortedBy { it.targetEpochMs }.take(5)
 
-                            val existing = newDeparturesMap[line.lineId] ?: emptyList()
-                            val remaining = existing.filter { it.targetEpochMs > (liveTargetEpoch + 90_000L) }
-                            newDeparturesMap[line.lineId] = (listOf(liveDepItem) + remaining).take(5)
+                        if (items.isNotEmpty()) {
+                            newDeparturesMap[targetLineId] = items
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // Fallback para linhas candidatas que nao tiveram chegadas na rede: busca horario programado local
+                val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("America/Sao_Paulo"))
+                val curSec = cal.get(java.util.Calendar.HOUR_OF_DAY) * 3600 + cal.get(java.util.Calendar.MINUTE) * 60 + cal.get(java.util.Calendar.SECOND)
+
+                for (line in linesToTrack) {
+                    if (!newDeparturesMap.containsKey(line.lineId)) {
+                        val scheduled = withContext(Dispatchers.IO) {
+                            dbHelper.getNextScheduledDepartures(line.lineId, boardingStopId, curSec, 3)
+                        }
+                        if (scheduled.isNotEmpty()) {
+                            val schedItems = scheduled.map { sec ->
+                                val h = (sec / 3600) % 24
+                                val m = (sec % 3600) / 60
+                                val targetEpoch = nowMs + ((sec - curSec) * 1000L)
+                                TripDepartureItem(
+                                    lineNumber = line.lineNumber,
+                                    timeFormatted = String.format(Locale.ROOT, "%02d:%02d", h, m),
+                                    isRealtime = false,
+                                    targetEpochMs = targetEpoch,
+                                    lineId = line.lineId
+                                )
+                            }
+                            newDeparturesMap[line.lineId] = schedItems
                         }
                     }
                 }
-
-                // Limita estritamente aos 5 onibus mais proximos da parada de embarque
-                val top5Vehicles = markers
-                    .distinctBy { it.vehicleId }
-                    .filter { getVehicleDistanceToTarget(it) < Float.MAX_VALUE }
-                    .sortedBy { getVehicleDistanceToTarget(it) }
-                    .take(5)
 
                 withContext(Dispatchers.Main) {
                     if (newDeparturesMap.isNotEmpty()) {
                         liveDeparturesByLine = newDeparturesMap
                     }
-                    liveVehicles = top5Vehicles
-                    vehiclesFolder.items.clear()
-                    for (v in top5Vehicles) {
-                        val marker = Marker(mapView).apply {
-                            position = GeoPoint(v.latitude, v.longitude)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            icon = createVehiclePuckDrawable(context, v.bearing)
-                            title = "Linha ${v.lineNumber}"
-                            relatedObject = v
-                            infoWindow = TransitVehicleInfoWindow(mapView, isDarkTheme)
-                            setInfoWindowAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_TOP)
-                            setOnMarkerClickListener { m, _ ->
-                                InfoWindow.closeAllInfoWindowsOn(mapView)
-                                m.showInfoWindow()
-                                true
-                            }
-                        }
-                        vehiclesFolder.add(marker)
-                    }
-                    if (isFocusOnVehicle && monitoredVehicle != null) {
-                        mapView.controller.animateTo(
-                            GeoPoint(monitoredVehicle.latitude, monitoredVehicle.longitude),
-                            17.5,
-                            600L
-                        )
-                    }
-                    mapView.invalidate()
                 }
 
-                delay(12_000L)
+                delay(15_000L)
             }
-        } else {
-            vehiclesFolder.items.clear()
-            liveVehicles = emptyList()
-            mapView.invalidate()
         }
     }
 
@@ -1130,7 +856,6 @@ fun TripItineraryDetailView(
             onStartNavigation = {
                 isNavigating = true
                 currentStageIndex = 0
-                isFocusOnVehicle = false
                 NavigationStateHolder.isNavigating.value = true
                 NavigationStateHolder.save(context)
                 TripNavigationTrackingService.startTracking(context)
@@ -1145,12 +870,9 @@ fun TripItineraryDetailView(
                 isNavigating = false
                 currentStageIndex = 0
                 isExpandedDeck = false
-                isFocusOnVehicle = false
                 NavigationStateHolder.reset(context)
                 TripNavigationTrackingService.stopTracking(context)
                 intermediateMarkersFolder.items.clear()
-                vehiclesFolder.items.clear()
-                liveVehicles = emptyList()
                 mapView.invalidate()
             },
             onPreviousStage = {
@@ -1176,50 +898,9 @@ fun TripItineraryDetailView(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isNavigating) {
-                // Botao Foco no Onibus em aproximacao
-                Surface(
-                    onClick = {
-                        val veh = monitoredVehicle
-                        if (veh != null) {
-                            isFocusOnVehicle = true
-                            mapView.controller.animateTo(
-                                GeoPoint(veh.latitude, veh.longitude),
-                                17.5,
-                                750L
-                            )
-                        } else {
-                            android.widget.Toast.makeText(
-                                context,
-                                "Buscando veículo em aproximação...",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    },
-                    shape = CircleShape,
-                    color = if (isFocusOnVehicle) TransitGreen else if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isFocusOnVehicle) TransitGreen else if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB)
-                    ),
-                    shadowElevation = 3.dp,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Rounded.DirectionsBus,
-                            contentDescription = "Focar no ônibus",
-                            tint = if (isFocusOnVehicle) Color.White else if (monitoredVehicle != null) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-
             // Botao Minha Localizacao (GPS)
             Surface(
                 onClick = {
-                    isFocusOnVehicle = false
                     val myLoc = locationOverlay.myLocation
                     if (myLoc != null) {
                         mapView.controller.animateTo(myLoc, 17.0, 750L)
@@ -1239,10 +920,10 @@ fun TripItineraryDetailView(
                     }
                 },
                 shape = CircleShape,
-                color = if (!isFocusOnVehicle && isNavigating) TransitGreen else if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF),
+                color = if (isNavigating) TransitGreen else if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    if (!isFocusOnVehicle && isNavigating) TransitGreen else if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB)
+                    if (isNavigating) TransitGreen else if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB)
                 ),
                 shadowElevation = 3.dp,
                 modifier = Modifier.size(44.dp)
@@ -1251,7 +932,7 @@ fun TripItineraryDetailView(
                     Icon(
                         imageVector = Icons.Rounded.MyLocation,
                         contentDescription = "Minha localização",
-                        tint = if (!isFocusOnVehicle && isNavigating) Color.White else TransitGreen,
+                        tint = if (isNavigating) Color.White else TransitGreen,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -2411,227 +2092,6 @@ private fun createSmallDotDrawable(context: Context): Drawable {
     canvas.drawCircle(r, r, r - (1.2f * density), border)
 
     return BitmapDrawable(context.resources, bitmap)
-}
-
-private data class RouteLineContext(
-    val lineId: Int,
-    val lineNumber: String,
-    val expectedDirectionId: Int?,
-    val stops: List<TransitStop>,
-    val targetStopIndex: Int,
-    val oppositeStops: List<TransitStop> = emptyList()
-)
-
-private fun calculateBearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
-    val phi1 = Math.toRadians(lat1)
-    val phi2 = Math.toRadians(lat2)
-    val deltaLambda = Math.toRadians(lon2 - lon1)
-    val y = Math.sin(deltaLambda) * Math.cos(phi2)
-    val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda)
-    val theta = Math.atan2(y, x)
-    return ((Math.toDegrees(theta) + 360.0) % 360.0).toFloat()
-}
-
-private fun angleDifference(a: Float, b: Float): Float {
-    val diff = Math.abs((a - b) % 360f)
-    return if (diff > 180f) 360f - diff else diff
-}
-
-private fun createVehiclePuckDrawable(
-    context: Context,
-    bearing: Float
-): BitmapDrawable {
-    val density = context.resources.displayMetrics.density
-    val sizePx = (32 * density).toInt()
-
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val center = sizePx / 2f
-
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
-
-    // 1. Sombra externa suave
-    paint.color = android.graphics.Color.argb(55, 0, 0, 0)
-    canvas.drawCircle(center, center + (1.2f * density), 13.5f * density, paint)
-
-    // 2. Anel branco solido de alto contraste
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(center, center, 13.0f * density, paint)
-
-    // 3. Preenchimento verde vibrante (#00C853)
-    paint.color = android.graphics.Color.parseColor("#00C853")
-    canvas.drawCircle(center, center, 10.5f * density, paint)
-
-    // 4. Icone de onibus centralizado em vetor branco com recorte verde, farois e rodas
-    drawVehicleBusIcon(canvas, center, density)
-
-    // 5. Indicador direcional (chevron externo) se houver rumo valido
-    if (bearing > 0f) {
-        drawHeadingChevron(canvas, center, density, bearing)
-    }
-
-    return BitmapDrawable(context.resources, bitmap)
-}
-
-private fun drawVehicleBusIcon(canvas: Canvas, center: Float, density: Float) {
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        style = Paint.Style.FILL
-    }
-    val w = 11f * density
-    val h = 11f * density
-    val left = center - w / 2f
-    val top = center - h / 2f
-    val right = center + w / 2f
-    val bodyH = h - 2f * density
-
-    // Corpo
-    canvas.drawRoundRect(left, top, right, top + bodyH, 2.2f * density, 2.2f * density, paint)
-
-    // Para-brisa (recorte verde #00C853)
-    paint.color = android.graphics.Color.parseColor("#00C853")
-    canvas.drawRoundRect(left + 1.2f * density, top + 1.4f * density, right - 1.2f * density, top + 4.8f * density, 1f * density, 1f * density, paint)
-
-    // Farois
-    val r = 0.8f * density
-    canvas.drawCircle(left + 2.2f * density, top + bodyH - 2f * density, r, paint)
-    canvas.drawCircle(right - 2.2f * density, top + bodyH - 2f * density, r, paint)
-
-    // Rodas
-    paint.color = android.graphics.Color.WHITE
-    val bottom = center + h / 2f
-    canvas.drawRect(left + 1.2f * density, top + bodyH, left + 2.8f * density, bottom, paint)
-    canvas.drawRect(right - 2.8f * density, top + bodyH, right - 1.2f * density, bottom, paint)
-}
-
-private fun drawHeadingChevron(canvas: Canvas, center: Float, density: Float, bearing: Float) {
-    canvas.save()
-    canvas.rotate(bearing, center, center)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        style = Paint.Style.FILL
-    }
-    val path = Path().apply {
-        val tipY = center - 14.5f * density
-        val baseY = center - 10.5f * density
-        val halfW = 3.5f * density
-        moveTo(center, tipY)
-        lineTo(center + halfW, baseY)
-        lineTo(center - halfW, baseY)
-        close()
-    }
-    canvas.drawPath(path, paint)
-    canvas.restore()
-}
-
-private class TransitVehicleInfoWindow(
-    mapView: MapView,
-    private val isDarkTheme: Boolean
-) : InfoWindow(createLayout(mapView.context, isDarkTheme), mapView) {
-
-    private val badgeView: TextView = mView.findViewWithTag("badge")
-    private val titleView: TextView = mView.findViewWithTag("title")
-    private val subtitleView: TextView = mView.findViewWithTag("subtitle")
-
-    init {
-        mView.setOnClickListener {
-            close()
-        }
-    }
-
-    override fun onOpen(item: Any?) {
-        val marker = item as? Marker ?: return
-        val v = marker.relatedObject as? LiveVehicleMarker
-        if (v != null) {
-            badgeView.text = v.lineNumber
-            titleView.text = "Linha ${v.lineNumber}"
-            val speedText = if (v.speedKmh > 1f) " • ${v.speedKmh.toInt()} km/h" else ""
-            subtitleView.text = "Em aproximação$speedText"
-        } else {
-            badgeView.text = "Ônibus"
-            titleView.text = marker.title ?: "Em viagem"
-            subtitleView.text = "Em aproximação"
-        }
-    }
-
-    override fun onClose() {
-        // Nada a limpar
-    }
-
-    companion object {
-        private fun createLayout(context: Context, isDark: Boolean): View {
-            val density = context.resources.displayMetrics.density
-
-            val root = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                val padH = (12 * density).toInt()
-                val padV = (8 * density).toInt()
-                setPadding(padH, padV, padH, padV)
-
-                val bg = GradientDrawable().apply {
-                    cornerRadius = 16 * density
-                    setColor(if (isDark) android.graphics.Color.parseColor("#1C1C1E") else android.graphics.Color.WHITE)
-                    setStroke(
-                        (1.2f * density).toInt(),
-                        if (isDark) android.graphics.Color.parseColor("#38383A") else android.graphics.Color.parseColor("#E5E5EA")
-                    )
-                }
-                background = bg
-                elevation = 6 * density
-            }
-
-            val badge = TextView(context).apply {
-                tag = "badge"
-                setTextColor(android.graphics.Color.WHITE)
-                textSize = 13f
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER
-                val bPadH = (8 * density).toInt()
-                val bPadV = (4 * density).toInt()
-                setPadding(bPadH, bPadV, bPadH, bPadV)
-
-                val badgeBg = GradientDrawable().apply {
-                    cornerRadius = 8 * density
-                    setColor(android.graphics.Color.parseColor("#00C853"))
-                }
-                background = badgeBg
-            }
-            root.addView(badge)
-
-            val textCol = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                val ml = (10 * density).toInt()
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    leftMargin = ml
-                }
-                layoutParams = params
-            }
-
-            val title = TextView(context).apply {
-                tag = "title"
-                textSize = 13f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#1C1C1E"))
-            }
-            textCol.addView(title)
-
-            val subtitle = TextView(context).apply {
-                tag = "subtitle"
-                textSize = 11f
-                setTextColor(if (isDark) android.graphics.Color.parseColor("#A0A0A5") else android.graphics.Color.parseColor("#6C6C70"))
-            }
-            textCol.addView(subtitle)
-
-            root.addView(textCol)
-            return root
-        }
-    }
 }
 
 private fun createPinMarkerDrawable(context: Context, colorHex: String, letter: String): Drawable {
