@@ -111,6 +111,7 @@ import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripTransitLineOption
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.telemetry.MoovitTransitClient
+import com.dfmob.data.telemetry.SemobTelemetryService
 import com.dfmob.service.NavigationStateHolder
 import com.dfmob.service.TripDescentAlarmHelper
 import com.dfmob.service.TripNavigationTrackingService
@@ -346,8 +347,10 @@ fun TripItineraryDetailView(
             try {
                 lm?.removeUpdates(locListener)
             } catch (_: SecurityException) {}
-            NavigationStateHolder.reset()
-            TripNavigationTrackingService.stopTracking(context)
+            if (!isNavigating) {
+                NavigationStateHolder.reset(context)
+                TripNavigationTrackingService.stopTracking(context)
+            }
         }
     }
 
@@ -577,6 +580,7 @@ fun TripItineraryDetailView(
                 NavigationStateHolder.hasAlertedCurrentLeg = false
                 NavigationStateHolder.isDescentAlarmTriggered.value = false
                 NavigationStateHolder.lastPassedStopIndex = -1
+                NavigationStateHolder.save(context)
 
                 // Assegura que as paradas intermediarias estao no mapa
                 if (intermediateMarkersFolder.items.isEmpty()) {
@@ -626,7 +630,7 @@ fun TripItineraryDetailView(
                 isExpandedDeck = false
                 vehiclesFolder.items.clear()
                 liveVehicles = emptyList()
-                NavigationStateHolder.reset()
+                NavigationStateHolder.reset(context)
                 TripNavigationTrackingService.stopTracking(context)
                 mapView.invalidate()
             }
@@ -635,36 +639,81 @@ fun TripItineraryDetailView(
         }
     }
 
-    // Telemetria ao vivo dos onibus das linhas do trajeto durante a etapa WaitForTransit
+    // Telemetria ao vivo dos onibus das linhas do trajeto durante a etapa WaitForTransit e RideTransit
     LaunchedEffect(currentStage) {
-        if (currentStage is NavigationStage.WaitForTransit) {
-            val wait = currentStage as NavigationStage.WaitForTransit
+        val linesToTrack = when (currentStage) {
+            is NavigationStage.WaitForTransit -> (currentStage as NavigationStage.WaitForTransit).candidateLines
+            is NavigationStage.RideTransit -> {
+                val ride = currentStage as NavigationStage.RideTransit
+                if (ride.candidateLines.isNotEmpty()) ride.candidateLines
+                else listOfNotNull(ride.selectedLine)
+            }
+            else -> emptyList()
+        }
+
+        val boardingStopId = (currentStage as? NavigationStage.WaitForTransit)?.stopId
+
+        if (linesToTrack.isNotEmpty()) {
+            val semobService = SemobTelemetryService()
             while (isActive) {
-                // 1. Veiculos em transito no mapa
                 val markers = mutableListOf<LiveVehicleMarker>()
-                for (line in wait.candidateLines) {
-                    try {
-                        val stopIds = if (wait.stopId != null) listOf(wait.stopId) else emptyList()
-                        val list = MoovitTransitClient.fetchLiveVehiclesForLine(
-                            lineId = line.lineId,
-                            stopIds = stopIds,
-                            lineNumber = line.lineNumber,
-                            directionId = 0
-                        )
-                        markers.addAll(list)
-                    } catch (_: Exception) {}
+
+                // 1. Telemetria oficial da SEMOB em tempo real por numero de linha
+                for (line in linesToTrack) {
+                    val cleanLine = line.lineNumber.trim()
+                    if (cleanLine.isNotBlank()) {
+                        try {
+                            val semobList = semobService.getLiveVehiclePositions(cleanLine)
+                            for (sv in semobList) {
+                                markers.add(
+                                    LiveVehicleMarker(
+                                        vehicleId = sv.vehicleId,
+                                        lineNumber = cleanLine,
+                                        latE6 = sv.latE6,
+                                        lonE6 = sv.lonE6,
+                                        speedKmh = sv.speedKmh,
+                                        bearing = sv.bearing,
+                                        directionId = sv.directionId ?: 0
+                                    )
+                                )
+                            }
+                        } catch (_: Exception) {}
+                    }
                 }
 
-                // 2. Previsoes em tempo real para a parada de embarque
+                // 2. Previsoes e coordenadas de veiculos via Moovit (se houver parada de embarque)
                 val newDeparturesMap = mutableMapOf<Int, List<TripDepartureItem>>()
-                if (wait.stopId != null) {
+                if (boardingStopId != null) {
                     try {
                         val nowMs = System.currentTimeMillis()
-                        val lineIdSet = wait.candidateLines.map { it.lineId }.toSet()
-                        val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(wait.stopId)
+                        val lineIdSet = linesToTrack.map { it.lineId }.toSet()
+                        val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(boardingStopId)
                         val matched = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
 
                         for (lArr in matched) {
+                            val lineOpt = linesToTrack.firstOrNull { it.lineId == lArr.lineId }
+                            val lineNum = lineOpt?.lineNumber ?: ""
+
+                            for (arr in lArr.arrivals) {
+                                // Se a previsao ao vivo contem a coordenada GPS do veiculo em aproximacao
+                                if (arr.vehicleLatE6 != null && arr.vehicleLonE6 != null) {
+                                    val vId = arr.vehicleId ?: "moovit_${lArr.lineId}_${arr.vehicleLatE6}"
+                                    if (!markers.any { it.vehicleId == vId || (Math.abs(it.latE6 - arr.vehicleLatE6) < 150 && Math.abs(it.lonE6 - arr.vehicleLonE6) < 150) }) {
+                                        markers.add(
+                                            LiveVehicleMarker(
+                                                vehicleId = vId,
+                                                lineNumber = lineNum,
+                                                latE6 = arr.vehicleLatE6,
+                                                lonE6 = arr.vehicleLonE6,
+                                                speedKmh = 0f,
+                                                bearing = 0f,
+                                                directionId = 0
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+
                             val valid = lArr.arrivals.filter {
                                 val target = it.rtEtdUTC ?: it.staticEtdUTC
                                 target >= nowMs - 60_000L
@@ -679,7 +728,7 @@ fun TripItineraryDetailView(
                                     formatEpochMsToHHMM(target)
                                 }
                                 TripDepartureItem(
-                                    lineNumber = "",
+                                    lineNumber = lineNum,
                                     timeFormatted = formatted,
                                     isRealtime = isRt,
                                     targetEpochMs = target,
@@ -859,6 +908,7 @@ fun TripItineraryDetailView(
                 currentStageIndex = 0
                 isFocusOnVehicle = false
                 NavigationStateHolder.isNavigating.value = true
+                NavigationStateHolder.save(context)
                 TripNavigationTrackingService.startTracking(context)
                 val myLoc = locationOverlay.myLocation
                 val userLoc = currentUserLocation
@@ -872,7 +922,7 @@ fun TripItineraryDetailView(
                 currentStageIndex = 0
                 isExpandedDeck = false
                 isFocusOnVehicle = false
-                NavigationStateHolder.reset()
+                NavigationStateHolder.reset(context)
                 TripNavigationTrackingService.stopTracking(context)
                 intermediateMarkersFolder.items.clear()
                 vehiclesFolder.items.clear()
