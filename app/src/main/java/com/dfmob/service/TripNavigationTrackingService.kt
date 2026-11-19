@@ -1,0 +1,188 @@
+package com.dfmob.service
+
+import android.Manifest
+import android.app.Notification
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Build
+import android.os.IBinder
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import com.dfmob.MainActivity
+
+class TripNavigationTrackingService : Service(), LocationListener {
+
+    private var locationManager: LocationManager? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopTrackingAndSelf()
+            return START_NOT_STICKY
+        }
+
+        TripDescentAlarmHelper.createNotificationChannels(this)
+        val notification = buildOngoingNotification("Navegação guiada ativa", "Acompanhando trajeto em tempo real")
+        try {
+            startForeground(NOTIFICATION_NAVIGATION_TRACKING_ID, notification)
+        } catch (_: Exception) {}
+
+        requestLocationUpdates()
+        return START_STICKY
+    }
+
+    private fun requestLocationUpdates() {
+        val lm = locationManager ?: return
+        try {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 2f, this)
+                }
+                if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 2f, this)
+                }
+            }
+        } catch (_: SecurityException) {}
+    }
+
+    override fun onLocationChanged(location: Location) {
+        val state = NavigationStateHolder
+        if (!state.isNavigating.value) return
+
+        if (state.isRideTransit) {
+            val destLat = state.targetStopLat
+            val destLon = state.targetStopLon
+            if (destLat != 0.0 && destLon != 0.0) {
+                val distToDest = distanceMeters(location.latitude, location.longitude, destLat, destLon)
+                state.currentDistToDescentMeters.value = distToDest
+
+                val fullStopList = state.intermediateStops + listOf(destLat to destLon)
+                if (fullStopList.isNotEmpty()) {
+                    val closestIndex = fullStopList.indices.minByOrNull { i ->
+                        distanceMeters(location.latitude, location.longitude, fullStopList[i].first, fullStopList[i].second)
+                    } ?: -1
+
+                    if (closestIndex >= 0) {
+                        val distToClosest = distanceMeters(
+                            location.latitude, location.longitude,
+                            fullStopList[closestIndex].first, fullStopList[closestIndex].second
+                        )
+                        if (distToClosest < 250f && closestIndex > state.lastPassedStopIndex) {
+                            state.lastPassedStopIndex = closestIndex
+                        }
+                    }
+
+                    val totalStopsInRide = fullStopList.size
+                    val remaining = if (state.lastPassedStopIndex >= 0) {
+                        (totalStopsInRide - 1 - state.lastPassedStopIndex).coerceAtLeast(1)
+                    } else {
+                        state.totalStopsCount.coerceAtLeast(1)
+                    }
+                    state.currentRemainingStops.value = remaining
+
+                    if ((remaining <= 2 || distToDest <= 400f) && !state.hasAlertedCurrentLeg) {
+                        state.hasAlertedCurrentLeg = true
+                        state.isDescentAlarmTriggered.value = true
+                        TripDescentAlarmHelper.triggerDescentAlarm(
+                            context = applicationContext,
+                            destinationStopName = state.targetStopName,
+                            remainingStops = remaining,
+                            distanceMeters = distToDest
+                        )
+                    }
+                }
+
+                updateOngoingNotification(
+                    "A bordo: ${state.currentRemainingStops.value} paradas até descida",
+                    "Parada de descida: ${state.targetStopName}"
+                )
+            }
+        }
+    }
+
+    private fun updateOngoingNotification(title: String, body: String) {
+        val notification = buildOngoingNotification(title, body)
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+        nm?.notify(NOTIFICATION_NAVIGATION_TRACKING_ID, notification)
+    }
+
+    private fun buildOngoingNotification(title: String, body: String): Notification {
+        val notifyIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            NOTIFICATION_NAVIGATION_TRACKING_ID,
+            notifyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_NAVIGATION_TRACKING_ID)
+            .setSmallIcon(android.R.drawable.sym_def_app_icon)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setContentIntent(pendingIntent)
+            .build()
+    }
+
+    private fun stopTrackingAndSelf() {
+        locationManager?.removeUpdates(this)
+        TripDescentAlarmHelper.cancelDescentAlarm(this)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        locationManager?.removeUpdates(this)
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        const val CHANNEL_NAVIGATION_TRACKING_ID = "dfmob_trip_navigation_channel"
+        const val NOTIFICATION_NAVIGATION_TRACKING_ID = 30001
+        const val ACTION_START = "com.dfmob.ACTION_START_TRIP_NAV"
+        const val ACTION_STOP = "com.dfmob.ACTION_STOP_TRIP_NAV"
+
+        fun startTracking(context: Context) {
+            val intent = Intent(context, TripNavigationTrackingService::class.java).apply {
+                action = ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stopTracking(context: Context) {
+            val intent = Intent(context, TripNavigationTrackingService::class.java).apply {
+                action = ACTION_STOP
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {}
+        }
+
+        private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+            val results = FloatArray(1)
+            Location.distanceBetween(lat1, lon1, lat2, lon2, results)
+            return results[0]
+        }
+    }
+}

@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Navigation
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sensors
@@ -75,6 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -108,6 +110,9 @@ import com.dfmob.data.model.TripPlanLeg
 import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripTransitLineOption
 import com.dfmob.data.telemetry.MoovitTransitClient
+import com.dfmob.service.NavigationStateHolder
+import com.dfmob.service.TripDescentAlarmHelper
+import com.dfmob.service.TripNavigationTrackingService
 import com.dfmob.ui.theme.TransitGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -234,6 +239,29 @@ fun TripItineraryDetailView(
         stages[currentStageIndex]
     } else null
 
+    val isDescentAlarmTriggered by NavigationStateHolder.isDescentAlarmTriggered.collectAsState()
+    var liveVehicles by remember { mutableStateOf<List<LiveVehicleMarker>>(emptyList()) }
+    var isFocusOnVehicle by remember { mutableStateOf(false) }
+
+    val monitoredVehicle = remember(liveVehicles, currentStage, currentUserLocation) {
+        if (liveVehicles.isEmpty()) null
+        else {
+            val targetPoint = when (currentStage) {
+                is NavigationStage.WaitForTransit -> currentStage.stopPoint
+                is NavigationStage.RideTransit -> currentStage.destinationPoint
+                else -> null
+            } ?: currentUserLocation?.let { GeoPoint(it.latitude, it.longitude) }
+
+            if (targetPoint != null) {
+                liveVehicles.minByOrNull { v ->
+                    distanceMeters(v.latitude, v.longitude, targetPoint.latitude, targetPoint.longitude)
+                }
+            } else {
+                liveVehicles.firstOrNull()
+            }
+        }
+    }
+
     // Overlays do osmdroid
     val polylinesFolder = remember { FolderOverlay() }
     val directionOverlay = remember { RouteDirectionOverlay(context) }
@@ -317,6 +345,8 @@ fun TripItineraryDetailView(
             try {
                 lm?.removeUpdates(locListener)
             } catch (_: SecurityException) {}
+            NavigationStateHolder.reset()
+            TripNavigationTrackingService.stopTracking(context)
         }
     }
 
@@ -510,6 +540,8 @@ fun TripItineraryDetailView(
             is NavigationStage.WalkToStop -> {
                 isExpandedDeck = false
                 vehiclesFolder.items.clear()
+                liveVehicles = emptyList()
+                NavigationStateHolder.isRideTransit = false
                 mapView.invalidate()
                 val target = stage.targetPoint
                 if (target != null) {
@@ -520,6 +552,7 @@ fun TripItineraryDetailView(
             is NavigationStage.WaitForTransit -> {
                 // Painel abre automaticamente a 75% da tela para visualizar os onibus e horarios
                 isExpandedDeck = true
+                NavigationStateHolder.isRideTransit = false
                 val target = stage.stopPoint
                 if (target != null) {
                     mapView.controller.animateTo(target, 16.5, 700L)
@@ -531,6 +564,18 @@ fun TripItineraryDetailView(
                 isExpandedDeck = false
                 vehiclesFolder.items.clear()
                 remainingStopsCount = stage.totalStopsCount
+                lastPassedStopIndex = -1
+
+                // Configura monitoramento e alarme de desembarque
+                NavigationStateHolder.isRideTransit = true
+                NavigationStateHolder.targetStopName = stage.destinationStopName
+                NavigationStateHolder.targetStopLat = stage.destinationPoint?.latitude ?: 0.0
+                NavigationStateHolder.targetStopLon = stage.destinationPoint?.longitude ?: 0.0
+                NavigationStateHolder.intermediateStops = stage.intermediateStops.map { it.latitude to it.longitude }
+                NavigationStateHolder.totalStopsCount = stage.totalStopsCount
+                NavigationStateHolder.hasAlertedCurrentLeg = false
+                NavigationStateHolder.isDescentAlarmTriggered.value = false
+                NavigationStateHolder.lastPassedStopIndex = -1
 
                 // Assegura que as paradas intermediarias estao no mapa
                 if (intermediateMarkersFolder.items.isEmpty()) {
@@ -567,6 +612,8 @@ fun TripItineraryDetailView(
             is NavigationStage.WalkToDestination -> {
                 isExpandedDeck = false
                 vehiclesFolder.items.clear()
+                liveVehicles = emptyList()
+                NavigationStateHolder.isRideTransit = false
                 mapView.invalidate()
                 val target = stage.destinationPoint
                 if (target != null) {
@@ -577,6 +624,9 @@ fun TripItineraryDetailView(
             is NavigationStage.Completed -> {
                 isExpandedDeck = false
                 vehiclesFolder.items.clear()
+                liveVehicles = emptyList()
+                NavigationStateHolder.reset()
+                TripNavigationTrackingService.stopTracking(context)
                 mapView.invalidate()
             }
 
@@ -646,6 +696,7 @@ fun TripItineraryDetailView(
                     if (newDeparturesMap.isNotEmpty()) {
                         liveDeparturesByLine = newDeparturesMap
                     }
+                    liveVehicles = markers
                     vehiclesFolder.items.clear()
                     for (v in markers) {
                         val marker = Marker(mapView).apply {
@@ -656,6 +707,13 @@ fun TripItineraryDetailView(
                         }
                         vehiclesFolder.add(marker)
                     }
+                    if (isFocusOnVehicle && monitoredVehicle != null) {
+                        mapView.controller.animateTo(
+                            GeoPoint(monitoredVehicle.latitude, monitoredVehicle.longitude),
+                            17.5,
+                            600L
+                        )
+                    }
                     mapView.invalidate()
                 }
 
@@ -663,6 +721,7 @@ fun TripItineraryDetailView(
             }
         } else {
             vehiclesFolder.items.clear()
+            liveVehicles = emptyList()
             mapView.invalidate()
         }
     }
@@ -718,6 +777,7 @@ fun TripItineraryDetailView(
                         // Se o usuario estiver a ate 250m da parada mais proxima a frente
                         if (distToClosest < 250f && closestIndex > lastPassedStopIndex) {
                             lastPassedStopIndex = closestIndex
+                            NavigationStateHolder.lastPassedStopIndex = closestIndex
                         }
                     }
 
@@ -728,11 +788,26 @@ fun TripItineraryDetailView(
                         stage.totalStopsCount.coerceAtLeast(1)
                     }
                     remainingStopsCount = remaining
+                    NavigationStateHolder.currentRemainingStops.value = remaining
                 }
 
                 val destPt = stage.destinationPoint
                 if (destPt != null) {
                     val distToDest = distanceMeters(userLoc.latitude, userLoc.longitude, destPt.latitude, destPt.longitude)
+                    NavigationStateHolder.currentDistToDescentMeters.value = distToDest
+
+                    // Disparo do Alarme de Desembarque (2 paradas ou <= 400m)
+                    if ((remainingStopsCount <= 2 || distToDest <= 400f) && !NavigationStateHolder.hasAlertedCurrentLeg) {
+                        NavigationStateHolder.hasAlertedCurrentLeg = true
+                        NavigationStateHolder.isDescentAlarmTriggered.value = true
+                        TripDescentAlarmHelper.triggerDescentAlarm(
+                            context = context,
+                            destinationStopName = stage.destinationStopName,
+                            remainingStops = remainingStopsCount,
+                            distanceMeters = distToDest
+                        )
+                    }
+
                     if (distToDest <= 60f || (lastPassedStopIndex >= 0 && lastPassedStopIndex >= fullStopList.size - 1)) {
                         // Chegou na parada destino do onibus
                         currentStageIndex = (currentStageIndex + 1).coerceAtMost(stages.size - 1)
@@ -777,6 +852,9 @@ fun TripItineraryDetailView(
             onStartNavigation = {
                 isNavigating = true
                 currentStageIndex = 0
+                isFocusOnVehicle = false
+                NavigationStateHolder.isNavigating.value = true
+                TripNavigationTrackingService.startTracking(context)
                 val myLoc = locationOverlay.myLocation
                 val userLoc = currentUserLocation
                 val best = myLoc ?: userLoc?.let { GeoPoint(it.latitude, it.longitude) }
@@ -788,8 +866,12 @@ fun TripItineraryDetailView(
                 isNavigating = false
                 currentStageIndex = 0
                 isExpandedDeck = false
+                isFocusOnVehicle = false
+                NavigationStateHolder.reset()
+                TripNavigationTrackingService.stopTracking(context)
                 intermediateMarkersFolder.items.clear()
                 vehiclesFolder.items.clear()
+                liveVehicles = emptyList()
                 mapView.invalidate()
             },
             onPreviousStage = {
@@ -807,20 +889,58 @@ fun TripItineraryDetailView(
             }
         )
 
-        // Botao Flutuante de Centralizacao no GPS (Minha Localizacao)
-        Box(
+        // Botoes Flutuantes de Camera / Centralizacao (Item 5.2)
+        Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 16.dp)
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF))
-                .border(
-                    1.dp,
-                    if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB),
-                    CircleShape
-                )
-                .clickable {
+                .padding(end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (isNavigating) {
+                // Botao Foco no Onibus em aproximacao
+                Surface(
+                    onClick = {
+                        val veh = monitoredVehicle
+                        if (veh != null) {
+                            isFocusOnVehicle = true
+                            mapView.controller.animateTo(
+                                GeoPoint(veh.latitude, veh.longitude),
+                                17.5,
+                                750L
+                            )
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Buscando veículo em aproximação...",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    shape = CircleShape,
+                    color = if (isFocusOnVehicle) TransitGreen else if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isFocusOnVehicle) TransitGreen else if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB)
+                    ),
+                    shadowElevation = 3.dp,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector = Icons.Rounded.DirectionsBus,
+                            contentDescription = "Focar no ônibus",
+                            tint = if (isFocusOnVehicle) Color.White else if (monitoredVehicle != null) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+
+            // Botao Minha Localizacao (GPS)
+            Surface(
+                onClick = {
+                    isFocusOnVehicle = false
                     val myLoc = locationOverlay.myLocation
                     if (myLoc != null) {
                         mapView.controller.animateTo(myLoc, 17.0, 750L)
@@ -839,14 +959,24 @@ fun TripItineraryDetailView(
                         }
                     }
                 },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.MyLocation,
-                contentDescription = "Minha localização",
-                tint = TransitGreen,
-                modifier = Modifier.size(22.dp)
-            )
+                shape = CircleShape,
+                color = if (!isFocusOnVehicle && isNavigating) TransitGreen else if (isDarkTheme) Color(0xE61E2028) else Color(0xF2FFFFFF),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (!isFocusOnVehicle && isNavigating) TransitGreen else if (isDarkTheme) Color(0xFF333644) else Color(0xFFE2E4EB)
+                ),
+                shadowElevation = 3.dp,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(
+                        imageVector = Icons.Rounded.MyLocation,
+                        contentDescription = "Minha localização",
+                        tint = if (!isFocusOnVehicle && isNavigating) Color.White else TransitGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
         }
 
         // Painel inferior contextual
@@ -870,19 +1000,12 @@ fun TripItineraryDetailView(
                 selectedLine = selectedLineForRide,
                 liveDeparturesByLine = liveDeparturesByLine,
                 currentTickerMs = currentTimerTickerMs,
+                isDescentAlarmTriggered = isDescentAlarmTriggered,
                 dbHelper = dbHelper,
                 onToggleExpand = { isExpandedDeck = !isExpandedDeck },
                 onLineSelectedToBoard = { line ->
                     selectedLineForRide = line
                     currentStageIndex = (currentStageIndex + 1).coerceAtMost(stages.size - 1)
-                },
-                onManualAdvance = {
-                    if (currentStage is NavigationStage.WaitForTransit && (currentStage as NavigationStage.WaitForTransit).candidateLines.size > 1) {
-                        linesToChooseFrom = (currentStage as NavigationStage.WaitForTransit).candidateLines
-                        isChoosingLineDialog = true
-                    } else if (currentStageIndex < stages.size - 1) {
-                        currentStageIndex++
-                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1181,10 +1304,10 @@ private fun ActiveNavigationDeck(
     selectedLine: TripTransitLineOption?,
     liveDeparturesByLine: Map<Int, List<TripDepartureItem>>,
     currentTickerMs: Long,
+    isDescentAlarmTriggered: Boolean,
     dbHelper: DatabaseHelper,
     onToggleExpand: () -> Unit,
     onLineSelectedToBoard: (TripTransitLineOption) -> Unit,
-    onManualAdvance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
@@ -1193,8 +1316,12 @@ private fun ActiveNavigationDeck(
 
     val targetHeight = if (isWaitForTransit && isExpanded) {
         if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp
+    } else if (isWaitForTransit) {
+        200.dp
+    } else if (stage is NavigationStage.RideTransit && isDescentAlarmTriggered) {
+        155.dp
     } else {
-        210.dp
+        115.dp
     }
 
     val animatedHeight by animateDpAsState(targetValue = targetHeight, animationSpec = animSpec, label = "deckH")
@@ -1306,17 +1433,6 @@ private fun ActiveNavigationDeck(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Button(
-                        onClick = onManualAdvance,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = TransitGreen),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text("Já cheguei na parada", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
 
@@ -1543,15 +1659,31 @@ private fun ActiveNavigationDeck(
                         }
                     }
 
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Button(
-                        onClick = onManualAdvance,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = TransitGreen),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text("Cheguei na parada de descida", fontWeight = FontWeight.Bold, color = Color.White)
+                    if (isDescentAlarmTriggered) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFF9800).copy(alpha = 0.15f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9800)),
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE65100),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Prepare-se para desembarcar!",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFFE65100)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1591,17 +1723,6 @@ private fun ActiveNavigationDeck(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Button(
-                        onClick = onManualAdvance,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = TransitGreen),
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text("Cheguei no destino", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
 
