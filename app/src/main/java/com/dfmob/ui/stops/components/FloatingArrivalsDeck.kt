@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import android.widget.Toast
+import androidx.core.app.NotificationManagerCompat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -505,8 +507,22 @@ fun FloatingArrivalsDeck(
                             onToggleAlarm = {
                                 if (isAlarmActive) {
                                     stopAlarmsRepo.removeAlarm(stop.stopId, arrival.lineNumber, arrival.destination)
+                                    Toast.makeText(context, "Aviso de aproximação desativado", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val targetEpoch = if (arrival.targetEpochMs > 0L) arrival.targetEpochMs else (System.currentTimeMillis() + arrival.minutesAway * 60_000L)
+                                    val notifEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                                    if (!notifEnabled) {
+                                        Toast.makeText(context, "Ative as notificações nas configurações do celular para receber os alertas", Toast.LENGTH_LONG).show()
+                                    }
+
+                                    val currentMins = arrival.getEffectiveMinutes(currentClockMs)
+                                    val targetEpoch = if (arrival.isRealtime && arrival.targetEpochMs > 0L) {
+                                        arrival.targetEpochMs
+                                    } else if (arrival.targetEpochMs > 0L && Math.abs(arrival.targetEpochMs - (currentClockMs + currentMins * 60_000L)) < 300_000L) {
+                                        arrival.targetEpochMs
+                                    } else {
+                                        currentClockMs + currentMins * 60_000L
+                                    }
+
                                     stopAlarmsRepo.setAlarm(
                                         StopArrivalAlarm(
                                             lineNumber = arrival.lineNumber,
@@ -516,6 +532,7 @@ fun FloatingArrivalsDeck(
                                             targetEpochMs = targetEpoch
                                         )
                                     )
+                                    Toast.makeText(context, "Aviso ativado para a linha ${arrival.lineNumber}!", Toast.LENGTH_SHORT).show()
                                 }
                                 alarmsRevision++
                             }

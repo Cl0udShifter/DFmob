@@ -47,6 +47,60 @@ class StopAlarmsRepository(private val context: Context) {
     }
 
     fun setAlarm(alarm: StopArrivalAlarm) {
+        val now = System.currentTimeMillis()
+        val effectiveMinutes = if (alarm.targetEpochMs > 0L) {
+            maxOf(0, Math.round((alarm.targetEpochMs - now) / 60000.0).toInt())
+        } else 0
+
+        // Disparo imediato caso o alarme tenha sido ativado com o onibus ja dentro do intervalo de um marco
+        var updated = alarm
+        if (!updated.notified15Min && effectiveMinutes in 11..15) {
+            updated = updated.copy(notified15Min = true)
+            StopArrivalAlarmReceiver.showMilestoneNotification(
+                context = context,
+                stopId = updated.stopId,
+                stopName = updated.stopName,
+                lineNumber = updated.lineNumber,
+                destination = updated.destination,
+                minutes = effectiveMinutes
+            )
+        } else if (!updated.notified10Min && effectiveMinutes in 6..10) {
+            updated = updated.copy(notified15Min = true, notified10Min = true)
+            StopArrivalAlarmReceiver.showMilestoneNotification(
+                context = context,
+                stopId = updated.stopId,
+                stopName = updated.stopName,
+                lineNumber = updated.lineNumber,
+                destination = updated.destination,
+                minutes = effectiveMinutes
+            )
+        } else if (!updated.notified5Min && effectiveMinutes in 3..5) {
+            updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true)
+            StopArrivalAlarmReceiver.showMilestoneNotification(
+                context = context,
+                stopId = updated.stopId,
+                stopName = updated.stopName,
+                lineNumber = updated.lineNumber,
+                destination = updated.destination,
+                minutes = effectiveMinutes
+            )
+        } else if (!updated.notified2Min && effectiveMinutes in 1..2) {
+            updated = updated.copy(notified15Min = true, notified10Min = true, notified5Min = true, notified2Min = true)
+            StopArrivalAlarmReceiver.showMilestoneNotification(
+                context = context,
+                stopId = updated.stopId,
+                stopName = updated.stopName,
+                lineNumber = updated.lineNumber,
+                destination = updated.destination,
+                minutes = effectiveMinutes
+            )
+        }
+
+        saveToPrefs(updated)
+        scheduleSystemAlarms(updated)
+    }
+
+    private fun saveToPrefs(alarm: StopArrivalAlarm) {
         val obj = JSONObject().apply {
             put("lineNumber", alarm.lineNumber)
             put("destination", alarm.destination)
@@ -60,9 +114,6 @@ class StopAlarmsRepository(private val context: Context) {
             put("isAutoCancelled", alarm.isAutoCancelled)
         }
         prefs.edit().putString(alarm.key, obj.toString()).apply()
-
-        // Agenda alarmes no AlarmManager para os marcos futuros (15, 10, 5, 2 min)
-        scheduleSystemAlarms(alarm)
     }
 
     fun removeAlarm(stopId: Int, lineNumber: String, destination: String) {
@@ -80,7 +131,7 @@ class StopAlarmsRepository(private val context: Context) {
             2 -> alarm.copy(notified2Min = true)
             else -> alarm
         }
-        setAlarm(updated)
+        saveToPrefs(updated)
     }
 
     private fun scheduleSystemAlarms(alarm: StopArrivalAlarm) {
@@ -97,7 +148,7 @@ class StopAlarmsRepository(private val context: Context) {
                 2 -> alarm.notified2Min
                 else -> false
             }
-            if (!alreadyNotified && triggerTime > now + 2000L) {
+            if (!alreadyNotified && triggerTime > now + 1000L) {
                 val intent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
                     action = "com.dfmob.ACTION_STOP_ALARM_MILESTONE"
                     putExtra("stopId", alarm.stopId)
@@ -115,15 +166,7 @@ class StopAlarmsRepository(private val context: Context) {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-                    } else {
-                        alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-                    }
-                } catch (_: SecurityException) {
-                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-                }
+                scheduleAlarmSafely(alarmManager, triggerTime, pendingIntent)
             }
         }
 
@@ -143,13 +186,43 @@ class StopAlarmsRepository(private val context: Context) {
                 expireIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expireTime, expirePendingIntent)
+            scheduleAlarmSafely(alarmManager, expireTime, expirePendingIntent)
+        }
+    }
+
+    private fun scheduleAlarmSafely(
+        alarmManager: AlarmManager,
+        triggerTime: Long,
+        pendingIntent: PendingIntent
+    ) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
                 } else {
-                    alarmManager.set(AlarmManager.RTC_WAKEUP, expireTime, expirePendingIntent)
+                    val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
+                    alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
                 }
-            } catch (_: Exception) {}
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            } else {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            }
+        } catch (_: SecurityException) {
+            try {
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            } catch (_: Exception) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                } else {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+                }
+            }
+        } catch (_: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            }
         }
     }
 
