@@ -46,20 +46,10 @@ class StopArrivalTrackingService : Service() {
             val destination = intent.getStringExtra(EXTRA_DESTINATION) ?: ""
             if (stopId > 0 && lineNumber.isNotBlank()) {
                 repo.removeAlarm(stopId, lineNumber, destination)
-            } else {
-                repo.getAllActiveAlarms().forEach {
-                    repo.removeAlarm(it.stopId, it.lineNumber, it.destination)
-                }
-            }
-            if (repo.getAllActiveAlarms().isEmpty()) {
-                stopTrackingAndSelf()
-                return START_NOT_STICKY
             }
         }
-
-        startForegroundWithOngoingNotification()
-        startTrackingLoop()
-        return START_STICKY
+        stopTrackingAndSelf()
+        return START_NOT_STICKY
     }
 
     private fun startForegroundWithOngoingNotification() {
@@ -333,11 +323,8 @@ class StopArrivalTrackingService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, StopArrivalTrackingService::class.java).apply {
-                action = ACTION_CANCEL
-            }
             try {
-                context.startService(intent)
+                context.stopService(Intent(context, StopArrivalTrackingService::class.java))
             } catch (_: Exception) {}
         }
     }

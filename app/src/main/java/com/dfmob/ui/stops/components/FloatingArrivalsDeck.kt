@@ -54,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,7 +103,7 @@ fun FloatingArrivalsDeck(
     val context = LocalContext.current
     val stopsRepo = remember { StopsRepository(context) }
     val stopAlarmsRepo = remember { StopAlarmsRepository(context) }
-    var alarmsRevision by remember { mutableStateOf(0) }
+    val alarmsRevision by StopAlarmsRepository.alarmsRevisionFlow.collectAsState()
     var selectedScheduleArrival by remember { mutableStateOf<StopArrival?>(null) }
     var dailySchedule by remember { mutableStateOf<List<NextDeparture>>(emptyList()) }
     var isLoadingSchedule by remember { mutableStateOf(false) }
@@ -136,23 +137,6 @@ fun FloatingArrivalsDeck(
         while (isActive) {
             delay(1000L)
             currentClockMs = System.currentTimeMillis()
-        }
-    }
-
-    // Auto-cancelamento: desativa o aviso automaticamente após o ônibus passar do "Já"
-    LaunchedEffect(currentClockMs) {
-        var changed = false
-        for (arr in arrivals) {
-            if (stopAlarmsRepo.isAlarmActive(stop.stopId, arr.lineNumber, arr.destination)) {
-                val effectiveMins = arr.getEffectiveMinutes(currentClockMs)
-                if (arr.targetEpochMs > 0L && effectiveMins <= 0 && (currentClockMs - arr.targetEpochMs) > 180_000L) {
-                    stopAlarmsRepo.removeAlarm(stop.stopId, arr.lineNumber, arr.destination)
-                    changed = true
-                }
-            }
-        }
-        if (changed) {
-            alarmsRevision++
         }
     }
 
@@ -496,7 +480,9 @@ fun FloatingArrivalsDeck(
                         items = sortedArrivals,
                         key = { index, it -> "${it.lineNumber}_${it.destination}_${it.minutesAway}_${it.scheduledTimeFormatted}_$index" }
                     ) { _, arrival ->
-                        val isAlarmActive = stopAlarmsRepo.isAlarmActive(stop.stopId, arrival.lineNumber, arrival.destination)
+                        val isAlarmActive = remember(stop.stopId, arrival.lineNumber, arrival.destination, alarmsRevision) {
+                            stopAlarmsRepo.isAlarmActive(stop.stopId, arrival.lineNumber, arrival.destination)
+                        }
                         StopArrivalLineCard(
                             arrival = arrival,
                             currentClockMs = currentClockMs,
@@ -534,7 +520,6 @@ fun FloatingArrivalsDeck(
                                     )
                                     Toast.makeText(context, "Aviso ativado para a linha ${arrival.lineNumber}!", Toast.LENGTH_SHORT).show()
                                 }
-                                alarmsRevision++
                             }
                         )
                     }

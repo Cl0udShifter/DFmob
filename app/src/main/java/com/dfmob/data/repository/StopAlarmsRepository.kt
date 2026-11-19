@@ -4,16 +4,37 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import com.dfmob.data.model.StopArrivalAlarm
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.receiver.StopArrivalAlarmReceiver
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 class StopAlarmsRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("dfmob_stop_alarms_prefs", Context.MODE_PRIVATE)
+
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        notifyAlarmsChanged()
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
+    companion object {
+        private val _alarmsRevisionFlow = MutableStateFlow(0L)
+        val alarmsRevisionFlow: StateFlow<Long> = _alarmsRevisionFlow.asStateFlow()
+
+        fun notifyAlarmsChanged() {
+            _alarmsRevisionFlow.value = System.currentTimeMillis()
+        }
+    }
 
     fun isAlarmActive(stopId: Int, lineNumber: String, destination: String = ""): Boolean {
         val cleanLine = lineNumber.trim()
@@ -33,6 +54,8 @@ class StopAlarmsRepository(private val context: Context) {
                         destination.trim().contains(dest, ignoreCase = true)) {
                         return true
                     }
+                    // Em uma parada física específica há apenas um trajeto desta linha passando
+                    return true
                 }
             } catch (_: Exception) {}
         }
@@ -42,6 +65,7 @@ class StopAlarmsRepository(private val context: Context) {
     fun getAlarm(stopId: Int, lineNumber: String, destination: String = ""): StopArrivalAlarm? {
         val cleanLine = lineNumber.trim()
         val allEntries = prefs.all
+        var fallbackMatch: StopArrivalAlarm? = null
         for ((_, value) in allEntries) {
             val json = value as? String ?: continue
             try {
@@ -50,28 +74,32 @@ class StopAlarmsRepository(private val context: Context) {
                 val sId = obj.optInt("stopId", -1)
                 val lNum = obj.optString("lineNumber", "").trim()
                 if (sId == stopId && lNum.equals(cleanLine, ignoreCase = true)) {
+                    val alarmObj = StopArrivalAlarm(
+                        lineNumber = obj.getString("lineNumber"),
+                        destination = obj.getString("destination"),
+                        stopId = obj.getInt("stopId"),
+                        stopName = obj.getString("stopName"),
+                        targetEpochMs = obj.getLong("targetEpochMs"),
+                        notified15Min = obj.optBoolean("notified15Min", false),
+                        notified10Min = obj.optBoolean("notified10Min", false),
+                        notified5Min = obj.optBoolean("notified5Min", false),
+                        notified2Min = obj.optBoolean("notified2Min", false),
+                        isAutoCancelled = false
+                    )
                     val dest = obj.optString("destination", "").trim()
                     if (destination.isBlank() || dest.isBlank() ||
                         dest.equals(destination.trim(), ignoreCase = true) ||
                         dest.contains(destination.trim(), ignoreCase = true) ||
                         destination.trim().contains(dest, ignoreCase = true)) {
-                        return StopArrivalAlarm(
-                            lineNumber = obj.getString("lineNumber"),
-                            destination = obj.getString("destination"),
-                            stopId = obj.getInt("stopId"),
-                            stopName = obj.getString("stopName"),
-                            targetEpochMs = obj.getLong("targetEpochMs"),
-                            notified15Min = obj.optBoolean("notified15Min", false),
-                            notified10Min = obj.optBoolean("notified10Min", false),
-                            notified5Min = obj.optBoolean("notified5Min", false),
-                            notified2Min = obj.optBoolean("notified2Min", false),
-                            isAutoCancelled = false
-                        )
+                        return alarmObj
+                    }
+                    if (fallbackMatch == null) {
+                        fallbackMatch = alarmObj
                     }
                 }
             } catch (_: Exception) {}
         }
-        return null
+        return fallbackMatch
     }
 
     fun getAllActiveAlarms(): List<StopArrivalAlarm> {
@@ -139,9 +167,10 @@ class StopAlarmsRepository(private val context: Context) {
             put("isAutoCancelled", alarm.isAutoCancelled)
         }
         prefs.edit().putString(alarm.key, obj.toString()).apply()
+        notifyAlarmsChanged()
     }
 
-    fun removeAlarm(stopId: Int, lineNumber: String, destination: String) {
+    fun removeAlarm(stopId: Int, lineNumber: String, destination: String = "") {
         val cleanLine = lineNumber.trim()
         val allEntries = prefs.all
         val editor = prefs.edit()
@@ -164,13 +193,13 @@ class StopAlarmsRepository(private val context: Context) {
             } catch (_: Exception) {}
         }
         editor.apply()
+        notifyAlarmsChanged()
 
         // Cancela qualquer notificacao de alerta ativa na gaveta para esta parada/linha
         val notificationId = 20000 + (stopId * 31 + lineNumber.hashCode()).rem(10000).let { if (it < 0) -it else it }
         try {
             NotificationManagerCompat.from(context).cancel(notificationId)
             NotificationManagerCompat.from(context).cancel(29999)
-            com.dfmob.service.StopArrivalTrackingService.stop(context)
         } catch (_: Exception) {}
     }
 
@@ -239,8 +268,8 @@ class StopAlarmsRepository(private val context: Context) {
             }
         }
 
-        // Agendamento de auto-cancelamento (2 minutos apos o targetEpochMs)
-        val expireTime = alarm.targetEpochMs + 120_000L
+        // Agendamento de auto-cancelamento (15 minutos apos o targetEpochMs)
+        val expireTime = alarm.targetEpochMs + 900_000L
         if (expireTime > now) {
             val expireIntent = Intent(context, StopArrivalAlarmReceiver::class.java).apply {
                 action = "com.dfmob.ACTION_STOP_ALARM_EXPIRE"

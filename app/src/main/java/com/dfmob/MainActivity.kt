@@ -92,9 +92,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Limpa servico de rastreamento continuo residual e sua notificacao fixa
+        // Encerra qualquer servico legado residual e limpa notificacao residual
         try {
-            com.dfmob.service.StopArrivalTrackingService.stop(applicationContext)
+            stopService(Intent(applicationContext, com.dfmob.service.StopArrivalTrackingService::class.java))
             androidx.core.app.NotificationManagerCompat.from(applicationContext).cancel(29999)
         } catch (_: Exception) {}
 
