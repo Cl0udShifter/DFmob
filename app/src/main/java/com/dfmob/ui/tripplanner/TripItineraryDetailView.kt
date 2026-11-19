@@ -1068,8 +1068,13 @@ private fun TopNavigationBar(
 
                     val startHH = formatEpochMsToHHMM(itinerary.startTimeUtc)
                     val endHH = formatEpochMsToHHMM(itinerary.endTimeUtc)
+                    val fareDesc = if (itinerary.isFareIntegrated) {
+                        "${itinerary.formattedFare} (Integrado)"
+                    } else {
+                        itinerary.formattedFare
+                    }
                     Text(
-                        text = "$startHH - $endHH (${formatDuration(itinerary.totalDurationMinutes)})",
+                        text = "$startHH - $endHH (${formatDuration(itinerary.totalDurationMinutes)}) • $fareDesc",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                         color = TransitGreen
                     )

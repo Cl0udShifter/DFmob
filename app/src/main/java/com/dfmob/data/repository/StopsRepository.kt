@@ -13,6 +13,7 @@ import com.dfmob.data.model.StopArrival
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.model.VehicleType
+import com.dfmob.data.tariff.DFFareCalculator
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.data.telemetry.SemobTelemetryService
 import kotlinx.coroutines.Dispatchers
@@ -1096,8 +1097,13 @@ class StopsRepository(private val context: Context) {
         to: com.dfmob.data.model.TripPlanLocation,
         filter: com.dfmob.data.model.TripPlanFilter
     ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
+        DFFareCalculator.loadPricesIfNeeded(context)
         val rawItineraries = MoovitTransitClient.searchTripPlan(from, to, filter, dbHelper)
-        enrichItinerariesWithDepartures(rawItineraries)
+        val enriched = enrichItinerariesWithDepartures(rawItineraries)
+        enriched.map { itin ->
+            val (fare, isIntegrated) = DFFareCalculator.calculateItineraryFare(itin)
+            itin.copy(estimatedFare = fare, isFareIntegrated = isIntegrated)
+        }
     }
 
     suspend fun reverseGeocode(latE6: Int, lonE6: Int): String = withContext(Dispatchers.IO) {

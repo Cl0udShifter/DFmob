@@ -84,8 +84,17 @@ data class TripPlanItinerary(
     val walkDurationMinutes: Int,
     val walkDistanceMeters: Double,
     val transfersCount: Int,
-    val legs: List<TripPlanLeg>
-)
+    val legs: List<TripPlanLeg>,
+    val estimatedFare: Double = 0.0,
+    val isFareIntegrated: Boolean = false
+) {
+    val formattedFare: String
+        get() = if (estimatedFare <= 0.0) {
+            "Gratuito"
+        } else {
+            String.format(java.util.Locale("pt", "BR"), "R$ %.2f", estimatedFare)
+        }
+}
 
 object PolylineDecoder {
     fun decode(encoded: String): List<Pair<Double, Double>> {
