@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         // Configuracao global de download de tiles com persistencia vitalicia no osmdroid
         Configuration.getInstance().apply {
             load(applicationContext, getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
-            userAgentValue = "DFmob/1.4.4 (Android)"
+            userAgentValue = "DFmob/1.4.5 (Android)"
             tileDownloadThreads = 8.toShort()
             tileDownloadMaxQueueSize = 60.toShort()
             cacheMapTileCount = 64.toShort()

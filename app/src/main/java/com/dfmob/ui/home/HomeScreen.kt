@@ -1,5 +1,7 @@
 package com.dfmob.ui.home
 
+import android.content.Context
+import android.location.LocationManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -41,6 +43,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.FavoriteLineArrivalPrediction
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
@@ -55,7 +58,10 @@ import com.dfmob.ui.theme.DFmobTheme
 import com.dfmob.ui.theme.TransitGreen
 import com.dfmob.updater.AppUpdateManager
 import com.dfmob.updater.UpdateState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
@@ -72,6 +78,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val recentRepo = recentSearchesRepository ?: remember { RecentSearchesRepository(context) }
+    val stopsRepo = remember { StopsRepository(context) }
     val scope = rememberCoroutineScope()
     val updateManager = remember { AppUpdateManager(context) }
 
@@ -83,9 +90,47 @@ fun HomeScreen(
     val homePlace by recentRepo.homePlace.collectAsState()
     val workPlace by recentRepo.workPlace.collectAsState()
 
+    var favoritePredictions by remember { mutableStateOf<Map<String, FavoriteLineArrivalPrediction>>(emptyMap()) }
+
     var pickingPlaceType by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
+
+    // Previsões de chegada em tempo real / estáticas para as linhas favoritas na parada mais próxima
+    LaunchedEffect(favoriteLines) {
+        if (favoriteLines.isEmpty()) {
+            favoritePredictions = emptyMap()
+            return@LaunchedEffect
+        }
+        while (true) {
+            withContext(Dispatchers.IO) {
+                val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                val loc = try {
+                    lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                        ?: lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                } catch (_: SecurityException) {
+                    null
+                }
+
+                // Fallback para o centro do Plano Piloto se GPS indisponivel
+                val uLatE6 = loc?.let { (it.latitude * 1_000_000).toInt() } ?: -15794200
+                val uLonE6 = loc?.let { (it.longitude * 1_000_000).toInt() } ?: -47882200
+
+                val predictions = mutableMapOf<String, FavoriteLineArrivalPrediction>()
+                favoriteLines.forEach { line ->
+                    val pred = stopsRepo.getNextArrivalForFavoriteLine(line, uLatE6, uLonE6)
+                    if (pred != null) {
+                        val key = FavoritesRepository.getLineKey(line)
+                        predictions[key] = pred
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    favoritePredictions = predictions
+                }
+            }
+            delay(30_000L)
+        }
+    }
 
     // Verificacao de atualizacao em background, sem bloquear o carregamento imediato dos favoritos
     LaunchedEffect(Unit) {
@@ -266,6 +311,7 @@ fun HomeScreen(
                 recentSearches = recentSearches,
                 favoriteLines = favoriteLines,
                 favoriteStops = favoriteStops,
+                favoritePredictions = favoritePredictions,
                 onRecentSearchClick = { loc -> onNavigateToTripPlanner(loc) },
                 onTogglePin = { item -> recentRepo.togglePin(item) },
                 onClearRecent = { recentRepo.clearUnpinned() },

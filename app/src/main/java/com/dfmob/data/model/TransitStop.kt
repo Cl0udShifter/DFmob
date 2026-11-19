@@ -77,3 +77,11 @@ data class DFLocation(
     val latitude: Double get() = latE6 / 1_000_000.0
     val longitude: Double get() = lonE6 / 1_000_000.0
 }
+
+data class FavoriteLineArrivalPrediction(
+    val lineNumber: String,
+    val directionId: Int?,
+    val stopId: Int,
+    val stopName: String,
+    val arrival: StopArrival
+)

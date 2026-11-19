@@ -4,11 +4,13 @@ import android.content.Context
 import android.location.Geocoder
 import com.dfmob.data.database.DatabaseHelper
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.FavoriteLineArrivalPrediction
 import com.dfmob.data.model.LineDirectionOption
 import com.dfmob.data.model.LineRouteState
 import com.dfmob.data.model.LiveVehicleMarker
 import com.dfmob.data.model.NextDeparture
 import com.dfmob.data.model.StopArrival
+import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
 import com.dfmob.data.telemetry.MoovitTransitClient
 import com.dfmob.data.telemetry.SemobTelemetryService
@@ -788,6 +790,45 @@ class StopsRepository(private val context: Context) {
             }
 
             staticForThisLine
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun getNextArrivalForFavoriteLine(
+        line: TransitLine,
+        userLatE6: Int,
+        userLonE6: Int
+    ): FavoriteLineArrivalPrediction? = withContext(Dispatchers.IO) {
+        try {
+            val detail = dbHelper.getLineDetailByNumber(line.lineNumber) ?: return@withContext null
+            val targetDir = if (line.isCircular || line.directionId == null) {
+                detail.directions.firstOrNull()
+            } else {
+                detail.directions.firstOrNull { it.directionId == line.directionId } ?: detail.directions.firstOrNull()
+            }
+            val targetLineId = targetDir?.lineId ?: line.routeId.toIntOrNull() ?: return@withContext null
+            val stops = dbHelper.getStopsForLine(targetLineId)
+            if (stops.isEmpty()) return@withContext null
+
+            val closestStop = stops.minByOrNull {
+                calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6)
+            } ?: return@withContext null
+
+            val dist = calculateDistanceMeters(userLatE6, userLonE6, closestStop.latE6, closestStop.lonE6)
+            if (dist > 3000.0) return@withContext null
+
+            val staticArrival = getStaticArrivalForLineAtStop(targetLineId, closestStop)
+            val liveArrival = fetchArrivalForLineAtStop(targetLineId, closestStop)
+            val bestArrival = liveArrival ?: staticArrival ?: return@withContext null
+
+            FavoriteLineArrivalPrediction(
+                lineNumber = line.lineNumber,
+                directionId = line.directionId,
+                stopId = closestStop.stopId,
+                stopName = closestStop.stopName,
+                arrival = bestArrival
+            )
         } catch (_: Exception) {
             null
         }

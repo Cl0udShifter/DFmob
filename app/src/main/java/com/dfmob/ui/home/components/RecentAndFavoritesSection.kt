@@ -19,7 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,8 +38,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.model.FavoriteLineArrivalPrediction
 import com.dfmob.data.model.TransitLine
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchItem
 import com.dfmob.ui.theme.TransitGreen
 
@@ -46,6 +50,7 @@ fun RecentAndFavoritesSection(
     recentSearches: List<RecentSearchItem> = emptyList(),
     favoriteLines: List<TransitLine> = emptyList(),
     favoriteStops: List<TransitStop> = emptyList(),
+    favoritePredictions: Map<String, FavoriteLineArrivalPrediction> = emptyMap(),
     onRecentSearchClick: (DFLocation) -> Unit = {},
     onTogglePin: (RecentSearchItem) -> Unit = {},
     onClearRecent: () -> Unit = {},
@@ -69,6 +74,7 @@ fun RecentAndFavoritesSection(
         FavoritesCard(
             favoriteLines = favoriteLines,
             favoriteStops = favoriteStops,
+            favoritePredictions = favoritePredictions,
             onLineClick = onLineClick,
             onStopClick = onStopClick
         )
@@ -79,6 +85,7 @@ fun RecentAndFavoritesSection(
 private fun FavoritesCard(
     favoriteLines: List<TransitLine>,
     favoriteStops: List<TransitStop>,
+    favoritePredictions: Map<String, FavoriteLineArrivalPrediction>,
     onLineClick: (TransitLine) -> Unit,
     onStopClick: (TransitStop) -> Unit,
     modifier: Modifier = Modifier
@@ -135,8 +142,10 @@ private fun FavoritesCard(
                         )
                     }
                     favoriteLines.forEach { line ->
+                        val key = FavoritesRepository.getLineKey(line)
                         FavoriteLineMiniRow(
                             line = line,
+                            prediction = favoritePredictions[key],
                             onClick = { onLineClick(line) }
                         )
                     }
@@ -248,6 +257,7 @@ private fun FavoriteStopMiniRow(
 @Composable
 private fun FavoriteLineMiniRow(
     line: TransitLine,
+    prediction: FavoriteLineArrivalPrediction? = null,
     onClick: () -> Unit = {}
 ) {
     val rowShape = RoundedCornerShape(12.dp)
@@ -316,8 +326,17 @@ private fun FavoriteLineMiniRow(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                val subText = if (!line.destinationName.isNullOrBlank()) {
+                    "${line.agencyName} • Sentido ${line.destinationName}"
+                } else if (line.directionId != null && !line.isCircular) {
+                    val dir = if (line.directionId == 0) "Ida" else "Volta"
+                    "${line.agencyName} • Sentido $dir"
+                } else {
+                    line.agencyName
+                }
+
                 Text(
-                    text = line.agencyName,
+                    text = subText,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Normal
@@ -326,6 +345,38 @@ private fun FavoriteLineMiniRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (prediction != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                val isRealtime = prediction.arrival.isRealtime
+                val chipBg = if (isRealtime) Color(0x2400D26A) else MaterialTheme.colorScheme.surface
+                val chipContentColor = if (isRealtime) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                val chipBorderColor = if (isRealtime) TransitGreen.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(chipBg)
+                        .border(1.dp, chipBorderColor, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isRealtime) Icons.Rounded.Wifi else Icons.Rounded.Schedule,
+                        contentDescription = if (isRealtime) "GPS ao vivo" else "Programado",
+                        tint = chipContentColor,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = prediction.arrival.getDisplayEta(),
+                        color = chipContentColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))

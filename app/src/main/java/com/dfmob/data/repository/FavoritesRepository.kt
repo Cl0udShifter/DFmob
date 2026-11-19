@@ -20,6 +20,14 @@ class FavoritesRepository(context: Context) {
         private const val KEY_FAVORITE_LINES_JSON = "favorite_lines_json"
         private const val KEY_FAVORITE_STOPS = "favorite_stop_ids"
         private const val KEY_FAVORITE_STOPS_JSON = "favorite_stops_json"
+
+        fun getLineKey(line: TransitLine): String {
+            return if (line.isCircular || line.directionId == null) {
+                line.lineNumber
+            } else {
+                "${line.lineNumber}_${line.directionId}"
+            }
+        }
     }
 
     private val _favoriteLines = MutableStateFlow<List<TransitLine>>(loadFavoriteLinesFromPrefs())
@@ -146,14 +154,6 @@ class FavoritesRepository(context: Context) {
             list
         } catch (e: Exception) {
             emptyList()
-        }
-    }
-
-    private fun getLineKey(line: TransitLine): String {
-        return if (line.isCircular || line.directionId == null) {
-            line.lineNumber
-        } else {
-            "${line.lineNumber}_${line.directionId}"
         }
     }
 
