@@ -21,9 +21,9 @@ Documento local de acompanhamento das melhorias recomendadas para o DFmob. Cada 
 
 ## 2. Tela de Mapa e Paradas (`StopsScreen`)
 
-- [ ] **2.1 Filtro de busca dentro do painel da parada**
+- [OK] **2.1 Filtro de busca dentro do painel da parada**
   * Barra de pesquisa rápida e minimalista no topo do painel de chegadas (`FloatingArrivalsDeck`) para filtrar linhas instantaneamente em paradas com muitas opções (ex: EPNB, EPTG, W3, Rodoviária).
-  * Exibição padrão e discreta em todas as paradas.
+  * Exibição padrão, limpa e discreta em todas as paradas, sem caixa envolvente cinza.
 
 - [ ] **2.2 Tabela horária completa do dia na parada**
   * Ícone discreto abaixo do horário principal de chegada, alinhado aos chips das próximas partidas ("Seguintes").

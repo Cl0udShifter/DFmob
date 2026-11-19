@@ -134,7 +134,7 @@ private fun FavoritesCard(
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     favoriteStops.forEach { stop ->
                         FavoriteStopMiniRow(
@@ -161,7 +161,7 @@ private fun FavoriteStopMiniRow(
     stop: TransitStop,
     onClick: () -> Unit
 ) {
-    val rowShape = RoundedCornerShape(12.dp)
+    val rowShape = RoundedCornerShape(10.dp)
     val badgeShape = RoundedCornerShape(8.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -169,89 +169,77 @@ private fun FavoriteStopMiniRow(
     val badgeBg = if (isMetro) Color(0xFF008037) else Color(0xFF00883E)
     val badgeText = Color.White
 
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(rowShape)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = rowShape
-            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = rememberRipple(bounded = true),
                 onClick = onClick
-            ),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = rowShape
+            )
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .defaultMinSize(minWidth = 56.dp, minHeight = 34.dp)
+                .clip(badgeShape)
+                .background(badgeBg)
+                .padding(horizontal = 7.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 54.dp, minHeight = 32.dp)
-                    .clip(badgeShape)
-                    .background(badgeBg)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (isMetro) "METRÔ" else (stop.stopCode ?: "PONTO"),
-                    color = badgeText,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 11.sp,
-                    maxLines = 1
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = stop.stopName,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                val sub = if (isMetro) {
-                    "Metrô-DF • Estação Oficial"
-                } else {
-                    "Parada de Ônibus • ${stop.stopCode ?: "Ponto Oficial SEMOB"}"
-                }
-
-                Text(
-                    text = sub,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Icon(
-                imageVector = Icons.Rounded.Star,
-                contentDescription = "Favorito",
-                tint = Color(0xFFFFB800),
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = if (isMetro) "METRÔ" else (stop.stopCode ?: "PONTO"),
+                color = badgeText,
+                fontWeight = FontWeight.Black,
+                fontSize = 12.sp,
+                maxLines = 1
             )
         }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = stop.stopName,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val sub = if (isMetro) {
+                "Metrô-DF • Estação Oficial"
+            } else {
+                "Parada de Ônibus • ${stop.stopCode ?: "Ponto Oficial SEMOB"}"
+            }
+
+            Text(
+                text = sub,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Icon(
+            imageVector = Icons.Rounded.Star,
+            contentDescription = "Favorito",
+            tint = Color(0xFFFFB800),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
@@ -261,7 +249,7 @@ private fun FavoriteLineMiniRow(
     prediction: FavoriteLineArrivalPrediction? = null,
     onClick: () -> Unit = {}
 ) {
-    val rowShape = RoundedCornerShape(12.dp)
+    val rowShape = RoundedCornerShape(10.dp)
     val badgeShape = RoundedCornerShape(8.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -272,120 +260,108 @@ private fun FavoriteLineMiniRow(
         parseColorSafely(line.textColorHex, Color.White)
     }
 
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(rowShape)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = rowShape
-            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = rememberRipple(bounded = true),
                 onClick = onClick
-            ),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = rowShape
+            )
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .defaultMinSize(minWidth = 56.dp, minHeight = 34.dp)
+                .clip(badgeShape)
+                .background(badgeBg)
+                .padding(horizontal = 7.dp, vertical = 5.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 54.dp, minHeight = 32.dp)
-                    .clip(badgeShape)
-                    .background(badgeBg)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = line.lineNumber,
-                    color = badgeText,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 13.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = line.routeName,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                val subText = if (!line.destinationName.isNullOrBlank()) {
-                    "${line.agencyName} • Sentido ${line.destinationName}"
-                } else if (line.directionId != null && !line.isCircular) {
-                    val dir = if (line.directionId == 0) "Ida" else "Volta"
-                    "${line.agencyName} • Sentido $dir"
-                } else {
-                    line.agencyName
-                }
-
-                Text(
-                    text = subText,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (prediction != null) {
-                Spacer(modifier = Modifier.width(8.dp))
-                val isRealtime = prediction.arrival.isRealtime
-                val isDarkTheme = isSystemInDarkTheme()
-                val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
-                val etaColor = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isRealtime) Icons.Rounded.Wifi else Icons.Rounded.Schedule,
-                        contentDescription = if (isRealtime) "GPS ao vivo" else "Programado",
-                        tint = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = prediction.arrival.getDisplayEta(),
-                        color = etaColor,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        maxLines = 1
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Icon(
-                imageVector = Icons.Rounded.Star,
-                contentDescription = "Favorita",
-                tint = Color(0xFFEAB308),
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = line.lineNumber,
+                color = badgeText,
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp
             )
         }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = line.routeName,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val subText = if (!line.destinationName.isNullOrBlank()) {
+                "${line.agencyName} • Sentido ${line.destinationName}"
+            } else if (line.directionId != null && !line.isCircular) {
+                val dir = if (line.directionId == 0) "Ida" else "Volta"
+                "${line.agencyName} • Sentido $dir"
+            } else {
+                line.agencyName
+            }
+
+            Text(
+                text = subText,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (prediction != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            val isRealtime = prediction.arrival.isRealtime
+            val isDarkTheme = isSystemInDarkTheme()
+            val liveGreen = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
+            val etaColor = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurface
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isRealtime) Icons.Rounded.Wifi else Icons.Rounded.Schedule,
+                    contentDescription = if (isRealtime) "GPS ao vivo" else "Programado",
+                    tint = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = prediction.arrival.getDisplayEta(),
+                    color = etaColor,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    ),
+                    maxLines = 1
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Icon(
+            imageVector = Icons.Rounded.Star,
+            contentDescription = "Favorita",
+            tint = Color(0xFFEAB308),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 

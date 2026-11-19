@@ -24,9 +24,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Wifi
@@ -47,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -280,6 +283,82 @@ fun FloatingArrivalsDeck(
                 }
             }
 
+            var searchQuery by remember { mutableStateOf("") }
+
+            val filteredArrivals = remember(arrivals, searchQuery) {
+                if (searchQuery.isBlank()) {
+                    arrivals
+                } else {
+                    val q = searchQuery.trim().lowercase()
+                    arrivals.filter { arrival ->
+                        arrival.lineNumber.lowercase().contains(q) ||
+                        arrival.lineName.lowercase().contains(q) ||
+                        arrival.destination.lowercase().contains(q)
+                    }
+                }
+            }
+
+            // Barra de pesquisa minimalista e rapida sem caixa envolvente cinza
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = "Buscar linha",
+                    tint = if (isDarkTheme) TransitGreen else Color(0xFF00883E),
+                    modifier = Modifier.size(16.dp)
+                )
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (searchQuery.isEmpty()) {
+                        Text(
+                            text = "Buscar linha nesta parada...",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                        )
+                    }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        cursorBrush = SolidColor(if (isDarkTheme) TransitGreen else Color(0xFF00883E)),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (searchQuery.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .clickable { searchQuery = "" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Limpar busca",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
             // Lista de Linhas ou Indicador de Carga
             if (isLoading) {
                 Box(
@@ -294,7 +373,7 @@ fun FloatingArrivalsDeck(
                         modifier = Modifier.size(28.dp)
                     )
                 }
-            } else if (arrivals.isEmpty()) {
+            } else if (filteredArrivals.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -302,7 +381,7 @@ fun FloatingArrivalsDeck(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Nenhuma linha em operacao no momento",
+                        text = if (searchQuery.isNotBlank()) "Nenhuma linha encontrada para \"$searchQuery\"" else "Nenhuma linha em operacao no momento",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -316,7 +395,7 @@ fun FloatingArrivalsDeck(
                     contentPadding = PaddingValues(bottom = 2.dp)
                 ) {
                     itemsIndexed(
-                        items = arrivals,
+                        items = filteredArrivals,
                         key = { index, it -> "${it.lineNumber}_${it.destination}_${it.minutesAway}_${it.scheduledTimeFormatted}_$index" }
                     ) { _, arrival ->
                         StopArrivalLineCard(
