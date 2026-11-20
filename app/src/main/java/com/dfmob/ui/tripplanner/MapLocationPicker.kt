@@ -87,6 +87,7 @@ import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import com.dfmob.ui.stops.components.DFLocationOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import androidx.compose.ui.graphics.luminance
@@ -191,12 +192,10 @@ fun MapLocationPicker(
     // Overlay de localizacao GPS do usuario
     DisposableEffect(mapView) {
         val provider = GpsMyLocationProvider(context)
-        val overlay = MyLocationNewOverlay(provider, mapView).apply {
-            enableMyLocation()
-            setDrawAccuracyEnabled(true)
-        }
+        val overlay = DFLocationOverlay(provider, mapView, context)
         mapView.overlays.add(overlay)
         onDispose {
+            overlay.cleanup()
             overlay.disableMyLocation()
             mapView.overlays.remove(overlay)
         }

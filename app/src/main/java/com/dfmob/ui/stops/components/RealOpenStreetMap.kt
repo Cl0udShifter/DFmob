@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.animation.ValueAnimator
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.luminance
@@ -73,30 +74,6 @@ private class StadiaTileSource(
 
 private val STADIA_SMOOTH = StadiaTileSource("StadiaSmoothHD", "alidade_smooth")
 private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark")
-
-/**
- * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.
- */
-private class DFLocationOverlay(
-    provider: GpsMyLocationProvider,
-    mapView: MapView,
-    context: Context
-) : MyLocationNewOverlay(provider, mapView) {
-    init {
-        val puckBitmap = createLocationPuckBitmap(context)
-        setPersonIcon(puckBitmap)
-        setDirectionIcon(puckBitmap)
-        setPersonAnchor(0.5f, 0.5f)
-        setDirectionAnchor(0.5f, 0.5f)
-        enableMyLocation()
-        setDrawAccuracyEnabled(true)
-        mCirclePaint.apply {
-            color = android.graphics.Color.parseColor("#221A73E8")
-            style = Paint.Style.FILL
-            isAntiAlias = true
-        }
-    }
-}
 
 /**
  * Cache em memoria dos 4 BitmapDrawables reutilizaveis para evitar alocacoes a 60 FPS.
@@ -211,6 +188,12 @@ fun RealOpenStreetMap(
             overlay.onLocationChanged(loc, provider)
         }
         overlay
+    }
+
+    DisposableEffect(locationOverlay) {
+        onDispose {
+            locationOverlay.cleanup()
+        }
     }
 
     // Adiciona os overlays em ordem hierarquica: Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
@@ -360,19 +343,23 @@ fun RealOpenStreetMap(
                 val distanceM = startPoint.distanceToAsDouble(targetPoint)
                 if (distanceM > 0.5) {
                     vehicleAnimators[v.vehicleId]?.cancel()
-                    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                        duration = 1500L
-                        interpolator = LinearInterpolator()
-                        addUpdateListener { anim ->
-                            val f = anim.animatedFraction
-                            val lat = startPoint.latitude + (targetPoint.latitude - startPoint.latitude) * f
-                            val lon = startPoint.longitude + (targetPoint.longitude - startPoint.longitude) * f
-                            existingMarker.position = GeoPoint(lat, lon)
-                            mapView.invalidate()
+                    if (distanceM > 300.0) {
+                        existingMarker.position = targetPoint
+                    } else {
+                        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                            duration = 1000L
+                            interpolator = DecelerateInterpolator(1.5f)
+                            addUpdateListener { anim ->
+                                val f = anim.animatedFraction
+                                val lat = startPoint.latitude + (targetPoint.latitude - startPoint.latitude) * f
+                                val lon = startPoint.longitude + (targetPoint.longitude - startPoint.longitude) * f
+                                existingMarker.position = GeoPoint(lat, lon)
+                                mapView.invalidate()
+                            }
                         }
+                        animator.start()
+                        vehicleAnimators[v.vehicleId] = animator
                     }
-                    animator.start()
-                    vehicleAnimators[v.vehicleId] = animator
                 }
             } else {
                 val marker = Marker(mapView).apply {
@@ -600,38 +587,6 @@ fun RealOpenStreetMap(
         factory = { mapView },
         modifier = modifier.fillMaxSize()
     )
-}
-
-/**
- * Cria o puck moderno de localizacao do usuario com disco azul, borda branca e sombra.
- */
-private fun createLocationPuckBitmap(context: Context): Bitmap {
-    val density = context.resources.displayMetrics.density
-    val sizePx = (24 * density).toInt()
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val center = sizePx / 2f
-
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    // 1. Sombra suave (Drop Shadow)
-    paint.color = android.graphics.Color.argb(45, 0, 0, 0)
-    paint.style = Paint.Style.FILL
-    canvas.drawCircle(center, center + (1f * density), 10.5f * density, paint)
-
-    // 2. Anel branco solido de alto contraste
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(center, center, 10f * density, paint)
-
-    // 3. Disco azul vibrante (Google / Transit Blue)
-    paint.color = android.graphics.Color.parseColor("#1A73E8")
-    canvas.drawCircle(center, center, 7.5f * density, paint)
-
-    // 4. Ponto central branco
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(center, center, 2.5f * density, paint)
-
-    return bitmap
 }
 
 /**

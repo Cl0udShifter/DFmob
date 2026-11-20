@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
+import com.dfmob.ui.stops.components.DFLocationOverlay
 import com.dfmob.ui.stops.components.RouteDirectionOverlay
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -356,6 +357,7 @@ fun TripItineraryDetailView(
         } catch (_: SecurityException) {}
 
         onDispose {
+            locationOverlay.cleanup()
             try {
                 lm?.removeUpdates(locListener)
             } catch (_: SecurityException) {}
@@ -2314,60 +2316,4 @@ private fun formatEpochMsToHHMM(epochMs: Long): String {
     val h = cal.get(Calendar.HOUR_OF_DAY)
     val m = cal.get(Calendar.MINUTE)
     return String.format(Locale.ROOT, "%02d:%02d", h, m)
-}
-
-/**
- * Overlay de localizacao moderno com puck azul e anel branco solido de alta precisao.
- */
-private class DFLocationOverlay(
-    provider: GpsMyLocationProvider,
-    mapView: MapView,
-    context: Context
-) : MyLocationNewOverlay(provider, mapView) {
-    init {
-        val puckBitmap = createLocationPuckBitmap(context)
-        setPersonIcon(puckBitmap)
-        setDirectionIcon(puckBitmap)
-        setPersonAnchor(0.5f, 0.5f)
-        setDirectionAnchor(0.5f, 0.5f)
-        enableMyLocation()
-        setDrawAccuracyEnabled(true)
-        mCirclePaint.apply {
-            color = android.graphics.Color.parseColor("#221A73E8")
-            style = Paint.Style.FILL
-            isAntiAlias = true
-        }
-    }
-}
-
-/**
- * Cria o puck moderno de localizacao do usuario com disco azul, borda branca e sombra.
- */
-private fun createLocationPuckBitmap(context: Context): Bitmap {
-    val density = context.resources.displayMetrics.density
-    val sizePx = (24 * density).toInt()
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val center = sizePx / 2f
-
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    // 1. Sombra suave (Drop Shadow)
-    paint.color = android.graphics.Color.argb(45, 0, 0, 0)
-    paint.style = Paint.Style.FILL
-    canvas.drawCircle(center, center + (1f * density), 10.5f * density, paint)
-
-    // 2. Anel branco solido de alto contraste
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(center, center, 10f * density, paint)
-
-    // 3. Disco azul vibrante (Google / Transit Blue)
-    paint.color = android.graphics.Color.parseColor("#1A73E8")
-    canvas.drawCircle(center, center, 7.5f * density, paint)
-
-    // 4. Ponto central branco
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(center, center, 2.5f * density, paint)
-
-    return bitmap
 }
