@@ -11,6 +11,8 @@ import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripPlanFilter
 import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.model.TripTransitLineOption
+import com.dfmob.data.model.isWalk
+import com.dfmob.data.model.sanitizeAndConsolidateLegs
 import com.dfmob.data.database.DatabaseHelper
 import org.json.JSONTokener
 import java.io.ByteArrayOutputStream
@@ -496,6 +498,13 @@ object MoovitTransitClient {
         dos.writeShort(10)
         dos.writeByte(1)
 
+        // 13: transportTypes (list<i32>) -> lista vazia (size 0)
+        // Desativa micromobilidade, bicicletas de aluguel (Tembici/Bike Brasilia), patinetes e carros compartilhados
+        dos.writeByte(15)
+        dos.writeShort(13)
+        dos.writeByte(8)
+        dos.writeInt(0)
+
         // 15: addFlexTimeSearch (bool) -> true
         dos.writeByte(2)
         dos.writeShort(15)
@@ -585,12 +594,11 @@ object MoovitTransitClient {
                     val legsLst = itinRec.optJSONObject("5")?.optJSONArray("lst") ?: continue
                     if (legsLst.length() <= 2) continue
 
-                    val legs = mutableListOf<TripPlanLeg>()
+                    val rawLegs = mutableListOf<TripPlanLeg>()
                     var startOverall: Long? = null
                     var endOverall: Long? = null
-                    var totalWalkDistance = 0.0
-                    var totalWalkDuration = 0
                     var transfers = 0
+                    var hasUnsupportedTravelLeg = false
 
                     for (j in 2 until legsLst.length()) {
                         val legDict = legsLst.optJSONObject(j) ?: continue
@@ -633,10 +641,8 @@ object MoovitTransitClient {
 
                             if (startOverall == null && st > 0) startOverall = st
                             if (et > 0) endOverall = et
-                            totalWalkDistance += dist
-                            totalWalkDuration += dur
 
-                            legs.add(
+                            rawLegs.add(
                                 TripPlanLeg(
                                     type = TripLegType.WALK,
                                     startTimeUtc = st,
@@ -686,10 +692,8 @@ object MoovitTransitClient {
 
                             if (startOverall == null && st > 0) startOverall = st
                             if (et > 0) endOverall = et
-                            totalWalkDistance += dist
-                            totalWalkDuration += dur
 
-                            legs.add(
+                            rawLegs.add(
                                 TripPlanLeg(
                                     type = TripLegType.TRANSFER_WALK,
                                     startTimeUtc = st,
@@ -803,7 +807,7 @@ object MoovitTransitClient {
                                 if (et > 0) endOverall = et
                                 transfers++
 
-                                legs.add(
+                                rawLegs.add(
                                     TripPlanLeg(
                                         type = TripLegType.TRANSIT,
                                         startTimeUtc = st,
@@ -912,7 +916,7 @@ object MoovitTransitClient {
                             if (et > 0) endOverall = et
                             transfers++
 
-                            legs.add(
+                            rawLegs.add(
                                 TripPlanLeg(
                                     type = TripLegType.TRANSIT,
                                     startTimeUtc = st,
@@ -933,30 +937,49 @@ object MoovitTransitClient {
                                 )
                             )
                         }
-                    }
-
-                    if (legs.isNotEmpty()) {
-                        val finalTransfers = Math.max(0, transfers - 1)
-                        val totalDuration = if (startOverall != null && endOverall != null && endOverall > startOverall) {
-                            Math.round((endOverall - startOverall) / 60000.0).toInt()
-                        } else {
-                            legs.sumOf { it.durationMinutes }
+                        // 2, 4, 9: wait legs (waitToLineLeg, waitToTaxiLeg, waitToMultiLineLeg) -> espera benigna na parada
+                        else if (legDict.has("2") || legDict.has("4") || legDict.has("9")) {
+                            // Ignora perna de espera mantendo a continuidade fisica entre parada e linha
                         }
-
-                        itineraries.add(
-                            TripPlanItinerary(
-                                guid = guid,
-                                totalDurationMinutes = totalDuration,
-                                startTimeUtc = startOverall ?: System.currentTimeMillis(),
-                                endTimeUtc = endOverall ?: (System.currentTimeMillis() + totalDuration * 60000L),
-                                walkDurationMinutes = totalWalkDuration,
-                                walkDistanceMeters = totalWalkDistance,
-                                transfersCount = finalTransfers,
-                                legs = legs
-                            )
-                        )
+                        else {
+                            // Qualquer outra chave representa modal de transporte nao suportado pelo app
+                            // (ex: 5 taxiLeg, 7 carpoolRideLeg, 11 bicycleLeg, 12 bicycleRentalLeg, 15 docklessLeg, 16 carLeg).
+                            // Ignorar uma perna de viagem criaria buracos no trajeto e etapas desconexas de caminhada.
+                            hasUnsupportedTravelLeg = true
+                        }
                     }
-                }
+
+                    if (hasUnsupportedTravelLeg) {
+                        // Itinerario incompleto por depender de modal nao suportado
+                        continue
+                    }
+
+                    // Valida a continuidade fisica e consolida pernas consecutivas de caminhada
+                    val consolidatedLegs = sanitizeAndConsolidateLegs(rawLegs) ?: continue
+                    if (consolidatedLegs.isEmpty()) continue
+
+                    val finalTransfers = Math.max(0, transfers - 1)
+                    val totalDuration = if (startOverall != null && endOverall != null && endOverall > startOverall) {
+                        Math.round((endOverall - startOverall) / 60000.0).toInt()
+                    } else {
+                        consolidatedLegs.sumOf { it.durationMinutes }
+                    }
+                    val totalWalkDuration = consolidatedLegs.filter { it.isWalk }.sumOf { it.durationMinutes }
+                    val totalWalkDistance = consolidatedLegs.filter { it.isWalk }.sumOf { it.distanceMeters }
+
+                    itineraries.add(
+                        TripPlanItinerary(
+                            guid = guid,
+                            totalDurationMinutes = totalDuration,
+                            startTimeUtc = startOverall ?: System.currentTimeMillis(),
+                            endTimeUtc = endOverall ?: (System.currentTimeMillis() + totalDuration * 60000L),
+                            walkDurationMinutes = totalWalkDuration,
+                            walkDistanceMeters = totalWalkDistance,
+                            transfersCount = finalTransfers,
+                            legs = consolidatedLegs
+                        )
+                    )
+            }
         } catch (_: Exception) {
         }
 

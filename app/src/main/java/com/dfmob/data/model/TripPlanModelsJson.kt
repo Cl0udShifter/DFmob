@@ -187,6 +187,8 @@ object TripPlanModelsJson {
                 }
             }
 
+            val finalLegs = sanitizeAndConsolidateLegs(legs) ?: legs
+
             TripPlanItinerary(
                 guid = root.optString("guid", ""),
                 totalDurationMinutes = root.optInt("totalDurationMinutes", 0),
@@ -195,7 +197,7 @@ object TripPlanModelsJson {
                 walkDurationMinutes = root.optInt("walkDurationMinutes", 0),
                 walkDistanceMeters = root.optDouble("walkDistanceMeters", 0.0),
                 transfersCount = root.optInt("transfersCount", 0),
-                legs = legs,
+                legs = finalLegs,
                 estimatedFare = root.optDouble("estimatedFare", 0.0),
                 isFareIntegrated = root.optBoolean("isFareIntegrated", false)
             )
