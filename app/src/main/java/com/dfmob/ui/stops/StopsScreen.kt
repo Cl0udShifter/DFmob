@@ -75,6 +75,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -278,16 +280,22 @@ fun StopsScreen(
         val selStop = route.selectedStop
 
         while (isActive) {
-            val vehicles = repository.fetchLiveVehiclesForRoute(lineNum, activeDirId, activeLineId, route.stops)
-            val arrival = if (selStop != null) {
-                repository.fetchArrivalForLineAtStop(activeLineId, selStop)
-            } else null
+            val vDeferred = async(Dispatchers.IO) {
+                repository.fetchLiveVehiclesForRoute(lineNum, activeDirId, activeLineId, route.stops)
+            }
+            val aDeferred = async(Dispatchers.IO) {
+                if (selStop != null) {
+                    repository.fetchArrivalForLineAtStop(activeLineId, selStop)
+                } else null
+            }
+            val vehicles = vDeferred.await()
+            val arrival = aDeferred.await()
 
             activeRouteState = activeRouteState?.copy(
                 liveVehicles = vehicles,
                 selectedStopArrival = arrival ?: activeRouteState?.selectedStopArrival
             )
-            delay(6_000L)
+            delay(3_500L)
         }
     }
 

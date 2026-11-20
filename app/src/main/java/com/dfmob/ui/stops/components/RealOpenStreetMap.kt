@@ -343,11 +343,12 @@ fun RealOpenStreetMap(
                 val distanceM = startPoint.distanceToAsDouble(targetPoint)
                 if (distanceM > 0.5) {
                     vehicleAnimators[v.vehicleId]?.cancel()
-                    if (distanceM > 300.0) {
+                    if (distanceM > 5000.0) {
                         existingMarker.position = targetPoint
                     } else {
+                        val animDuration = if (distanceM > 300.0) 700L else 950L
                         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                            duration = 1000L
+                            duration = animDuration
                             interpolator = DecelerateInterpolator(1.5f)
                             addUpdateListener { anim ->
                                 val f = anim.animatedFraction

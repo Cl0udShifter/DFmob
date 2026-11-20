@@ -57,8 +57,8 @@ class DFLocationOverlay(
         )
         val distanceMeters = dist[0]
 
-        // Protecao contra teleporte ou saltos gigantescos (> 300m)
-        if (distanceMeters > 300f) {
+        // Protecao contra teleporte extremo ou saltos de outra regiao (> 5 km)
+        if (distanceMeters > 5000f) {
             locationAnimator?.cancel()
             locationAnimator = null
             setLocation(newLocation)
@@ -86,8 +86,10 @@ class DFLocationOverlay(
         val startAccuracy = current.accuracy
         val targetAccuracy = newLocation.accuracy
 
+        val animDuration = if (distanceMeters > 300f) 700L else 950L
+
         val anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 900L
+            duration = animDuration
             interpolator = DecelerateInterpolator(1.5f)
             addUpdateListener { va ->
                 val f = va.animatedFraction
