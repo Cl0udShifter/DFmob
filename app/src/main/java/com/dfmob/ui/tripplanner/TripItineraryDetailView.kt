@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1203,12 +1205,12 @@ private fun TopNavigationBar(
                     val startHH = formatEpochMsToHHMM(itinerary.startTimeUtc)
                     val endHH = formatEpochMsToHHMM(itinerary.endTimeUtc)
                     val fareDesc = if (itinerary.isFareIntegrated) {
-                        "${itinerary.formattedFare} (Integrado)"
+                        "${itinerary.formattedFare}\u00A0(Integrado)"
                     } else {
                         itinerary.formattedFare
                     }
                     Text(
-                        text = "$startHH - $endHH (${formatDuration(itinerary.totalDurationMinutes)}) • $fareDesc",
+                        text = "$startHH - $endHH (${formatDuration(itinerary.totalDurationMinutes)})\u00A0•\u00A0$fareDesc",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1793,6 +1795,7 @@ private fun ActiveNavigationDeck(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OverviewItineraryDeck(
     itinerary: TripPlanItinerary,
@@ -1900,9 +1903,9 @@ private fun OverviewItineraryDeck(
                             }
 
                             TripLegType.TRANSIT -> {
-                                Row(
+                                FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier.padding(vertical = 2.dp)
                                 ) {
                                     leg.lines.forEach { lineOpt ->
@@ -1933,7 +1936,9 @@ private fun OverviewItineraryDeck(
                                                     fontWeight = FontWeight.Black,
                                                     fontSize = 13.sp
                                                 ),
-                                                color = Color.White
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }

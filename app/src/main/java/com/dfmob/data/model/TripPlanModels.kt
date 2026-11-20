@@ -94,7 +94,7 @@ data class TripPlanItinerary(
         get() = if (estimatedFare <= 0.0) {
             "Gratuito"
         } else {
-            String.format(java.util.Locale("pt", "BR"), "R$ %.2f", estimatedFare)
+            String.format(java.util.Locale("pt", "BR"), "R$\u00A0%.2f", estimatedFare)
         }
 }
 

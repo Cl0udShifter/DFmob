@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -229,6 +231,7 @@ fun SettingsScreen(
                         text = label,
                         isSelected = notifSettings.descentAdvanceStops == stops,
                         modifier = Modifier.weight(1f),
+                        fontSize = 11.5.sp,
                         onClick = { notificationPreferences.setDescentAdvanceStops(stops) }
                     )
                 }
@@ -544,6 +547,7 @@ private fun ThemeOptionButton(
     text: String,
     isSelected: Boolean,
     modifier: Modifier = Modifier,
+    fontSize: TextUnit = 13.sp,
     onClick: () -> Unit
 ) {
     val bgColor by animateColorAsState(
@@ -560,16 +564,19 @@ private fun ThemeOptionButton(
             .clip(RoundedCornerShape(8.dp))
             .background(bgColor)
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                fontSize = 13.sp
+                fontSize = fontSize
             ),
-            color = textColor
+            color = textColor,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center
         )
     }
 }

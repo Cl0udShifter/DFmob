@@ -32,7 +32,7 @@ data class NextDeparture(
 
         return if (isRealtime) {
             if (diffMins <= 0) "Já"
-            else if (diffMins <= 60) "$diffMins min"
+            else if (diffMins <= 60) "$diffMins\u00A0min"
             else timeFormatted
         } else {
             if (diffMins <= 0) "Já"

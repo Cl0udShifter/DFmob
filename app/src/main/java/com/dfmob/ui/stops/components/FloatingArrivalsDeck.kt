@@ -704,7 +704,7 @@ fun StopArrivalLineCard(
                 if (arrival.nextDepartures.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.weight(1f, fill = false)
                     ) {
                         Text(
@@ -732,7 +732,7 @@ fun StopArrivalLineCard(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(5.dp))
                                     .background(chipBg)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -750,7 +750,9 @@ fun StopArrivalLineCard(
                                             fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
                                             fontSize = 10.sp
                                         ),
-                                        color = textColor
+                                        color = textColor,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }

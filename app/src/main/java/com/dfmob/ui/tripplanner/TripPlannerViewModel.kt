@@ -215,43 +215,59 @@ class TripPlannerViewModel(
         }
     }
 
+    private var lastActiveSearchField: ActiveField = ActiveField.DESTINATION
+
     fun onFieldFocused(field: ActiveField) {
-        if (field == ActiveField.ORIGIN) {
-            if (_uiState.value.originQuery.isNotBlank()) {
-                savedOriginText = _uiState.value.originQuery
-            }
-            _uiState.update { it.copy(activeField = field, originQuery = "") }
-        } else if (field == ActiveField.DESTINATION) {
-            if (_uiState.value.destinationQuery.isNotBlank()) {
-                savedDestinationText = _uiState.value.destinationQuery
-            }
-            _uiState.update { it.copy(activeField = field, destinationQuery = "") }
-        } else {
-            _uiState.update { it.copy(activeField = field) }
+        if (field != ActiveField.NONE) {
+            lastActiveSearchField = field
         }
+        _uiState.update { it.copy(activeField = field) }
     }
 
     fun onFieldBlurred(field: ActiveField) {
-        if (field == ActiveField.ORIGIN) {
-            if (_uiState.value.originQuery.isBlank() && savedOriginText.isNotBlank()) {
-                _uiState.update { it.copy(originQuery = savedOriginText) }
-            }
-        } else if (field == ActiveField.DESTINATION) {
-            if (_uiState.value.destinationQuery.isBlank() && savedDestinationText.isNotBlank()) {
-                _uiState.update { it.copy(destinationQuery = savedDestinationText) }
-            }
+        if (_uiState.value.activeField == field) {
+            _uiState.update { it.copy(activeField = ActiveField.NONE) }
         }
-        _uiState.update { it.copy(activeField = ActiveField.NONE, searchResults = emptyList()) }
+    }
+
+    fun onOriginQueryChanged(text: String) {
+        lastActiveSearchField = ActiveField.ORIGIN
+        _uiState.update {
+            it.copy(
+                activeField = ActiveField.ORIGIN,
+                originQuery = text,
+                origin = if (text.isBlank()) null else it.origin
+            )
+        }
+        executeLocationSearch(text)
+    }
+
+    fun onDestinationQueryChanged(text: String) {
+        lastActiveSearchField = ActiveField.DESTINATION
+        _uiState.update {
+            it.copy(
+                activeField = ActiveField.DESTINATION,
+                destinationQuery = text,
+                destination = if (text.isBlank()) null else it.destination
+            )
+        }
+        executeLocationSearch(text)
     }
 
     fun onQueryChanged(text: String) {
-        val currentField = _uiState.value.activeField
-        if (currentField == ActiveField.ORIGIN) {
-            _uiState.update { it.copy(originQuery = text, origin = if (text.isBlank()) null else it.origin) }
-        } else if (currentField == ActiveField.DESTINATION) {
-            _uiState.update { it.copy(destinationQuery = text, destination = if (text.isBlank()) null else it.destination) }
+        val currentField = if (_uiState.value.activeField != ActiveField.NONE) {
+            _uiState.value.activeField
+        } else {
+            lastActiveSearchField
         }
+        if (currentField == ActiveField.ORIGIN) {
+            onOriginQueryChanged(text)
+        } else {
+            onDestinationQueryChanged(text)
+        }
+    }
 
+    private fun executeLocationSearch(text: String) {
         locationSearchJob?.cancel()
         if (text.trim().length >= 3) {
             locationSearchJob = viewModelScope.launch {
@@ -272,8 +288,17 @@ class TripPlannerViewModel(
             lonE6 = loc.lonE6,
             isUserLocation = false
         )
-        val currentField = _uiState.value.activeField
-        if (currentField == ActiveField.ORIGIN) {
+        val targetField = if (lastActiveSearchField != ActiveField.NONE) {
+            lastActiveSearchField
+        } else if (_uiState.value.activeField != ActiveField.NONE) {
+            _uiState.value.activeField
+        } else if (_uiState.value.origin == null) {
+            ActiveField.ORIGIN
+        } else {
+            ActiveField.DESTINATION
+        }
+
+        if (targetField == ActiveField.ORIGIN) {
             savedOriginText = loc.name
             _uiState.update {
                 it.copy(
@@ -282,6 +307,9 @@ class TripPlannerViewModel(
                     searchResults = emptyList(),
                     activeField = if (it.destination == null) ActiveField.DESTINATION else ActiveField.NONE
                 )
+            }
+            if (_uiState.value.destination == null) {
+                lastActiveSearchField = ActiveField.DESTINATION
             }
         } else {
             savedDestinationText = loc.name
@@ -330,8 +358,12 @@ class TripPlannerViewModel(
             lonE6 = lonE6,
             isUserLocation = true
         )
-        val currentField = _uiState.value.activeField
-        if (currentField == ActiveField.ORIGIN || currentField == ActiveField.NONE) {
+        val targetField = if (lastActiveSearchField != ActiveField.NONE) {
+            lastActiveSearchField
+        } else {
+            ActiveField.ORIGIN
+        }
+        if (targetField == ActiveField.ORIGIN) {
             savedOriginText = "Minha localização"
             _uiState.update {
                 it.copy(
@@ -340,6 +372,9 @@ class TripPlannerViewModel(
                     searchResults = emptyList(),
                     activeField = if (it.destination == null) ActiveField.DESTINATION else ActiveField.NONE
                 )
+            }
+            if (_uiState.value.destination == null) {
+                lastActiveSearchField = ActiveField.DESTINATION
             }
         } else {
             savedDestinationText = "Minha localização"
@@ -360,10 +395,15 @@ class TripPlannerViewModel(
     }
 
     fun startMapPicker(targetField: ActiveField) {
+        val effectiveField = if (targetField != ActiveField.NONE) {
+            targetField
+        } else {
+            lastActiveSearchField
+        }
         _uiState.update {
             it.copy(
                 isPickingOnMap = true,
-                mapPickerTargetField = targetField,
+                mapPickerTargetField = effectiveField,
                 searchResults = emptyList()
             )
         }
@@ -579,18 +619,6 @@ class TripPlannerViewModel(
                 _uiState.update { it.copy(origin = newOrigin) }
                 updated = true
             }
-        } else if (currentOrigin == null) {
-            val newOrigin = TripPlanLocation(
-                caption = "Minha localização",
-                latE6 = latE6,
-                lonE6 = lonE6,
-                isUserLocation = true
-            )
-            savedOriginText = "Minha localização"
-            _uiState.update {
-                it.copy(origin = newOrigin, originQuery = "Minha localização")
-            }
-            updated = true
         }
 
         val currentDest = _uiState.value.destination

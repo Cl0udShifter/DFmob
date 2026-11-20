@@ -351,8 +351,8 @@ fun TripPlannerScreen(
             OriginDestinationCard(
                 originText = state.originQuery,
                 destinationText = state.destinationQuery,
-                onOriginChange = { viewModel.onQueryChanged(it) },
-                onDestinationChange = { viewModel.onQueryChanged(it) },
+                onOriginChange = { viewModel.onOriginQueryChanged(it) },
+                onDestinationChange = { viewModel.onDestinationQueryChanged(it) },
                 onFieldFocus = { viewModel.onFieldFocused(it) },
                 onFieldBlur = { viewModel.onFieldBlurred(it) },
                 onSwap = { viewModel.swapOriginAndDestination() },
@@ -382,9 +382,9 @@ fun TripPlannerScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        focusManager.clearFocus()
                                         viewModel.selectLocationResult(loc)
                                         recentRepo.addSearch(loc)
+                                        focusManager.clearFocus()
                                     }
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -653,7 +653,7 @@ private fun OriginDestinationCard(
                             .height(38.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f)) {
                             if (originText.isEmpty()) {
                                 Text(
                                     text = "De onde? (Origem)",
@@ -684,6 +684,19 @@ private fun OriginDestinationCard(
                                 cursorBrush = SolidColor(TransitGreen)
                             )
                         }
+                        if (originText.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onOriginChange("") },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Limpar origem",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
 
                     Box(
@@ -700,7 +713,7 @@ private fun OriginDestinationCard(
                             .height(38.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f)) {
                             if (destinationText.isEmpty()) {
                                 Text(
                                     text = "Para onde? (Destino)",
@@ -730,6 +743,19 @@ private fun OriginDestinationCard(
                                 singleLine = true,
                                 cursorBrush = SolidColor(TransitGreen)
                             )
+                        }
+                        if (destinationText.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onDestinationChange("") },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Limpar destino",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1205,7 +1231,9 @@ private fun TripItineraryCard(
                                                     fontWeight = FontWeight.Black,
                                                     fontSize = 12.sp
                                                 ),
-                                                color = Color.White
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }

@@ -562,7 +562,9 @@ private fun ItineraryStopItem(
                                                     fontWeight = if (dep.isRealtime) FontWeight.Bold else FontWeight.SemiBold,
                                                     fontSize = 10.sp
                                                 ),
-                                                color = textColor
+                                                color = textColor,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }
