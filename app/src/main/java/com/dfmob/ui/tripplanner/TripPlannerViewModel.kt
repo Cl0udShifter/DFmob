@@ -68,6 +68,38 @@ class TripPlannerViewModel(
     private var savedOriginText: String = ""
     private var savedDestinationText: String = ""
 
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            handleFreshLocation(loc)
+        }
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    }
+
+    private fun startLocationUpdates() {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+        try {
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
+            }
+            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 2f, locationListener)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
+                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 1f, locationListener)
+            }
+        } catch (_: SecurityException) {}
+    }
+
+    private fun stopLocationUpdates() {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+        try {
+            lm.removeUpdates(locationListener)
+        } catch (_: SecurityException) {}
+    }
+
     init {
         startLocationUpdates()
         useCurrentLocationForOrigin()
@@ -527,38 +559,6 @@ class TripPlannerViewModel(
 
     suspend fun reverseGeocode(latE6: Int, lonE6: Int): String {
         return repository.reverseGeocode(latE6, lonE6)
-    }
-
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(loc: Location) {
-            handleFreshLocation(loc)
-        }
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
-        @Deprecated("Deprecated in Java")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-    }
-
-    private fun startLocationUpdates() {
-        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
-        try {
-            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
-            }
-            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 2f, locationListener)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 1f, locationListener)
-            }
-        } catch (_: SecurityException) {}
-    }
-
-    private fun stopLocationUpdates() {
-        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
-        try {
-            lm.removeUpdates(locationListener)
-        } catch (_: SecurityException) {}
     }
 
     private fun handleFreshLocation(loc: Location) {
