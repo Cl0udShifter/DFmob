@@ -23,7 +23,7 @@
 
 ## Visão Geral
 
-O DFmob nasceu da necessidade de um transporte público mais previsível e transparente no Distrito Federal. Enquanto aplicativos comerciais de mobilidade sofrem com excesso de propagandas em tela cheia, coleta invasiva de dados e lentidão no carregamento, o DFmob adota a filosofia de utilitário puro: abrir instantaneamente, exibir a previsão mais precisa de chegada do ônibus via GPS ao vivo e calcular trajetos multimodais eficientes sem depender de servidores intermediários proprietários.
+O DFmob adota a filosofia de utilitário puro: abrir instantaneamente, exibir a previsão mais precisa de chegada do ônibus via GPS ao vivo e calcular trajetos multimodais eficientes sem depender de servidores intermediários proprietários.
 
 O aplicativo integra a malha completa de ônibus gerenciada pela SEMOB-DF e as duas linhas do Metrô-DF, oferecendo tanto itinerários completos quanto horários programados e posições de veículos em tempo real.
 
