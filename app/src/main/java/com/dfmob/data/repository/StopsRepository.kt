@@ -438,7 +438,6 @@ class StopsRepository(private val context: Context) {
         }
 
         val activeLineId = dirOptions[chosenIndex].lineId
-        val activeDirId = dirOptions[chosenIndex].directionId
         val stops = dbHelper.getStopsForLine(activeLineId)
         if (stops.isEmpty()) return null
 
@@ -539,7 +538,6 @@ class StopsRepository(private val context: Context) {
     ): LineRouteState {
         val safeIndex = newDirectionIndex.coerceIn(0, currentState.directions.lastIndex)
         val activeLineId = currentState.directions[safeIndex].lineId
-        val activeDirId = currentState.directions[safeIndex].directionId
         val newStops = dbHelper.getStopsForLine(activeLineId)
 
         val cachedShapes = telemetryService.getCachedShapes(currentState.lineNumber)

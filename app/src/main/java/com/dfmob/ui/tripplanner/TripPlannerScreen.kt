@@ -121,9 +121,8 @@ fun TripPlannerScreen(
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val viewModel = remember { TripPlannerViewModel(repository, context) }
     val state by viewModel.uiState.collectAsState()
-    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isNavigating by com.dfmob.service.NavigationStateHolder.isNavigating.collectAsState()
     val focusManager = LocalFocusManager.current
-    val scope = rememberCoroutineScope()
 
     val favoriteTrips by favoritesRepo.favoriteTrips.collectAsState()
     val isCurrentTripFavorite = remember(state.origin, state.destination, favoriteTrips) {
@@ -179,7 +178,7 @@ fun TripPlannerScreen(
     }
 
     // 2. Tela de Detalhes do Trajeto Selecionado se estiver ativa
-    val selectedItin = state.selectedItinerary ?: (if (com.dfmob.service.NavigationStateHolder.isNavigating.value) com.dfmob.service.NavigationStateHolder.activeItinerary else null)
+    val selectedItin = state.selectedItinerary ?: (if (isNavigating) com.dfmob.service.NavigationStateHolder.activeItinerary else null)
     if (selectedItin != null) {
         TripItineraryDetailView(
             itinerary = selectedItin,
@@ -601,7 +600,6 @@ private fun OriginDestinationCard(
     onUseCurrentLocation: () -> Unit,
     onPickOnMap: () -> Unit
 ) {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val cardBg = MaterialTheme.colorScheme.surface
     val borderCol = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
     var isOriginFocused by remember { mutableStateOf(false) }
@@ -1177,7 +1175,7 @@ private fun TripItineraryCard(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                displayLines.forEachIndexed { lineIdx, line ->
+                                displayLines.forEach { line ->
                                     val badgeColor = try {
                                         android.graphics.Color.parseColor(line.colorHex).let { Color(it) }
                                     } catch (_: Exception) {

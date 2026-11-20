@@ -28,6 +28,7 @@ class SemobTelemetryService {
         return shapesCache[clean]
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun getLiveVehiclePositions(
         lineNumber: String,
         referenceLatE6: Int? = null,

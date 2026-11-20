@@ -33,7 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Accessible
+import androidx.compose.material.icons.automirrored.rounded.Accessible
 import androidx.compose.material.icons.rounded.AirportShuttle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
@@ -638,7 +638,7 @@ fun StopArrivalLineCard(
 
                         if (arrival.hasAccessibility) {
                             Icon(
-                                imageVector = Icons.Rounded.Accessible,
+                                imageVector = Icons.AutoMirrored.Rounded.Accessible,
                                 contentDescription = "Veículo acessível com elevador/rampa",
                                 tint = iconTint,
                                 modifier = Modifier.size(12.dp)

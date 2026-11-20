@@ -3,7 +3,7 @@ package com.dfmob.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Transit Accent Colors
-val TransitGreen = Color(0xFF00D26A)
+val TransitGreen = Color(0xFF00C853)
 val TransitGreenLight = Color(0xFF00E676)
 val TransitBlue = Color(0xFF007AFF)
 

@@ -61,15 +61,12 @@ import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.tripplanner.MapLocationPicker
 import com.dfmob.ui.home.components.ActiveTripModule
-import com.dfmob.ui.home.components.AppUpdateModule
 import com.dfmob.ui.home.components.FrequentPlacesRow
 import com.dfmob.ui.home.components.QuickNavButtons
 import com.dfmob.ui.home.components.RecentAndFavoritesSection
 import com.dfmob.ui.home.components.SearchPill
 import com.dfmob.ui.theme.DFmobTheme
 import com.dfmob.ui.theme.TransitGreen
-import com.dfmob.updater.AppUpdateManager
-import com.dfmob.updater.UpdateState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,11 +93,7 @@ fun HomeScreen(
     val recentLinesRepo = remember { com.dfmob.data.repository.RecentLinesRepository(context) }
     val stopsRepo = remember { StopsRepository(context) }
     val alertsRepo = remember { AlertsRepository(context) }
-    val scope = rememberCoroutineScope()
-    val updateManager = remember { AppUpdateManager(context) }
 
-    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
-    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
     val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
     val favoriteTrips by favoritesRepo.favoriteTrips.collectAsState()
@@ -159,12 +152,6 @@ fun HomeScreen(
         }
     }
 
-    // Verificacao de atualizacao em background, sem bloquear o carregamento imediato dos favoritos
-    LaunchedEffect(Unit) {
-        val result = updateManager.checkForUpdates()
-        updateState = result
-    }
-
     if (pickingPlaceType != null) {
         val placeType = pickingPlaceType!!
         val initialPlace = if (placeType == "HOME") homePlace else workPlace
@@ -192,61 +179,7 @@ fun HomeScreen(
             modifier = modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
-            containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            // Modulo fixo na parte inferior, visivel exclusivamente quando ha update disponivel
-            val isUpdateVisible = updateState is UpdateState.UpdateAvailable ||
-                    updateState is UpdateState.Downloading ||
-                    updateState is UpdateState.ReadyToInstall
-
-            AnimatedVisibility(
-                visible = isUpdateVisible,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 18.dp, vertical = 12.dp)
-                ) {
-                    AppUpdateModule(
-                        updateState = updateState,
-                        onInstallUpdate = {
-                            when (val state = updateState) {
-                                is UpdateState.ReadyToInstall -> {
-                                    downloadedApkFile?.let { apk ->
-                                        updateManager.installApk(apk)
-                                    }
-                                }
-
-                                is UpdateState.UpdateAvailable -> {
-                                    scope.launch {
-                                        updateState = UpdateState.Downloading(progressPercent = 0)
-                                        val apk = updateManager.downloadApk(
-                                            downloadUrl = state.releaseInfo.downloadUrl,
-                                            targetFileName = state.releaseInfo.apkFileName,
-                                            onProgress = { progress ->
-                                                updateState = UpdateState.Downloading(progressPercent = progress)
-                                            }
-                                        )
-                                        if (apk != null && apk.exists()) {
-                                            downloadedApkFile = apk
-                                            updateState = UpdateState.ReadyToInstall(apk.absolutePath)
-                                            updateManager.installApk(apk)
-                                        } else {
-                                            updateState = UpdateState.Error("Falha ao baixar arquivo APK.")
-                                        }
-                                    }
-                                }
-
-                                else -> {}
-                            }
-                        }
-                    )
-                }
-            }
-        }
+            containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier

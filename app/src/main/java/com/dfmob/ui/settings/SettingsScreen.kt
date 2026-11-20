@@ -55,6 +55,10 @@ import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.service.ApiDiagnosticsService
 import com.dfmob.data.service.ApiHealthStatus
 import com.dfmob.ui.theme.TransitGreen
+import com.dfmob.updater.AppUpdateManager
+import com.dfmob.updater.UpdateState
+import androidx.compose.material3.LinearProgressIndicator
+import java.io.File
 import kotlinx.coroutines.launch
 
 @Composable
@@ -67,6 +71,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val diagnosticsService = remember { ApiDiagnosticsService() }
+    val updateManager = remember { AppUpdateManager(context) }
+    val currentVersion = remember { updateManager.getCurrentVersion() }
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val notifSettings by notificationPreferences.settings.collectAsState()
     var apiStatuses by remember { mutableStateOf<List<ApiHealthStatus>>(emptyList()) }
     var isCheckingApis by remember { mutableStateOf(false) }
@@ -81,6 +89,7 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         refreshApis()
+        updateState = updateManager.checkForUpdates()
     }
 
     BackHandler(onBack = onBack)
@@ -374,7 +383,158 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(36.dp))
+
+            // ==========================================
+            // COMPONENTE 4: ATUALIZAÇÃO DO APLICATIVO
+            // ==========================================
+            Text(
+                text = "ATUALIZAÇÃO DO APLICATIVO",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    fontSize = 11.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            AppUpdateRow(
+                currentVersion = currentVersion,
+                updateState = updateState,
+                onUpdateClick = {
+                    when (val state = updateState) {
+                        is UpdateState.ReadyToInstall -> {
+                            downloadedApkFile?.let { apk ->
+                                updateManager.installApk(apk)
+                            }
+                        }
+                        is UpdateState.UpdateAvailable -> {
+                            coroutineScope.launch {
+                                updateState = UpdateState.Downloading(progressPercent = 0)
+                                val apk = updateManager.downloadApk(
+                                    downloadUrl = state.releaseInfo.downloadUrl,
+                                    targetFileName = state.releaseInfo.apkFileName,
+                                    onProgress = { p ->
+                                        updateState = UpdateState.Downloading(progressPercent = p)
+                                    }
+                                )
+                                if (apk != null && apk.exists()) {
+                                    downloadedApkFile = apk
+                                    updateState = UpdateState.ReadyToInstall(apk.absolutePath)
+                                    updateManager.installApk(apk)
+                                } else {
+                                    updateState = UpdateState.Error("Falha ao baixar arquivo APK.")
+                                }
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            )
+
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateRow(
+    currentVersion: String,
+    updateState: UpdateState,
+    onUpdateClick: () -> Unit
+) {
+    val hasUpdate = updateState is UpdateState.UpdateAvailable || updateState is UpdateState.ReadyToInstall
+    val isDownloading = updateState is UpdateState.Downloading
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp)
+            ) {
+                Text(
+                    text = "DFmob v$currentVersion",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = when (updateState) {
+                        is UpdateState.UpdateAvailable -> "Nova versão v${updateState.releaseInfo.tagName} disponível"
+                        is UpdateState.Downloading -> "Baixando atualização: ${updateState.progressPercent}%"
+                        is UpdateState.ReadyToInstall -> "Atualização pronta para instalação"
+                        is UpdateState.Error -> "Não foi possível verificar atualizações"
+                        else -> "O aplicativo está atualizado"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = if (hasUpdate) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            val buttonShape = RoundedCornerShape(8.dp)
+            val isButtonEnabled = hasUpdate && !isDownloading
+
+            Box(
+                modifier = Modifier
+                    .clip(buttonShape)
+                    .then(
+                        if (hasUpdate) {
+                            Modifier.background(TransitGreen)
+                        } else {
+                            Modifier.border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                buttonShape
+                            )
+                        }
+                    )
+                    .clickable(enabled = isButtonEnabled, onClick = onUpdateClick)
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when (updateState) {
+                        is UpdateState.Downloading -> "${updateState.progressPercent}%"
+                        is UpdateState.ReadyToInstall -> "Instalar"
+                        is UpdateState.UpdateAvailable -> "Atualizar"
+                        else -> "Atualizar"
+                    },
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    ),
+                    color = when {
+                        hasUpdate -> Color.White
+                        isDownloading -> TransitGreen
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+            }
+        }
+
+        if (isDownloading) {
+            val progress = (updateState as UpdateState.Downloading).progressPercent / 100f
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(CircleShape),
+                color = TransitGreen,
+                trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
         }
     }
 }

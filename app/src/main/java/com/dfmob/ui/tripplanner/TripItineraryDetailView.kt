@@ -657,11 +657,10 @@ fun TripItineraryDetailView(
     // Previsoes em tempo real da parada de embarque sincronizadas com a tela de paradas
     LaunchedEffect(currentStage) {
         val linesToTrack = when (currentStage) {
-            is NavigationStage.WaitForTransit -> (currentStage as NavigationStage.WaitForTransit).candidateLines
+            is NavigationStage.WaitForTransit -> currentStage.candidateLines
             is NavigationStage.RideTransit -> {
-                val ride = currentStage as NavigationStage.RideTransit
-                if (ride.candidateLines.isNotEmpty()) ride.candidateLines
-                else listOfNotNull(ride.selectedLine)
+                if (currentStage.candidateLines.isNotEmpty()) currentStage.candidateLines
+                else listOfNotNull(currentStage.selectedLine)
             }
             else -> emptyList()
         }
@@ -669,7 +668,6 @@ fun TripItineraryDetailView(
         val boardingStopId = (currentStage as? NavigationStage.WaitForTransit)?.stopId
 
         if (linesToTrack.isNotEmpty() && boardingStopId != null) {
-            val dbHelper = DatabaseHelper(context)
             val candidateLineIds = linesToTrack.map { it.lineId }.toSet()
 
             while (isActive) {
@@ -931,8 +929,8 @@ fun TripItineraryDetailView(
                 }
             },
             onNextStage = {
-                if (currentStage is NavigationStage.WaitForTransit && (currentStage as NavigationStage.WaitForTransit).candidateLines.size > 1) {
-                    linesToChooseFrom = (currentStage as NavigationStage.WaitForTransit).candidateLines
+                if (currentStage is NavigationStage.WaitForTransit && currentStage.candidateLines.size > 1) {
+                    linesToChooseFrom = currentStage.candidateLines
                     isChoosingLineDialog = true
                 } else if (currentStageIndex < stages.size - 1) {
                     currentStageIndex++

@@ -185,7 +185,7 @@ class TripNavigationTrackingService : Service(), LocationListener {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_NAVIGATION_TRACKING_ID)
-            .setSmallIcon(android.R.drawable.sym_def_app_icon)
+            .setSmallIcon(com.dfmob.R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_LOW)

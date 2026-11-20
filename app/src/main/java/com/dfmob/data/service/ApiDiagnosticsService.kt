@@ -28,13 +28,12 @@ class ApiDiagnosticsService(
 
     private suspend fun checkMoovit(): ApiHealthStatus = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
-        var ok = false
-        try {
+        val ok = try {
             // Testa a chamada real do cliente Moovit do app consultando a Rodoviária do Plano Piloto (ID 6342602)
             val arrivals = MoovitTransitClient.fetchArrivalsForStop(6342602)
-            ok = arrivals.isNotEmpty()
+            arrivals.isNotEmpty()
         } catch (_: Exception) {
-            ok = false
+            false
         }
         val elapsed = System.currentTimeMillis() - start
         ApiHealthStatus(
@@ -47,8 +46,7 @@ class ApiDiagnosticsService(
 
     private suspend fun checkSemob(): ApiHealthStatus = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
-        var ok = false
-        try {
+        val ok = try {
             // URL WFS oficial usada diariamente pelo SemobTelemetryService
             val url = URL("http://geoserver.semob.df.gov.br/geoserver/semob/wfs?service=WFS&version=1.0.0&request=GetFeature&typeName=semob:ultima_posicao&outputFormat=application/json&maxFeatures=1")
             val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -56,9 +54,9 @@ class ApiDiagnosticsService(
                 readTimeout = 4000
                 setRequestProperty("User-Agent", "DFmob/1.4.7 (Android)")
             }
-            ok = (conn.responseCode in 200..399)
+            conn.responseCode in 200..399
         } catch (_: Exception) {
-            ok = false
+            false
         }
         val elapsed = System.currentTimeMillis() - start
         ApiHealthStatus(

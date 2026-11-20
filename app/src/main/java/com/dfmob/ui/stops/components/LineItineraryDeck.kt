@@ -29,7 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Accessible
+import androidx.compose.material.icons.automirrored.rounded.Accessible
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.Schedule
@@ -71,7 +71,7 @@ fun LineItineraryDeck(
     onSelectStop: (TransitStop) -> Unit,
     onSwitchDirection: () -> Unit,
     onClose: () -> Unit,
-    onLocateBuses: () -> Unit,
+    @Suppress("UNUSED_PARAMETER") onLocateBuses: () -> Unit,
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     maxScreenHeight: Dp = 600.dp,
@@ -583,7 +583,7 @@ private fun ItineraryStopItem(
                         }
 
                         Icon(
-                            imageVector = Icons.Rounded.Accessible,
+                            imageVector = Icons.AutoMirrored.Rounded.Accessible,
                             contentDescription = "Acessibilidade",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(13.dp)
