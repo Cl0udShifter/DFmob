@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Wifi
+import com.dfmob.ui.components.LiveWifiIcon
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -448,12 +449,19 @@ private fun FavoriteLineMiniRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(
-                    imageVector = if (isRealtime) Icons.Rounded.Wifi else Icons.Rounded.Schedule,
-                    contentDescription = if (isRealtime) "GPS ao vivo" else "Programado",
-                    tint = if (isRealtime) liveGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(13.dp)
-                )
+                if (isRealtime) {
+                    LiveWifiIcon(
+                        size = 13.dp,
+                        tint = liveGreen
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Schedule,
+                        contentDescription = "Programado",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
                 Text(
                     text = prediction.arrival.getDisplayEta(),
                     color = etaColor,

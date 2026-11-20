@@ -98,6 +98,7 @@ import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
+import com.dfmob.ui.components.LiveWifiIcon
 import com.dfmob.ui.theme.TransitGreen
 import java.util.Calendar
 import java.util.Locale
@@ -1271,11 +1272,9 @@ private fun TripItineraryCard(
                                     .background(TransitGreen.copy(alpha = 0.15f))
                                     .padding(horizontal = 6.dp, vertical = 2.5.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Sensors,
-                                    contentDescription = null,
-                                    tint = TransitGreen,
-                                    modifier = Modifier.size(11.dp)
+                                LiveWifiIcon(
+                                    size = 11.dp,
+                                    tint = TransitGreen
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(

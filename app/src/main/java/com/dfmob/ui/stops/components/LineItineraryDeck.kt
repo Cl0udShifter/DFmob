@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Wifi
+import com.dfmob.ui.components.LiveWifiIcon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -476,11 +477,9 @@ private fun ItineraryStopItem(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 if (arrival.isRealtime) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Wifi,
-                                        contentDescription = "GPS ao vivo",
-                                        tint = liveGreen,
-                                        modifier = Modifier.size(13.dp)
+                                    LiveWifiIcon(
+                                        size = 13.dp,
+                                        tint = liveGreen
                                     )
                                 } else {
                                     Icon(
@@ -552,11 +551,9 @@ private fun ItineraryStopItem(
                                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
                                             if (dep.isRealtime) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Wifi,
-                                                    contentDescription = "GPS ao vivo",
-                                                    tint = liveGreen,
-                                                    modifier = Modifier.size(9.dp)
+                                                LiveWifiIcon(
+                                                    size = 9.dp,
+                                                    tint = liveGreen
                                                 )
                                             }
                                             Text(

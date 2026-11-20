@@ -62,6 +62,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
 import com.dfmob.ui.stops.components.DFLocationOverlay
+import com.dfmob.ui.components.LiveWifiIcon
 import com.dfmob.ui.stops.components.RouteDirectionOverlay
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -1629,11 +1630,9 @@ private fun ActiveNavigationDeck(
                                                         horizontalArrangement = Arrangement.spacedBy(3.dp)
                                                     ) {
                                                         if (dep.isRealtime) {
-                                                            Icon(
-                                                                imageVector = Icons.Rounded.Wifi,
-                                                                contentDescription = "GPS ao vivo",
-                                                                tint = liveGreenColor,
-                                                                modifier = Modifier.size(9.dp)
+                                                            LiveWifiIcon(
+                                                                size = 9.dp,
+                                                                tint = liveGreenColor
                                                             )
                                                         }
                                                         Text(
