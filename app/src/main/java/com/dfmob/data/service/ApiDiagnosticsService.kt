@@ -88,13 +88,13 @@ class ApiDiagnosticsService(
         val (ok, elapsed) = trafficManager?.checkAndResolveEndpoint() ?: run {
             val start = System.currentTimeMillis()
             val healthy = try {
-                val conn = (URL("https://mt1.google.com/vt?lyrs=traffic&x=9469&y=9469&z=14").openConnection() as HttpURLConnection).apply {
+                val conn = (URL("https://mt1.google.com/vt/lyrs=h,traffic&x=6012&y=8920&z=14").openConnection() as HttpURLConnection).apply {
                     connectTimeout = 3000
                     readTimeout = 3000
                     requestMethod = "HEAD"
                     setRequestProperty("User-Agent", "Mozilla/5.0")
                 }
-                conn.responseCode in 200..399
+                conn.responseCode in 200..399 && conn.contentLength > 500
             } catch (_: Exception) {
                 false
             }

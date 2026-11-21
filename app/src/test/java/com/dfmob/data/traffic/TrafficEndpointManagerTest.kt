@@ -13,7 +13,7 @@ class TrafficEndpointManagerTest {
         val candidates = TrafficEndpointManager.ENDPOINT_CANDIDATES
         assertTrue(candidates.isNotEmpty())
         for (c in candidates) {
-            assertTrue(c.contains("lyrs=traffic"))
+            assertTrue(c.contains("traffic"))
         }
     }
 

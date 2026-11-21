@@ -83,9 +83,9 @@ private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark"
 private class GoogleTrafficTileSource(
     private val trafficManager: TrafficEndpointManager
 ) : XYTileSource(
-    "GoogleTraffic",
+    "GoogleLiveTrafficV2",
     0, 20, 256, ".png",
-    arrayOf("https://mt1.google.com/vt?")
+    arrayOf("https://mt1.google.com/vt/")
 ) {
     override fun getTileURLString(pMapTileIndex: Long): String {
         val x = MapTileIndex.getX(pMapTileIndex)

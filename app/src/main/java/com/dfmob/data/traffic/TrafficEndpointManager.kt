@@ -12,25 +12,29 @@ import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 class TrafficEndpointManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs", Context.MODE_PRIVATE)
+    private val oldPrefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs_v2", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_ENDPOINT_INDEX = "active_endpoint_index"
         private const val KEY_TRAFFIC_ENABLED = "traffic_layer_enabled"
 
-        // Modelos de endpoints com espelhos e formatos alternativos
+        // Modelos de endpoints com camada h,traffic (vias e trânsito com canal alfa transparente)
         val ENDPOINT_CANDIDATES = listOf(
-            "https://mt%d.google.com/vt?lyrs=traffic&x=%d&y=%d&z=%d",
-            "https://mt%d.google.com/vt/lyrs=traffic&x=%d&y=%d&z=%d",
-            "https://khms%d.google.com/vt/lyrs=traffic&x=%d&y=%d&z=%d",
-            "https://www.google.com/maps/vt?lyrs=traffic&x=%d&y=%d&z=%d"
+            "https://mt%d.google.com/vt/lyrs=h,traffic&x=%d&y=%d&z=%d",
+            "https://mt%d.google.com/vt?lyrs=h,traffic&x=%d&y=%d&z=%d",
+            "https://mt%d.google.com/vt/lyrs=h,traffic|smartmaps&x=%d&y=%d&z=%d",
+            "https://mt%d.google.com/vt/lyrs=h@221097413,traffic&x=%d&y=%d&z=%d",
+            "https://www.google.com/maps/vt/lyrs=h,traffic&x=%d&y=%d&z=%d"
         )
     }
 
     private val subDomainCounter = AtomicInteger(0)
     private var activeCandidateIndex: Int = prefs.getInt(KEY_ENDPOINT_INDEX, 0).coerceIn(0, ENDPOINT_CANDIDATES.lastIndex)
 
-    private val _isTrafficEnabled = MutableStateFlow(prefs.getBoolean(KEY_TRAFFIC_ENABLED, false))
+    private val _isTrafficEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_TRAFFIC_ENABLED, oldPrefs.getBoolean(KEY_TRAFFIC_ENABLED, false))
+    )
     val isTrafficEnabled: StateFlow<Boolean> = _isTrafficEnabled.asStateFlow()
 
     fun isTrafficEnabled(): Boolean = _isTrafficEnabled.value
@@ -54,9 +58,9 @@ class TrafficEndpointManager(context: Context) {
 
     suspend fun checkAndResolveEndpoint(): Pair<Boolean, Long> = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
-        // Ponto de teste em Brasília (Taguatinga / Plano Piloto: z=14, x=9469, y=9469)
-        val testX = 9469
-        val testY = 9469
+        // Ponto de teste em Brasília (Plano Piloto: z=14, x=6012, y=8920)
+        val testX = 6012
+        val testY = 8920
         val testZ = 14
 
         // 1. Testa primeiro o endpoint ativo atual
@@ -95,7 +99,7 @@ class TrafficEndpointManager(context: Context) {
                 requestMethod = "HEAD"
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
             }
-            conn.responseCode in 200..399
+            conn.responseCode in 200..399 && conn.contentLength > 500
         } catch (_: Exception) {
             false
         }
