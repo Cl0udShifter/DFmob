@@ -1,6 +1,9 @@
 package com.dfmob.data.telemetry
 
 import com.dfmob.BuildConfig
+import com.dfmob.data.model.CongestionLevel
+import com.dfmob.data.model.CongestionSource
+import com.dfmob.data.model.CrowdingInfo
 import com.dfmob.data.model.LiveVehicleMarker
 import com.dfmob.data.model.TransitStop
 import org.json.JSONObject
@@ -14,6 +17,7 @@ import com.dfmob.data.model.TripTransitLineOption
 import com.dfmob.data.model.isWalk
 import com.dfmob.data.model.sanitizeAndConsolidateLegs
 import com.dfmob.data.database.DatabaseHelper
+import com.dfmob.data.service.CrowdingPredictionEngine
 import org.json.JSONTokener
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
@@ -155,7 +159,9 @@ object MoovitTransitClient {
         val vehicleLonE6: Int? = null,
         val vehicleSampleTimeUtc: Long? = null,
         val nextStopIndex: Int? = null,
-        val patternStopsSize: Int? = null
+        val patternStopsSize: Int? = null,
+        val congestionLevel: CongestionLevel? = null,
+        val congestionSource: CongestionSource? = null
     )
 
     data class RawLineArrivals(
@@ -257,6 +263,10 @@ object MoovitTransitClient {
                                 ?: vehRec?.optJSONObject("2")?.optJSONObject("rec")?.optInt("1", -1)).takeIf { it != null && it >= 0 }
                             val patternSize = arrRec.optJSONObject("13")?.optInt("i32", 0).takeIf { it != null && it > 0 }
 
+                            val vehAttrRec = arrRec.optJSONObject("14")?.optJSONObject("rec") ?: arrRec.optJSONObject("14")
+                            val congestionLevel = (vehAttrRec?.optJSONObject("2")?.optInt("i32") ?: vehAttrRec?.optInt("2"))?.let { CongestionLevel.fromValue(it) }
+                            val congestionSource = (vehAttrRec?.optJSONObject("4")?.optInt("i32") ?: vehAttrRec?.optInt("4"))?.let { CongestionSource.fromValue(it) }
+
                             arrivals.add(
                                 RawArrival(
                                     patternId = patternId,
@@ -268,7 +278,9 @@ object MoovitTransitClient {
                                     vehicleLonE6 = lonE6,
                                     vehicleSampleTimeUtc = sampleTime,
                                     nextStopIndex = nextStopIdx,
-                                    patternStopsSize = patternSize
+                                    patternStopsSize = patternSize,
+                                    congestionLevel = congestionLevel,
+                                    congestionSource = congestionSource
                                 )
                             )
                         }
@@ -738,6 +750,13 @@ object MoovitTransitClient {
                                     maxOf(0, Math.round((liveDep - now) / 60000.0).toInt())
                                 } else null
 
+                                val targetTimeMs = if (st > 0) st else System.currentTimeMillis()
+                                val crowding = CrowdingPredictionEngine.predict(
+                                    destination = lineInfo?.destinationName ?: "",
+                                    lineName = lineInfo?.lineName ?: "",
+                                    targetEpochMs = targetTimeMs
+                                )
+
                                 val opt = if (lineInfo != null) {
                                     TripTransitLineOption(
                                         lineId = lid,
@@ -747,7 +766,8 @@ object MoovitTransitClient {
                                         isMetro = lineInfo.isMetro,
                                         agencyName = lineInfo.agencyName,
                                         hasLiveGps = isRealTime,
-                                        liveEtaMinutes = liveEtaMin
+                                        liveEtaMinutes = liveEtaMin,
+                                        crowding = crowding
                                     )
                                 } else {
                                     TripTransitLineOption(
@@ -758,7 +778,8 @@ object MoovitTransitClient {
                                         isMetro = false,
                                         agencyName = "",
                                         hasLiveGps = isRealTime,
-                                        liveEtaMinutes = liveEtaMin
+                                        liveEtaMinutes = liveEtaMin,
+                                        crowding = crowding
                                     )
                                 }
                                 altOptions.add(opt)

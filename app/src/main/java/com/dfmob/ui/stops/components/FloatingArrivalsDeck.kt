@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Wifi
+import com.dfmob.ui.components.CrowdingBadge
 import com.dfmob.ui.components.LiveWifiIcon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -645,15 +646,25 @@ fun StopArrivalLineCard(
                             )
                         }
                     }
-                    Text(
-                        text = "Sentido ${arrival.destination}",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = "Sentido ${arrival.destination}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        CrowdingBadge(
+                            crowding = arrival.crowding,
+                            isDarkTheme = isDarkTheme
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))

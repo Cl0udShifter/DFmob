@@ -46,7 +46,8 @@ data class TripTransitLineOption(
     val agencyName: String,
     val tripId: Long? = null,
     val hasLiveGps: Boolean = false,
-    val liveEtaMinutes: Int? = null
+    val liveEtaMinutes: Int? = null,
+    val crowding: CrowdingInfo = CrowdingInfo.DEFAULT_LOW
 )
 
 data class TripDepartureItem(

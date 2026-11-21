@@ -98,6 +98,7 @@ import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.repository.FavoritesRepository
 import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
+import com.dfmob.ui.components.CrowdingBadge
 import com.dfmob.ui.components.LiveWifiIcon
 import com.dfmob.ui.theme.TransitGreen
 import java.util.Calendar
@@ -1332,27 +1333,44 @@ private fun TripItineraryCard(
                 }
             }
 
-            // Exibicao da parada de embarque principal
+            // Exibicao da parada de embarque principal e nivel de lotacao
             if (firstTransitLeg?.departureStopName != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Place,
-                        contentDescription = null,
-                        tint = TransitGreen,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Em: ${firstTransitLeg.departureStopName}",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Place,
+                            contentDescription = null,
+                            tint = TransitGreen,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Em: ${firstTransitLeg.departureStopName}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    firstTransitLeg.lines.firstOrNull()?.crowding?.let { crowding ->
+                        CrowdingBadge(
+                            crowding = crowding,
+                            isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                            useShortText = true
+                        )
+                    }
                 }
             }
         }

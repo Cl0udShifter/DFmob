@@ -61,7 +61,8 @@ data class StopArrival(
     val targetEpochMs: Long = 0L,
     val nextDepartures: List<NextDeparture> = emptyList(),
     val vehicleType: VehicleType = VehicleType.PADRON,
-    val hasAccessibility: Boolean = true
+    val hasAccessibility: Boolean = true,
+    val crowding: CrowdingInfo = CrowdingInfo.DEFAULT_LOW
 ) {
     fun getEffectiveMinutes(currentNowMs: Long = System.currentTimeMillis()): Int {
         return if (targetEpochMs > 0L) {

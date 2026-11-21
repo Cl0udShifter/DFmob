@@ -3,7 +3,11 @@ package com.dfmob.data.repository
 import android.content.Context
 import android.location.Geocoder
 import com.dfmob.data.database.DatabaseHelper
+import com.dfmob.data.model.CongestionLevel
+import com.dfmob.data.model.CongestionSource
+import com.dfmob.data.model.CrowdingInfo
 import com.dfmob.data.model.DFLocation
+import com.dfmob.data.service.CrowdingPredictionEngine
 import com.dfmob.data.model.FavoriteLineArrivalPrediction
 import com.dfmob.data.model.LineDirectionOption
 import com.dfmob.data.model.LineRouteState
@@ -256,6 +260,13 @@ class StopsRepository(private val context: Context) {
                 }
             }
 
+            val crowding = CrowdingPredictionEngine.predict(
+                destination = line.destinationName,
+                lineName = line.lineName,
+                targetEpochMs = mainTargetEpochMs,
+                stopName = stop.stopName
+            )
+
             StopArrival(
                 lineNumber = line.lineNumber,
                 lineName = line.lineName,
@@ -269,7 +280,8 @@ class StopsRepository(private val context: Context) {
                 targetEpochMs = mainTargetEpochMs,
                 nextDepartures = nextDeparturesList,
                 vehicleType = resolveVehicleType(line.lineNumber, line.lineName, isMetro),
-                hasAccessibility = true
+                hasAccessibility = true,
+                crowding = crowding
             )
         }
 
@@ -336,6 +348,21 @@ class StopsRepository(private val context: Context) {
                     )
                 }
 
+                val firstArrival = lineArrival.arrivals.firstOrNull()
+                val crowding = if (firstArrival?.congestionLevel != null) {
+                    CrowdingInfo(
+                        level = firstArrival.congestionLevel,
+                        source = firstArrival.congestionSource ?: CongestionSource.PREDICTION
+                    )
+                } else {
+                    CrowdingPredictionEngine.predict(
+                        destination = lineInfo.destinationName,
+                        lineName = lineInfo.lineName,
+                        targetEpochMs = targetEtd,
+                        stopName = stop.stopName
+                    )
+                }
+
                 updatedArrivals.add(
                     StopArrival(
                         lineNumber = lineInfo.lineNumber,
@@ -350,7 +377,8 @@ class StopsRepository(private val context: Context) {
                         targetEpochMs = targetEtd,
                         nextDepartures = subsequentDepartures,
                         vehicleType = resolveVehicleType(lineInfo.lineNumber, lineInfo.lineName, lineInfo.isMetro),
-                        hasAccessibility = true
+                        hasAccessibility = true,
+                        crowding = crowding
                     )
                 )
             }
@@ -802,6 +830,20 @@ class StopsRepository(private val context: Context) {
                             targetEpochMs = et
                         )
                     }
+                    val crowding = if (first.congestionLevel != null) {
+                        CrowdingInfo(
+                            level = first.congestionLevel,
+                            source = first.congestionSource ?: CongestionSource.PREDICTION
+                        )
+                    } else {
+                        CrowdingPredictionEngine.predict(
+                            destination = lineInfo.destinationName,
+                            lineName = lineInfo.lineName,
+                            targetEpochMs = targetEtd,
+                            stopName = stop.stopName
+                        )
+                    }
+
                     return@withContext StopArrival(
                         lineNumber = lineInfo.lineNumber,
                         lineName = lineInfo.lineName,
@@ -815,7 +857,8 @@ class StopsRepository(private val context: Context) {
                         targetEpochMs = targetEtd,
                         nextDepartures = subsequent,
                         vehicleType = resolveVehicleType(lineInfo.lineNumber, lineInfo.lineName, lineInfo.isMetro),
-                        hasAccessibility = true
+                        hasAccessibility = true,
+                        crowding = crowding
                     )
                 }
             }

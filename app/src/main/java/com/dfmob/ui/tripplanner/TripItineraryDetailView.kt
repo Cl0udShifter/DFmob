@@ -128,6 +128,7 @@ import com.dfmob.data.telemetry.SemobTelemetryService
 import com.dfmob.service.NavigationStateHolder
 import com.dfmob.service.TripDescentAlarmHelper
 import com.dfmob.service.TripNavigationTrackingService
+import com.dfmob.ui.components.CrowdingBadge
 import com.dfmob.ui.theme.TransitGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1941,6 +1942,13 @@ private fun OverviewItineraryDeck(
                                                 softWrap = false
                                             )
                                         }
+                                    }
+                                    leg.lines.firstOrNull()?.crowding?.let { crowding ->
+                                        CrowdingBadge(
+                                            crowding = crowding,
+                                            isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                                            useShortText = false
+                                        )
                                     }
                                 }
 
