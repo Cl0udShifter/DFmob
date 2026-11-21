@@ -162,9 +162,9 @@ fun SplashScreen(
 }
 
 /**
- * Desenha os arcos e trilhos exatos do Candidato 6 com efeito de preenchimento de linha (trim-path).
- * Reproduz com fidelidade matematica o elo S central conectando o D ao F, os trilhos concentricos
- * e as hastes verticais da fita de transito de Brasilia.
+ * Desenha o traçado contínuo e elegante da Variante 2 (estilo Transit App).
+ * O loop do D e o elo S do F se preenchem em sincronia fluida com pontas arredondadas,
+ * seguidos pela barra média e a cauda inferior do F.
  */
 @Composable
 private fun VectorAnimatedIcon(
@@ -178,18 +178,18 @@ private fun VectorAnimatedIcon(
         val w = size.width
         val h = size.height
 
-        // Proporcao fiel do icone oficial Candidato 6: largura 365, altura 257
-        val scale = (w * 0.88f) / 365f
-        val strokeW = 22f * scale
+        // Proporção fiel do ícone oficial Variante 2: largura 360, altura 245
+        val scale = (w * 0.88f) / 360f
+        val strokeW = 38f * scale
         val strokeStyle = Stroke(
             width = strokeW,
-            cap = StrokeCap.Butt,
-            join = StrokeJoin.Miter
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
         )
 
-        // Centralizacao exata no Canvas
-        val offsetX = (w - 365f * scale) / 2f
-        val offsetY = (h - 257f * scale) / 2f
+        // Centralização exata no Canvas
+        val offsetX = (w - 360f * scale) / 2f
+        val offsetY = (h - 245f * scale) / 2f
 
         fun drawTrimmedPath(path: Path, pathProgress: Float) {
             if (pathProgress <= 0.001f) return
@@ -202,90 +202,65 @@ private fun VectorAnimatedIcon(
             }
         }
 
-        // 1. D - Haste e curva superior externa descendo em arco fluido para o centro
-        val pathDTopOuter = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 10.5f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 10.5f * scale)
+        // 1. Loop contínuo do D (haste vertical, curvas suaves e arco direito fechando o D)
+        val pathDLoop = Path().apply {
+            moveTo(offsetX + 20f * scale, offsetY + 55f * scale)
             cubicTo(
-                offsetX + 135f * scale, offsetY + 10.5f * scale,
-                offsetX + 165f * scale, offsetY + 30f * scale,
-                offsetX + 175f * scale, offsetY + 66f * scale
+                offsetX + 20f * scale, offsetY + 20f * scale,
+                offsetX + 25f * scale, offsetY + 20f * scale,
+                offsetX + 55f * scale, offsetY + 20f * scale
             )
+            lineTo(offsetX + 130f * scale, offsetY + 20f * scale)
+            cubicTo(
+                offsetX + 180f * scale, offsetY + 20f * scale,
+                offsetX + 180f * scale, offsetY + 225f * scale,
+                offsetX + 130f * scale, offsetY + 225f * scale
+            )
+            lineTo(offsetX + 55f * scale, offsetY + 225f * scale)
+            cubicTo(
+                offsetX + 25f * scale, offsetY + 225f * scale,
+                offsetX + 20f * scale, offsetY + 225f * scale,
+                offsetX + 20f * scale, offsetY + 190f * scale
+            )
+            close()
         }
 
-        // 2. D - Trilho interno concentrico (circula suavemente pelo centro do D)
-        val pathDInner = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 54.5f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 54.5f * scale)
-            cubicTo(
-                offsetX + 145f * scale, offsetY + 54.5f * scale,
-                offsetX + 154f * scale, offsetY + 95f * scale,
-                offsetX + 154f * scale, offsetY + 128.5f * scale
-            )
-            cubicTo(
-                offsetX + 154f * scale, offsetY + 162f * scale,
-                offsetX + 145f * scale, offsetY + 202.5f * scale,
-                offsetX + 70f * scale, offsetY + 202.5f * scale
-            )
-            lineTo(offsetX + 0f * scale, offsetY + 202.5f * scale)
-        }
-
-        // 3. Elo Central / Curva S Niemeyer: conecta a base do D ao topo do F em arco continuo
+        // 2. Elo S contínuo: sobe da base do D, cruza o centro e desdobra na barra superior do F
         val pathSCurveRibbon = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 246.5f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 246.5f * scale)
+            moveTo(offsetX + 130f * scale, offsetY + 225f * scale)
             cubicTo(
-                offsetX + 170f * scale, offsetY + 246.5f * scale,
-                offsetX + 178f * scale, offsetY + 200f * scale,
-                offsetX + 185f * scale, offsetY + 135f * scale
+                offsetX + 175f * scale, offsetY + 210f * scale,
+                offsetX + 185f * scale, offsetY + 130f * scale,
+                offsetX + 205f * scale, offsetY + 70f * scale
             )
             cubicTo(
-                offsetX + 192f * scale, offsetY + 70f * scale,
-                offsetX + 200f * scale, offsetY + 10.5f * scale,
-                offsetX + 295f * scale, offsetY + 10.5f * scale
-            )
-            lineTo(offsetX + 365f * scale, offsetY + 10.5f * scale)
-        }
-
-        // 4. F - Barra superior interna que curva acompanhando o elo central
-        val pathFTopInner = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 54.5f * scale)
-            lineTo(offsetX + 295f * scale, offsetY + 54.5f * scale)
-            cubicTo(
-                offsetX + 245f * scale, offsetY + 54.5f * scale,
-                offsetX + 235f * scale, offsetY + 75f * scale,
-                offsetX + 233f * scale, offsetY + 120f * scale
+                offsetX + 220f * scale, offsetY + 20f * scale,
+                offsetX + 260f * scale, offsetY + 20f * scale,
+                offsetX + 345f * scale, offsetY + 20f * scale
             )
         }
 
-        // 5. F - Barra central externa que curva em 90 graus descendo ate a base
-        val pathFMiddleOuter = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 129f * scale)
-            lineTo(offsetX + 295f * scale, offsetY + 129f * scale)
+        // 3. F - Barra média horizontal com ponta arredondada
+        val pathFMiddle = Path().apply {
+            moveTo(offsetX + 240f * scale, offsetY + 122f * scale)
+            lineTo(offsetX + 325f * scale, offsetY + 122f * scale)
+        }
+
+        // 4. F - Cauda inferior curva descendo suavemente com ponta arredondada
+        val pathFTail = Path().apply {
+            moveTo(offsetX + 195f * scale, offsetY + 160f * scale)
             cubicTo(
-                offsetX + 225f * scale, offsetY + 129f * scale,
-                offsetX + 189f * scale, offsetY + 175f * scale,
-                offsetX + 189f * scale, offsetY + 257f * scale
+                offsetX + 195f * scale, offsetY + 185f * scale,
+                offsetX + 205f * scale, offsetY + 205f * scale,
+                offsetX + 205f * scale, offsetY + 235f * scale
             )
         }
 
-        // 6. F - Barra central interna que curva em 90 graus descendo ate a base
-        val pathFMiddleInner = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 173f * scale)
-            lineTo(offsetX + 295f * scale, offsetY + 173f * scale)
-            cubicTo(
-                offsetX + 265f * scale, offsetY + 173f * scale,
-                offsetX + 233f * scale, offsetY + 200f * scale,
-                offsetX + 233f * scale, offsetY + 257f * scale
-            )
-        }
-
-        // Desenha todas as 6 linhas em preenchimento vetorial sincronizado
-        drawTrimmedPath(pathDTopOuter, progress)
-        drawTrimmedPath(pathDInner, progress)
+        // Animação sincronizada das linhas
+        drawTrimmedPath(pathDLoop, progress)
         drawTrimmedPath(pathSCurveRibbon, progress)
-        drawTrimmedPath(pathFTopInner, progress)
-        drawTrimmedPath(pathFMiddleOuter, progress)
-        drawTrimmedPath(pathFMiddleInner, progress)
+        val branchProgress = (progress * 1.35f - 0.35f).coerceIn(0f, 1f)
+        drawTrimmedPath(pathFMiddle, branchProgress)
+        drawTrimmedPath(pathFTail, branchProgress)
     }
 }
