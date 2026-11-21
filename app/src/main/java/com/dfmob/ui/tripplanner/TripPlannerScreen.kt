@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
@@ -544,6 +545,7 @@ fun TripPlannerScreen(
                     }
 
                     state.itineraries.isNotEmpty() -> {
+                        val sortedItineraries = remember(state.itineraries) { state.itineraries.sortedBy { it.totalDurationMinutes } }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -577,7 +579,7 @@ fun TripPlannerScreen(
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Map,
+                                                    imageVector = Icons.AutoMirrored.Rounded.AltRoute,
                                                     contentDescription = "Comparar no mapa",
                                                     tint = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.size(13.dp)
@@ -596,9 +598,8 @@ fun TripPlannerScreen(
                                 }
                             }
 
-                            // Ordenado do que leva menos tempo ate o que leva mais tempo
-                            val sortedItineraries = state.itineraries.sortedBy { it.totalDurationMinutes }
-                            items(sortedItineraries) { itinerary ->
+                            // Ordenado do que leva menos tempo ate o que leva mais tempo (com key para scroll a 120 FPS sem stutters)
+                            items(sortedItineraries, key = { it.guid }) { itinerary ->
                                 TripItineraryCard(
                                     itinerary = itinerary,
                                     onClick = { viewModel.selectItinerary(itinerary) }
@@ -1105,9 +1106,10 @@ private fun TripItineraryCard(
     itinerary: TripPlanItinerary,
     onClick: () -> Unit
 ) {
-    val durationText = formatDuration(itinerary.totalDurationMinutes)
-    val startHH = formatEpochMsToHHMM(itinerary.startTimeUtc)
-    val endHH = formatEpochMsToHHMM(itinerary.endTimeUtc)
+    val durationText = remember(itinerary.totalDurationMinutes) { formatDuration(itinerary.totalDurationMinutes) }
+    val startHH = remember(itinerary.startTimeUtc) { formatEpochMsToHHMM(itinerary.startTimeUtc) }
+    val endHH = remember(itinerary.endTimeUtc) { formatEpochMsToHHMM(itinerary.endTimeUtc) }
+    val cardInsights = remember(itinerary.insights, itinerary.insight) { itinerary.effectiveInsights }
 
     Surface(
         onClick = onClick,
@@ -1122,7 +1124,6 @@ private fun TripItineraryCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val cardInsights = itinerary.effectiveInsights
             if (cardInsights.isNotEmpty()) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1217,11 +1218,13 @@ private fun TripItineraryCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            val visibleLegs = itinerary.legs.filter { leg ->
-                when (leg.type) {
-                    TripLegType.WALK, TripLegType.TRANSFER_WALK -> leg.durationMinutes > 0 || leg.distanceMeters > 0
-                    TripLegType.TRANSIT -> leg.lines.isNotEmpty()
-                    else -> false
+            val visibleLegs = remember(itinerary.legs) {
+                itinerary.legs.filter { leg ->
+                    when (leg.type) {
+                        TripLegType.WALK, TripLegType.TRANSFER_WALK -> leg.durationMinutes > 0 || leg.distanceMeters > 0
+                        TripLegType.TRANSIT -> leg.lines.isNotEmpty()
+                        else -> false
+                    }
                 }
             }
 

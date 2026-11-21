@@ -590,7 +590,9 @@ class TripPlannerViewModel(
                     try {
                         val updated = repository.enrichItinerariesWithDepartures(currentItineraries)
                         val evaluated = TripInsightsEvaluator.evaluate(updated)
-                        _uiState.update { it.copy(itineraries = evaluated) }
+                        if (evaluated != currentItineraries) {
+                            _uiState.update { it.copy(itineraries = evaluated) }
+                        }
                     } catch (_: Exception) {}
                 }
             }
