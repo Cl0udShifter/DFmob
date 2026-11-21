@@ -2,6 +2,7 @@ package com.dfmob.ui.stops.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -155,20 +156,13 @@ fun FloatingArrivalsDeck(
     }
 
     val maxTravelDp = (targetHeight - 320.dp).coerceAtLeast(1.dp)
-    val density = LocalDensity.current
-    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
 
-    val coroutineScope = rememberCoroutineScope()
-    val expandProgress = remember { Animatable(if (isDeckExpanded) 1f else 0f) }
+    val currentFraction by animateFloatAsState(
+        targetValue = if (isDeckExpanded) 1f else 0f,
+        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
+        label = "arrivalsDeckExpansion"
+    )
 
-    LaunchedEffect(isDeckExpanded) {
-        expandProgress.animateTo(
-            targetValue = if (isDeckExpanded) 1f else 0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-        )
-    }
-
-    val currentFraction = expandProgress.value
     val currentHeight = 320.dp + (maxTravelDp * currentFraction)
     val currentPadH = 14.dp * (1f - currentFraction)
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -187,42 +181,29 @@ fun FloatingArrivalsDeck(
     val closeBtnBg = if (isDarkTheme) Color(0xFF23252C) else Color(0xFFEAECEF)
     val handleColor = if (isDarkTheme) Color(0xFF3F424E) else Color(0xFFD1D5DB)
 
-    // Gesto de puxar verticalmente em tempo real acompanhando o dedo a 120 FPS
-    val dragModifier = Modifier.pointerInput(maxTravelPx) {
+    // Gesto de puxar verticalmente instantaneo a 120 FPS sem recomposicoes intermediarias
+    val dragModifier = Modifier.pointerInput(Unit) {
+        var dragAccumulator = 0f
         detectVerticalDragGestures(
+            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                if (maxTravelPx > 0f) {
-                    val delta = -dragAmount / maxTravelPx
-                    coroutineScope.launch {
-                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
-                    }
-                }
+                dragAccumulator += dragAmount
             },
             onDragEnd = {
-                val shouldExpand = expandProgress.value > 0.45f
-                if (shouldExpand) {
+                if (dragAccumulator < -15f) {
                     isExpanded = true
-                } else {
+                } else if (dragAccumulator > 15f) {
                     if (selectedScheduleArrival != null) {
                         selectedScheduleArrival = null
+                    } else {
+                        isExpanded = false
                     }
-                    isExpanded = false
                 }
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (shouldExpand) 1f else 0f,
-                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
-                    )
-                }
+                dragAccumulator = 0f
             },
             onDragCancel = {
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (isDeckExpanded) 1f else 0f,
-                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
-                    )
-                }
+                dragAccumulator = 0f
             }
         )
     }

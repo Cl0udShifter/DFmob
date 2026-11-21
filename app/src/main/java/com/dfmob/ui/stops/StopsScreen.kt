@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -309,12 +311,15 @@ fun StopsScreen(
     val itemBg = if (isDarkTheme) Color(0xFF20222A) else Color(0xFFF3F4F7)
     val iconAccent = if (isDarkTheme) TransitGreen else Color(0xFF00883E)
 
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = scaffoldBg,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -645,7 +650,7 @@ fun StopsScreen(
                             favoritesRepo.toggleFavorite(lineObj)
                         },
                         isDarkTheme = isDarkTheme,
-                        maxScreenHeight = maxHeight
+                        maxScreenHeight = screenHeight
                     )
                 } else {
                     selectedStop?.let { stop ->
@@ -676,7 +681,7 @@ fun StopsScreen(
                             onClose = {
                                 selectedStop = null
                             },
-                            maxScreenHeight = maxHeight
+                            maxScreenHeight = screenHeight
                         )
                     }
                 }

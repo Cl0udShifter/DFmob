@@ -1,11 +1,8 @@
 package com.dfmob.ui.stops.components
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,20 +96,13 @@ fun LineItineraryDeck(
     }
 
     val maxTravelDp = (targetHeight - 340.dp).coerceAtLeast(1.dp)
-    val density = LocalDensity.current
-    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
 
-    val coroutineScope = rememberCoroutineScope()
-    val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
+    val currentFraction by animateFloatAsState(
+        targetValue = if (isExpanded) 1f else 0f,
+        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
+        label = "lineDeckExpandFraction"
+    )
 
-    LaunchedEffect(isExpanded) {
-        expandProgress.animateTo(
-            targetValue = if (isExpanded) 1f else 0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-        )
-    }
-
-    val currentFraction = expandProgress.value
     val currentHeight = 340.dp + (maxTravelDp * currentFraction)
     val currentPadH = 14.dp * (1f - currentFraction)
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -137,35 +127,25 @@ fun LineItineraryDeck(
         bottomEnd = currentCorner
     )
 
-    // Gesto de puxar verticalmente em tempo real acompanhando o dedo a 120 FPS
-    val dragModifier = Modifier.pointerInput(maxTravelPx) {
+    // Gesto de puxar verticalmente instantaneo a 120 FPS sem recomposicoes intermediarias
+    val dragModifier = Modifier.pointerInput(Unit) {
+        var dragAccumulator = 0f
         detectVerticalDragGestures(
+            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                if (maxTravelPx > 0f) {
-                    val delta = -dragAmount / maxTravelPx
-                    coroutineScope.launch {
-                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
-                    }
-                }
+                dragAccumulator += dragAmount
             },
             onDragEnd = {
-                val shouldExpand = expandProgress.value > 0.45f
-                isExpanded = shouldExpand
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (shouldExpand) 1f else 0f,
-                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
-                    )
+                if (dragAccumulator < -15f) {
+                    isExpanded = true
+                } else if (dragAccumulator > 15f) {
+                    isExpanded = false
                 }
+                dragAccumulator = 0f
             },
             onDragCancel = {
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (isExpanded) 1f else 0f,
-                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
-                    )
-                }
+                dragAccumulator = 0f
             }
         )
     }

@@ -22,12 +22,10 @@ import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -884,9 +882,10 @@ fun TripItineraryDetailView(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val maxScreenHeight = maxHeight
+    val configuration = LocalConfiguration.current
+    val maxScreenHeight = configuration.screenHeightDp.dp
 
+    Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { mapView },
             modifier = Modifier.fillMaxSize()
@@ -1341,20 +1340,13 @@ private fun ActiveNavigationDeck(
 
     val minH = if (isWaitForTransit) 200.dp else targetHeight
     val maxTravelDp = (targetHeight - minH).coerceAtLeast(1.dp)
-    val density = LocalDensity.current
-    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
 
-    val coroutineScope = rememberCoroutineScope()
-    val expandProgress = remember { Animatable(if (isWaitForTransit && isExpanded) 1f else 0f) }
+    val currentFraction by animateFloatAsState(
+        targetValue = if (isWaitForTransit && isExpanded) 1f else 0f,
+        animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing),
+        label = "activeDeckExpandFraction"
+    )
 
-    LaunchedEffect(isExpanded, isWaitForTransit) {
-        expandProgress.animateTo(
-            targetValue = if (isWaitForTransit && isExpanded) 1f else 0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-        )
-    }
-
-    val currentFraction = expandProgress.value
     val currentHeight = if (isWaitForTransit) minH + (maxTravelDp * currentFraction) else targetHeight
     val currentPadH = if (isWaitForTransit) 14.dp * (1f - currentFraction) else 14.dp
     val currentPadB = if (isWaitForTransit) 12.dp * (1f - currentFraction) else 12.dp
@@ -1370,38 +1362,26 @@ private fun ActiveNavigationDeck(
     val currentIsExpanded by androidx.compose.runtime.rememberUpdatedState(isExpanded)
     val currentOnToggleExpand by androidx.compose.runtime.rememberUpdatedState(onToggleExpand)
 
-    // Gesto de puxar em tempo real acompanhando o dedo a 120 FPS
-    val dragModifier = Modifier.pointerInput(isWaitForTransit, maxTravelPx) {
+    // Gesto de puxar instantaneo a 120 FPS sem recomposicoes intermediarias
+    val dragModifier = Modifier.pointerInput(isWaitForTransit) {
         if (!isWaitForTransit) return@pointerInput
+        var dragAccumulator = 0f
         detectVerticalDragGestures(
+            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                if (maxTravelPx > 0f) {
-                    val delta = -dragAmount / maxTravelPx
-                    coroutineScope.launch {
-                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
-                    }
-                }
+                dragAccumulator += dragAmount
             },
             onDragEnd = {
-                val shouldExpand = expandProgress.value > 0.45f
-                if (shouldExpand != currentIsExpanded) {
+                if (dragAccumulator < -15f && !currentIsExpanded) {
+                    currentOnToggleExpand()
+                } else if (dragAccumulator > 15f && currentIsExpanded) {
                     currentOnToggleExpand()
                 }
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (shouldExpand) 1f else 0f,
-                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
-                    )
-                }
+                dragAccumulator = 0f
             },
             onDragCancel = {
-                coroutineScope.launch {
-                    expandProgress.animateTo(
-                        targetValue = if (currentIsExpanded) 1f else 0f,
-                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
-                    )
-                }
+                dragAccumulator = 0f
             }
         )
     }
