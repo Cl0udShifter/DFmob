@@ -1228,15 +1228,16 @@ private fun TripItineraryCard(
                 }
             }
 
-            // Linha do trajeto visual em faixa continua com scroll horizontal
+            // Linha do trajeto visual em faixa continua sem scroll aninhado (elimina micro-stutters)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                modifier = Modifier.fillMaxWidth()
             ) {
-                visibleLegs.forEachIndexed { index, leg ->
+                val displayLegs = visibleLegs.take(4)
+                val remainingLegs = visibleLegs.size - displayLegs.size
+
+                displayLegs.forEachIndexed { index, leg ->
                     when (leg.type) {
                         TripLegType.WALK, TripLegType.TRANSFER_WALK -> {
                             Row(
@@ -1267,7 +1268,7 @@ private fun TripItineraryCard(
                         TripLegType.TRANSIT, TripLegType.WAIT -> {
                             // Agrupa linhas alternativas que servem para este mesmo trecho
                             val lines = leg.lines
-                            val maxBadges = 4
+                            val maxBadges = 3
                             val displayLines = lines.take(maxBadges)
                             val remaining = lines.size - maxBadges
 
@@ -1276,10 +1277,13 @@ private fun TripItineraryCard(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 displayLines.forEach { line ->
-                                    val badgeColor = try {
-                                        android.graphics.Color.parseColor(line.colorHex).let { Color(it) }
-                                    } catch (_: Exception) {
-                                        TransitGreen
+                                    val lineHex = line.colorHex
+                                    val badgeColor = remember(lineHex) {
+                                        try {
+                                            android.graphics.Color.parseColor(lineHex).let { Color(it) }
+                                        } catch (_: Exception) {
+                                            TransitGreen
+                                        }
                                     }
 
                                     Surface(
@@ -1327,7 +1331,7 @@ private fun TripItineraryCard(
                         }
                     }
 
-                    if (index < visibleLegs.size - 1) {
+                    if (index < displayLegs.size - 1) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
                             contentDescription = null,
@@ -1336,18 +1340,27 @@ private fun TripItineraryCard(
                         )
                     }
                 }
+
+                if (remainingLegs > 0) {
+                    Text(
+                        text = "+$remainingLegs etapas",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            // Linha dedicada aos proximos horarios de onibus da primeira perna
+            // Linha dedicada aos proximos horarios de onibus da primeira perna (sem scroll aninhado)
             val firstTransitLeg = itinerary.legs.firstOrNull { it.type == TripLegType.TRANSIT }
             if (firstTransitLeg != null && firstTransitLeg.upcomingDepartures.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.AccessTime,
@@ -1363,7 +1376,7 @@ private fun TripItineraryCard(
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    firstTransitLeg.upcomingDepartures.take(5).forEach { dep ->
+                    firstTransitLeg.upcomingDepartures.take(4).forEach { dep ->
                         if (dep.isRealtime) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
