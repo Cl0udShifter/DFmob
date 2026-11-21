@@ -27,8 +27,18 @@ enum class TripPreference(val thriftValue: Int) {
 data class TripPlanFilter(
     val mode: TripTimeMode = TripTimeMode.DEPART_NOW,
     val targetTimeUtc: Long = System.currentTimeMillis(),
-    val preference: TripPreference = TripPreference.FASTEST
-)
+    val preference: TripPreference = TripPreference.FASTEST,
+    val allowBus: Boolean = true,
+    val allowSubway: Boolean = true
+) {
+    val routeTypes: List<Int>
+        get() {
+            val list = mutableListOf<Int>()
+            if (allowBus) list.add(3) // Bus
+            if (allowSubway) list.add(1) // Subway
+            return if (list.isEmpty()) listOf(3, 1) else list
+        }
+}
 
 enum class TripLegType {
     WALK,

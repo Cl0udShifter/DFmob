@@ -12,6 +12,7 @@ import com.dfmob.data.model.TripPlanLeg
 import com.dfmob.data.model.TripLegType
 import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripPlanFilter
+import com.dfmob.data.model.TripPreference
 import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.model.TripTransitLineOption
 import com.dfmob.data.model.isWalk
@@ -464,7 +465,8 @@ object MoovitTransitClient {
         pref: Int,
         timeType: Int,
         timeUtc: Long,
-        currentTimeSelected: Boolean
+        currentTimeSelected: Boolean,
+        routeTypes: List<Int> = listOf(3, 1)
     ): ByteArray {
         val baos = ByteArrayOutputStream()
         val dos = DataOutputStream(baos)
@@ -490,12 +492,14 @@ object MoovitTransitClient {
         dos.writeByte(if (currentTimeSelected) 1 else 0)
 
         // 5: routeTypes (list<i32>) -> Bus = 3, Subway = 1
+        val actualRouteTypes = if (routeTypes.isEmpty()) listOf(3, 1) else routeTypes
         dos.writeByte(15)
         dos.writeShort(5)
         dos.writeByte(8)
-        dos.writeInt(2)
-        dos.writeInt(3) // Bus
-        dos.writeInt(1) // Subway
+        dos.writeInt(actualRouteTypes.size)
+        for (rt in actualRouteTypes) {
+            dos.writeInt(rt)
+        }
 
         // 6: fromLocation (struct)
         dos.writeByte(12)
@@ -589,7 +593,8 @@ object MoovitTransitClient {
             pref = pref,
             timeType = timeType,
             timeUtc = filter.targetTimeUtc,
-            currentTimeSelected = isNow
+            currentTimeSelected = isNow,
+            routeTypes = filter.routeTypes
         )
 
         val itineraries = mutableListOf<TripPlanItinerary>()
@@ -1006,7 +1011,33 @@ object MoovitTransitClient {
         } catch (_: Exception) {
         }
 
-        return itineraries.sortedBy { it.totalDurationMinutes }
+        val filtered = itineraries.filter { itin ->
+            val transitLegs = itin.legs.filter { it.type == TripLegType.TRANSIT }
+            if (!filter.allowSubway && transitLegs.any { leg -> leg.lines.any { it.isMetro } }) {
+                return@filter false
+            }
+            if (!filter.allowBus && transitLegs.any { leg -> leg.lines.any { !it.isMetro } }) {
+                return@filter false
+            }
+            true
+        }
+
+        return when (filter.preference) {
+            TripPreference.LEAST_WALKING -> filtered.sortedWith(
+                compareBy<TripPlanItinerary> { it.walkDistanceMeters }
+                    .thenBy { it.walkDurationMinutes }
+                    .thenBy { it.totalDurationMinutes }
+            )
+            TripPreference.LEAST_TRANSFERS -> filtered.sortedWith(
+                compareBy<TripPlanItinerary> { it.transfersCount }
+                    .thenBy { it.totalDurationMinutes }
+                    .thenBy { it.walkDistanceMeters }
+            )
+            TripPreference.FASTEST -> filtered.sortedWith(
+                compareBy<TripPlanItinerary> { it.totalDurationMinutes }
+                    .thenBy { it.startTimeUtc }
+            )
+        }
     }
 
 }

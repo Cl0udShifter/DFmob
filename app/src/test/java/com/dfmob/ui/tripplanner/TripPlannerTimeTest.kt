@@ -82,4 +82,57 @@ class TripPlannerTimeTest {
         // 4. Chegar até para amanhã NÃO deve ser considerado "para agora"
         org.junit.Assert.assertFalse(isSearchForNow(TripTimeMode.ARRIVE_BY, tomorrow, now))
     }
+
+    @Test
+    fun testRouteTypesModalMapping() {
+        // 1. Padrão: ambos ativos -> [3, 1]
+        val filterDefault = TripPlanFilter()
+        assertEquals(listOf(3, 1), filterDefault.routeTypes)
+
+        // 2. Apenas Ônibus -> [3]
+        val filterBusOnly = TripPlanFilter(allowBus = true, allowSubway = false)
+        assertEquals(listOf(3), filterBusOnly.routeTypes)
+
+        // 3. Apenas Metrô -> [1]
+        val filterSubwayOnly = TripPlanFilter(allowBus = false, allowSubway = true)
+        assertEquals(listOf(1), filterSubwayOnly.routeTypes)
+
+        // 4. Se ambos forem desmarcados por engano, fallback de segurança -> [3, 1]
+        val filterNone = TripPlanFilter(allowBus = false, allowSubway = false)
+        assertEquals(listOf(3, 1), filterNone.routeTypes)
+    }
+
+    @Test
+    fun testThriftRequestSerializationRouteTypes() {
+        val payloadBoth = com.dfmob.data.telemetry.MoovitTransitClient.buildTripPlanRequest(
+            fromLatE6 = -15834000,
+            fromLonE6 = -48028000,
+            fromCaption = "Origem",
+            toLatE6 = -15794200,
+            toLonE6 = -47882200,
+            toCaption = "Destino",
+            pref = 2,
+            timeType = 2,
+            timeUtc = 1700000000000L,
+            currentTimeSelected = true,
+            routeTypes = listOf(3, 1)
+        )
+        assertTrue(payloadBoth.isNotEmpty())
+
+        val payloadBusOnly = com.dfmob.data.telemetry.MoovitTransitClient.buildTripPlanRequest(
+            fromLatE6 = -15834000,
+            fromLonE6 = -48028000,
+            fromCaption = "Origem",
+            toLatE6 = -15794200,
+            toLonE6 = -47882200,
+            toCaption = "Destino",
+            pref = 2,
+            timeType = 2,
+            timeUtc = 1700000000000L,
+            currentTimeSelected = true,
+            routeTypes = listOf(3)
+        )
+        assertTrue(payloadBusOnly.isNotEmpty())
+        assertEquals(payloadBoth.size - 4, payloadBusOnly.size) // 1 int less (4 bytes)
+    }
 }

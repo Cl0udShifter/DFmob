@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.SyncAlt
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -138,6 +139,8 @@ fun TripPlannerScreen(
     var showComparisonMap by remember { mutableStateOf(false) }
     var isTimePickerSheetOpen by remember { mutableStateOf(false) }
     val timePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var isPreferencesSheetOpen by remember { mutableStateOf(false) }
+    val preferencesSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     DisposableEffect(context) {
         viewModel.refreshUserLocation()
@@ -383,6 +386,25 @@ fun TripPlannerScreen(
                 )
             }
 
+            if (isPreferencesSheetOpen) {
+                TripPreferencesBottomSheet(
+                    sheetState = preferencesSheetState,
+                    currentPreference = state.preference,
+                    allowBus = state.allowBus,
+                    allowSubway = state.allowSubway,
+                    onDismissRequest = { isPreferencesSheetOpen = false },
+                    onApply = { pref, bus, sub ->
+                        isPreferencesSheetOpen = false
+                        viewModel.setPreference(pref)
+                        viewModel.setModalFilters(bus, sub)
+                    },
+                    onReset = {
+                        isPreferencesSheetOpen = false
+                        viewModel.resetPreferences()
+                    }
+                )
+            }
+
             // MODULO 1: Origem e Destino com conexao vertical
             OriginDestinationCard(
                 originText = state.originQuery,
@@ -464,10 +486,28 @@ fun TripPlannerScreen(
                 timeMode = state.timeMode,
                 targetTimeUtc = state.targetTimeUtc,
                 preference = state.preference,
+                allowBus = state.allowBus,
+                allowSubway = state.allowSubway,
                 onOpenTimePicker = { isTimePickerSheetOpen = true },
+                onOpenPreferences = { isPreferencesSheetOpen = true },
                 onAddMinutes = { viewModel.addTimeMinutes(15) },
                 onSubtractMinutes = { viewModel.addTimeMinutes(-15) },
-                onTogglePreference = { viewModel.togglePreference(it) }
+                onTogglePreference = { viewModel.togglePreference(it) },
+                onToggleModal = { isBus ->
+                    if (isBus) {
+                        if (state.allowBus && !state.allowSubway) {
+                            Toast.makeText(context, "Ao menos um meio de transporte deve permanecer ativo", Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.setModalFilters(!state.allowBus, state.allowSubway)
+                        }
+                    } else {
+                        if (!state.allowBus && state.allowSubway) {
+                            Toast.makeText(context, "Ao menos um meio de transporte deve permanecer ativo", Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.setModalFilters(state.allowBus, !state.allowSubway)
+                        }
+                    }
+                }
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -535,19 +575,38 @@ fun TripPlannerScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Tente ajustar o horário de partida ou os filtros de caminhada.",
+                                    text = if (!state.allowBus || !state.allowSubway) {
+                                        "Nenhum trajeto encontrado para os transportes selecionados."
+                                    } else {
+                                        "Tente ajustar o horário de partida ou os filtros de caminhada."
+                                    },
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
+                                if (!state.allowBus || !state.allowSubway) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Button(
+                                        onClick = { viewModel.setModalFilters(allowBus = true, allowSubway = true) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = TransitGreen)
+                                    ) {
+                                        Text(
+                                            text = "Buscar com todos os transportes",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.5.sp
+                                            ),
+                                            color = Color.White
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
 
                     state.itineraries.isNotEmpty() -> {
-                        val sortedItineraries = remember(state.itineraries) {
-                            state.itineraries.sortedBy { it.totalDurationMinutes }
-                        }
+                        val sortedItineraries = state.itineraries
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -914,13 +973,18 @@ private fun TimeAndPreferencesRow(
     timeMode: TripTimeMode,
     targetTimeUtc: Long,
     preference: TripPreference,
+    allowBus: Boolean,
+    allowSubway: Boolean,
     onOpenTimePicker: () -> Unit,
+    onOpenPreferences: () -> Unit,
     onAddMinutes: () -> Unit,
     onSubtractMinutes: () -> Unit,
-    onTogglePreference: (TripPreference) -> Unit
+    onTogglePreference: (TripPreference) -> Unit,
+    onToggleModal: (isBus: Boolean) -> Unit
 ) {
     val now = System.currentTimeMillis()
     val canSubtract = targetTimeUtc >= now + (15 * 60 * 1000L)
+    val hasCustomFilters = preference != TripPreference.FASTEST || !allowBus || !allowSubway
 
     val timeLabel = remember(timeMode, targetTimeUtc) {
         if (timeMode == TripTimeMode.DEPART_NOW) {
@@ -1050,6 +1114,46 @@ private fun TimeAndPreferencesRow(
             }
         }
 
+        // Botao Filtros e Preferencias (Abre BottomSheet com modais e criterios)
+        Surface(
+            onClick = onOpenPreferences,
+            shape = RoundedCornerShape(10.dp),
+            color = if (hasCustomFilters) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (hasCustomFilters) TransitGreen else Color.Transparent
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Tune,
+                    contentDescription = "Filtros e preferências",
+                    tint = if (hasCustomFilters) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = "Filtros",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    color = if (hasCustomFilters) TransitGreen else MaterialTheme.colorScheme.onSurface
+                )
+                if (hasCustomFilters) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(TransitGreen, CircleShape)
+                    )
+                }
+            }
+        }
+
         // Chip Menos trocas
         val isLeastTransfers = preference == TripPreference.LEAST_TRANSFERS
         Surface(
@@ -1092,6 +1196,70 @@ private fun TimeAndPreferencesRow(
                 color = if (isLeastWalking) TransitGreen else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
             )
+        }
+
+        // Chip Modal Ônibus
+        Surface(
+            onClick = { onToggleModal(true) },
+            shape = RoundedCornerShape(10.dp),
+            color = if (allowBus) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (allowBus) TransitGreen else Color.Transparent
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DirectionsBus,
+                    contentDescription = null,
+                    tint = if (allowBus) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Ônibus",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    color = if (allowBus) TransitGreen else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // Chip Modal Metrô
+        Surface(
+            onClick = { onToggleModal(false) },
+            shape = RoundedCornerShape(10.dp),
+            color = if (allowSubway) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (allowSubway) TransitGreen else Color.Transparent
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DirectionsSubway,
+                    contentDescription = null,
+                    tint = if (allowSubway) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Metrô",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    color = if (allowSubway) TransitGreen else MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }

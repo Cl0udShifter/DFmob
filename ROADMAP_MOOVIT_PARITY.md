@@ -113,7 +113,7 @@ No arquivo descompilado `com.moovit.feature.tripplan.ui.content.misc.a`, o Moovi
 
 ---
 
-## 5. Preferências de Rota Mais Inteligentes (`TRIP_PLAN_ADVANCED_ROUTE`)
+## 5. Preferências de Rota Mais Inteligentes (`TRIP_PLAN_ADVANCED_ROUTE`) [CONCLUÍDO]
 
 ### 5.1 Descrição e Comportamento no Moovit
 * No Thrift do Moovit (`MVTripPlanPref.java`), o algoritmo de roteamento aceita:

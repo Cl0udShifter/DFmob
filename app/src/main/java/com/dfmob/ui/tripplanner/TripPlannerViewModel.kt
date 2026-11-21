@@ -44,6 +44,9 @@ data class TripPlannerUiState(
     val timeMode: TripTimeMode = TripTimeMode.DEPART_NOW,
     val targetTimeUtc: Long = System.currentTimeMillis(),
     val preference: TripPreference = TripPreference.FASTEST,
+    val allowBus: Boolean = true,
+    val allowSubway: Boolean = true,
+    val isPreferencesSheetOpen: Boolean = false,
     val itineraries: List<TripPlanItinerary> = emptyList(),
     val isSearchingTrips: Boolean = false,
     val tripSearchError: String? = null,
@@ -520,6 +523,37 @@ class TripPlannerViewModel(
         triggerTripSearchIfReady()
     }
 
+    fun setPreferencesSheetOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isPreferencesSheetOpen = isOpen) }
+    }
+
+    fun setModalFilters(allowBus: Boolean, allowSubway: Boolean) {
+        if (!allowBus && !allowSubway) return
+        _uiState.update {
+            it.copy(
+                allowBus = allowBus,
+                allowSubway = allowSubway
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
+    fun setPreference(pref: TripPreference) {
+        _uiState.update { it.copy(preference = pref) }
+        triggerTripSearchIfReady()
+    }
+
+    fun resetPreferences() {
+        _uiState.update {
+            it.copy(
+                preference = TripPreference.FASTEST,
+                allowBus = true,
+                allowSubway = true
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
     fun togglePreference(pref: TripPreference) {
         _uiState.update {
             val newPref = if (it.preference == pref) TripPreference.FASTEST else pref
@@ -567,15 +601,22 @@ class TripPlannerViewModel(
                 val filter = TripPlanFilter(
                     mode = _uiState.value.timeMode,
                     targetTimeUtc = _uiState.value.targetTimeUtc,
-                    preference = _uiState.value.preference
+                    preference = _uiState.value.preference,
+                    allowBus = _uiState.value.allowBus,
+                    allowSubway = _uiState.value.allowSubway
                 )
                 val results = repository.searchTripPlan(origin, destination, filter)
                 val evaluatedResults = TripInsightsEvaluator.evaluate(results)
+                val emptyMsg = when {
+                    !_uiState.value.allowBus && _uiState.value.allowSubway -> "Nenhum trajeto encontrado usando apenas Metrô."
+                    _uiState.value.allowBus && !_uiState.value.allowSubway -> "Nenhum trajeto encontrado usando apenas Ônibus."
+                    else -> "Nenhum trajeto encontrado para este horário."
+                }
                 _uiState.update {
                     it.copy(
                         itineraries = evaluatedResults,
                         isSearchingTrips = false,
-                        tripSearchError = if (evaluatedResults.isEmpty()) "Nenhum trajeto encontrado para este horário." else null
+                        tripSearchError = if (evaluatedResults.isEmpty()) emptyMsg else null
                     )
                 }
                 if (evaluatedResults.isNotEmpty() && isSearchForNow()) {
