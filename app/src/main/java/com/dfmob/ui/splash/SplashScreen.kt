@@ -26,11 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -41,7 +41,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TransitGreen = Color(0xFF20A84D)
+private val TransitGreen = Color(0xFF2BC958)
+private val BrandTextBlack = Color(0xFF0F172A)
 
 @Composable
 fun SplashScreen(
@@ -126,14 +127,14 @@ fun SplashScreen(
                         text = "DF",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
-                        color = TransitGreen,
+                        color = BrandTextBlack,
                         letterSpacing = (-0.5).sp
                     )
                     Text(
                         text = "mob",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF0F172A),
+                        color = BrandTextBlack,
                         letterSpacing = (-0.5).sp
                     )
                     Text(
@@ -197,16 +198,7 @@ private fun VectorAnimatedIcon(
         val offsetX = (w - 538f * scale) / 2f
         val offsetY = (h - 596f * scale) / 2f
 
-        // Degradê oficial de trânsito do ícone do usuário (#2AC857 -> #20A84D -> #168A41)
-        val gradientBrush = Brush.linearGradient(
-            colors = listOf(
-                Color(0xFF2AC857),
-                Color(0xFF20A84D),
-                Color(0xFF168A41)
-            ),
-            start = Offset(offsetX, offsetY),
-            end = Offset(offsetX, offsetY + 596f * scale)
-        )
+        val iconBrush = SolidColor(TransitGreen)
 
         // 1. Contorno geométrico dos 17 vértices da malha de trânsito
         val outerPath = Path().apply {
@@ -281,12 +273,12 @@ private fun VectorAnimatedIcon(
             )
         }
 
-        // Fase 2: Preenchimento sólido fluido da malha com o degradê verde
+        // Fase 2: Preenchimento sólido fluido da malha com a cor oficial verde
         val fillAlpha = ((progress - 0.35f) / 0.55f).coerceIn(0f, 1f)
         if (fillAlpha > 0f) {
             drawPath(
                 path = fullGlyphPath,
-                brush = gradientBrush,
+                brush = iconBrush,
                 alpha = fillAlpha
             )
         }
@@ -300,7 +292,7 @@ private fun VectorAnimatedIcon(
             val length = pathMeasure.length
             if (length > 0f) {
                 pathMeasure.getSegment(0f, length * strokeProgress, subPath, true)
-                drawPath(path = subPath, brush = gradientBrush, style = strokeStyle, alpha = strokeAlpha)
+                drawPath(path = subPath, brush = iconBrush, style = strokeStyle, alpha = strokeAlpha)
             }
 
             // Quadrados das 3 estações (stroke de 60x60)
@@ -309,21 +301,21 @@ private fun VectorAnimatedIcon(
                 val sqSize = 60f * scale
                 val alpha = squareProgress * strokeAlpha
                 drawRect(
-                    brush = gradientBrush,
+                    brush = iconBrush,
                     topLeft = Offset(offsetX + 269f * scale, offsetY + 59f * scale),
                     size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
                     style = strokeStyle,
                     alpha = alpha
                 )
                 drawRect(
-                    brush = gradientBrush,
+                    brush = iconBrush,
                     topLeft = Offset(offsetX + 60f * scale, offsetY + 298f * scale),
                     size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
                     style = strokeStyle,
                     alpha = alpha
                 )
                 drawRect(
-                    brush = gradientBrush,
+                    brush = iconBrush,
                     topLeft = Offset(offsetX + 418f * scale, offsetY + 477f * scale),
                     size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
                     style = strokeStyle,
