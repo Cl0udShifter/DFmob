@@ -84,8 +84,8 @@ fun SplashScreen(
             }
         }
 
-        // Aguarda conclusao total da apresentacao (~1200ms) e transiciona suavemente
-        delay(1250)
+        // Aguarda conclusao total da apresentacao (~1500ms) e transiciona suavemente
+        delay(1500)
         onFinished()
     }
 
@@ -252,76 +252,84 @@ private fun VectorAnimatedIcon(
             lineTo(offsetX + 387f * scale, offsetY + 0f * scale)
             close()
 
-            // Estação superior (raio 30px)
-            addOval(
+            // Estação superior (quadrado exato 60x60)
+            addRect(
                 Rect(
-                    center = Offset(offsetX + 298.5f * scale, offsetY + 88.5f * scale),
-                    radius = 30f * scale
+                    left = offsetX + 269f * scale,
+                    top = offsetY + 59f * scale,
+                    right = offsetX + 329f * scale,
+                    bottom = offsetY + 119f * scale
                 )
             )
-            // Estação centro-esquerda (raio 30px)
-            addOval(
+            // Estação centro-esquerda (quadrado exato 60x60)
+            addRect(
                 Rect(
-                    center = Offset(offsetX + 89.0f * scale, offsetY + 327.5f * scale),
-                    radius = 30f * scale
+                    left = offsetX + 60f * scale,
+                    top = offsetY + 298f * scale,
+                    right = offsetX + 120f * scale,
+                    bottom = offsetY + 358f * scale
                 )
             )
-            // Estação inferior-direita (raio 30px)
-            addOval(
+            // Estação inferior-direita (quadrado exato 60x60)
+            addRect(
                 Rect(
-                    center = Offset(offsetX + 448.0f * scale, offsetY + 506.5f * scale),
-                    radius = 30f * scale
+                    left = offsetX + 418f * scale,
+                    top = offsetY + 477f * scale,
+                    right = offsetX + 478f * scale,
+                    bottom = offsetY + 537f * scale
                 )
             )
-        }
-
-        // Fase 1: Desenho progressivo do contorno das linhas
-        val strokeProgress = (progress * 1.35f).coerceIn(0f, 1f)
-        if (strokeProgress > 0.001f) {
-            subPath.reset()
-            pathMeasure.setPath(outerPath, false)
-            val length = pathMeasure.length
-            if (length > 0f) {
-                pathMeasure.getSegment(0f, length * strokeProgress, subPath, true)
-                drawPath(path = subPath, brush = gradientBrush, style = strokeStyle)
-            }
-
-            // Anéis das 3 estações
-            val ringProgress = (progress * 1.5f - 0.2f).coerceIn(0f, 1f)
-            if (ringProgress > 0.001f) {
-                val r = 30f * scale
-                drawCircle(
-                    brush = gradientBrush,
-                    radius = r,
-                    center = Offset(offsetX + 298.5f * scale, offsetY + 88.5f * scale),
-                    style = strokeStyle,
-                    alpha = ringProgress
-                )
-                drawCircle(
-                    brush = gradientBrush,
-                    radius = r,
-                    center = Offset(offsetX + 89.0f * scale, offsetY + 327.5f * scale),
-                    style = strokeStyle,
-                    alpha = ringProgress
-                )
-                drawCircle(
-                    brush = gradientBrush,
-                    radius = r,
-                    center = Offset(offsetX + 448.0f * scale, offsetY + 506.5f * scale),
-                    style = strokeStyle,
-                    alpha = ringProgress
-                )
-            }
         }
 
         // Fase 2: Preenchimento sólido fluido da malha com o degradê verde
-        val fillAlpha = ((progress - 0.40f) / 0.60f).coerceIn(0f, 1f)
+        val fillAlpha = ((progress - 0.35f) / 0.55f).coerceIn(0f, 1f)
         if (fillAlpha > 0f) {
             drawPath(
                 path = fullGlyphPath,
                 brush = gradientBrush,
                 alpha = fillAlpha
             )
+        }
+
+        // Fase 1: Desenho progressivo do contorno das linhas
+        val strokeProgress = (progress * 1.35f).coerceIn(0f, 1f)
+        val strokeAlpha = (1f - fillAlpha).coerceIn(0f, 1f)
+        if (strokeProgress > 0.001f && strokeAlpha > 0.001f) {
+            subPath.reset()
+            pathMeasure.setPath(outerPath, false)
+            val length = pathMeasure.length
+            if (length > 0f) {
+                pathMeasure.getSegment(0f, length * strokeProgress, subPath, true)
+                drawPath(path = subPath, brush = gradientBrush, style = strokeStyle, alpha = strokeAlpha)
+            }
+
+            // Quadrados das 3 estações (stroke de 60x60)
+            val squareProgress = (progress * 1.5f - 0.2f).coerceIn(0f, 1f)
+            if (squareProgress > 0.001f) {
+                val sqSize = 60f * scale
+                val alpha = squareProgress * strokeAlpha
+                drawRect(
+                    brush = gradientBrush,
+                    topLeft = Offset(offsetX + 269f * scale, offsetY + 59f * scale),
+                    size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
+                    style = strokeStyle,
+                    alpha = alpha
+                )
+                drawRect(
+                    brush = gradientBrush,
+                    topLeft = Offset(offsetX + 60f * scale, offsetY + 298f * scale),
+                    size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
+                    style = strokeStyle,
+                    alpha = alpha
+                )
+                drawRect(
+                    brush = gradientBrush,
+                    topLeft = Offset(offsetX + 418f * scale, offsetY + 477f * scale),
+                    size = androidx.compose.ui.geometry.Size(sqSize, sqSize),
+                    style = strokeStyle,
+                    alpha = alpha
+                )
+            }
         }
     }
 }
