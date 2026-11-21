@@ -124,16 +124,9 @@ fun SplashScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "DF",
+                        text = "DFmob",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
-                        color = BrandTextBlack,
-                        letterSpacing = (-0.5).sp
-                    )
-                    Text(
-                        text = "mob",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.SemiBold,
                         color = BrandTextBlack,
                         letterSpacing = (-0.5).sp
                     )
