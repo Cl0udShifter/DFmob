@@ -21,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.preferences.AppThemeMode
+import com.dfmob.data.preferences.DefaultAppTab
+import com.dfmob.data.preferences.DefaultTabPreferences
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.repository.FavoritesRepository
@@ -136,11 +138,24 @@ class MainActivity : ComponentActivity() {
             DFmobTheme(darkTheme = isDarkTheme) {
                 val favoritesRepository = remember { FavoritesRepository(context) }
                 val recentSearchesRepository = remember { RecentSearchesRepository(context) }
+                val defaultTabPreferences = remember { DefaultTabPreferences(context) }
+                val currentDefaultTab by defaultTabPreferences.defaultTab.collectAsState()
+                val rootScreen = when (currentDefaultTab) {
+                    DefaultAppTab.HOME -> AppScreen.HOME
+                    DefaultAppTab.STOPS -> AppScreen.STOPS
+                    DefaultAppTab.LINES -> AppScreen.LINES
+                    DefaultAppTab.TRIP_PLANNER -> AppScreen.TRIP_PLANNER
+                }
                 val initialScreen = when (intent.getStringExtra(EXTRA_NAVIGATE_TO)) {
                     "ALERTS" -> AppScreen.ALERTS
                     "STOPS" -> AppScreen.STOPS
                     "TRIP_NAV" -> AppScreen.TRIP_PLANNER
-                    else -> AppScreen.HOME
+                    else -> when (defaultTabPreferences.getDefaultTab()) {
+                        DefaultAppTab.HOME -> AppScreen.HOME
+                        DefaultAppTab.STOPS -> AppScreen.STOPS
+                        DefaultAppTab.LINES -> AppScreen.LINES
+                        DefaultAppTab.TRIP_PLANNER -> AppScreen.TRIP_PLANNER
+                    }
                 }
                 var currentScreen by rememberSaveable { mutableStateOf(initialScreen) }
                 var resumeActiveTrip by rememberSaveable {
@@ -183,7 +198,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                BackHandler(enabled = currentScreen != AppScreen.HOME) {
+                BackHandler(enabled = currentScreen != rootScreen) {
                     if (currentScreen == AppScreen.STOPS && stopsOpenedFromLines) {
                         targetLineNumberForStops = null
                         targetLineIdForStops = null
@@ -196,7 +211,7 @@ class MainActivity : ComponentActivity() {
                         targetOriginLocationForTripPlanner = null
                         targetDestinationLocationForTripPlanner = null
                         stopsOpenedFromLines = false
-                        currentScreen = AppScreen.HOME
+                        currentScreen = rootScreen
                     }
                 }
 
@@ -306,7 +321,8 @@ class MainActivity : ComponentActivity() {
                                     themePreferences = themePreferences,
                                     currentThemeMode = themeMode,
                                     notificationPreferences = notificationPreferences,
-                                    onBack = { currentScreen = AppScreen.HOME }
+                                    defaultTabPreferences = defaultTabPreferences,
+                                    onBack = { currentScreen = rootScreen }
                                 )
                             }
                         }

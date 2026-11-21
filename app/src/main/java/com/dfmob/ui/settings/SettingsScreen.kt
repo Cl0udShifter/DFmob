@@ -52,6 +52,8 @@ import android.widget.Toast
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import com.dfmob.data.preferences.AppThemeMode
+import com.dfmob.data.preferences.DefaultAppTab
+import com.dfmob.data.preferences.DefaultTabPreferences
 import com.dfmob.data.preferences.NotificationPreferences
 import com.dfmob.data.preferences.ThemePreferences
 import com.dfmob.data.service.ApiDiagnosticsService
@@ -68,6 +70,7 @@ fun SettingsScreen(
     themePreferences: ThemePreferences,
     currentThemeMode: AppThemeMode,
     notificationPreferences: NotificationPreferences,
+    defaultTabPreferences: DefaultTabPreferences,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -78,6 +81,7 @@ fun SettingsScreen(
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     val notifSettings by notificationPreferences.settings.collectAsState()
+    val currentDefaultTab by defaultTabPreferences.defaultTab.collectAsState()
     var apiStatuses by remember { mutableStateOf<List<ApiHealthStatus>>(emptyList()) }
     var isCheckingApis by remember { mutableStateOf(false) }
 
@@ -177,6 +181,56 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { themePreferences.setThemeMode(AppThemeMode.DARK) }
                 )
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // ==========================================
+            // COMPONENTE: TELA INICIAL PADRÃO
+            // ==========================================
+            Text(
+                text = "TELA INICIAL PADRÃO",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    fontSize = 11.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Escolha qual seção abrir ao iniciar o aplicativo:",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Seletor plano com as 4 opções
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    DefaultAppTab.HOME to "Início",
+                    DefaultAppTab.STOPS to "Paradas",
+                    DefaultAppTab.LINES to "Linhas",
+                    DefaultAppTab.TRIP_PLANNER to "Viagens"
+                ).forEach { (tab, label) ->
+                    ThemeOptionButton(
+                        text = label,
+                        isSelected = currentDefaultTab == tab,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 12.sp,
+                        onClick = { defaultTabPreferences.setDefaultTab(tab) }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))

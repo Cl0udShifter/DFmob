@@ -134,7 +134,7 @@ No arquivo descompilado `com.moovit.feature.tripplan.ui.content.misc.a`, o Moovi
 
 ---
 
-## 6. Defina Sua Tela Inicial (`DEFAULT_TAB`)
+## 6. Defina Sua Tela Inicial (`DEFAULT_TAB`) [CONCLUÍDO]
 
 ### 6.1 Descrição e Comportamento no Moovit
 * Implementado em `DefaultTabActivity.java`.
