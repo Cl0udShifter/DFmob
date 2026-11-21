@@ -132,6 +132,7 @@ fun TripPlannerScreen(
     }
     var showSaveTripDialog by remember { mutableStateOf(false) }
     var tripCustomNameInput by remember { mutableStateOf("") }
+    var showComparisonMap by remember { mutableStateOf(false) }
 
     DisposableEffect(context) {
         viewModel.refreshUserLocation()
@@ -174,6 +175,21 @@ fun TripPlannerScreen(
             },
             onReverseGeocode = { latE6, lonE6 ->
                 viewModel.reverseGeocode(latE6, lonE6)
+            }
+        )
+        return
+    }
+
+    // 2.1 Tela de Comparação de Rotas no Mapa se estiver ativa
+    if (showComparisonMap && state.itineraries.size >= 2) {
+        TripComparisonMapScreen(
+            itineraries = state.itineraries.sortedBy { it.totalDurationMinutes },
+            origin = state.origin,
+            destination = state.destination,
+            onBack = { showComparisonMap = false },
+            onSelectItinerary = { itin ->
+                showComparisonMap = false
+                viewModel.selectItinerary(itin)
             }
         )
         return
@@ -533,15 +549,51 @@ fun TripPlannerScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             item {
-                                Text(
-                                    text = "Melhores rotas encontradas (${state.itineraries.size})",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(bottom = 2.dp)
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Melhores rotas encontradas (${state.itineraries.size})",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    if (state.itineraries.size >= 2) {
+                                        Surface(
+                                            onClick = { showComparisonMap = true },
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Map,
+                                                    contentDescription = "Comparar no mapa",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Text(
+                                                    text = "Comparar no mapa",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.5.sp
+                                                    ),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             // Ordenado do que leva menos tempo ate o que leva mais tempo
@@ -1070,11 +1122,19 @@ private fun TripItineraryCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            if (itinerary.insight != null) {
-                TripInsightBadge(
-                    insight = itinerary.insight,
-                    isDarkTheme = isDarkTheme
-                )
+            val cardInsights = itinerary.effectiveInsights
+            if (cardInsights.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    cardInsights.take(2).forEach { insight ->
+                        TripInsightBadge(
+                            insight = insight,
+                            isDarkTheme = isDarkTheme
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
             }
 

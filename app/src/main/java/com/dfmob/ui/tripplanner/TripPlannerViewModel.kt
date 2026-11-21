@@ -516,7 +516,7 @@ class TripPlannerViewModel(
         _uiState.update { it.copy(selectedItinerary = itinerary) }
     }
 
-    fun searchTrips(debounceMs: Long = 0L) {
+    fun searchTrips(debounceMs: Long = 0L, isUserInitiated: Boolean = true) {
         val origin = _uiState.value.origin ?: return
         val destination = _uiState.value.destination ?: return
 
@@ -526,14 +526,26 @@ class TripPlannerViewModel(
             if (debounceMs > 0) {
                 delay(debounceMs)
             }
-            val hadItineraries = _uiState.value.itineraries.isNotEmpty()
-            _uiState.update {
-                it.copy(
-                    isSearchingTrips = !hadItineraries,
-                    tripSearchError = null,
-                    hasSearched = true,
-                    searchResults = emptyList()
-                )
+            if (isUserInitiated) {
+                _uiState.update {
+                    it.copy(
+                        isSearchingTrips = true,
+                        itineraries = emptyList(),
+                        tripSearchError = null,
+                        hasSearched = true,
+                        searchResults = emptyList()
+                    )
+                }
+            } else {
+                val hadItineraries = _uiState.value.itineraries.isNotEmpty()
+                _uiState.update {
+                    it.copy(
+                        isSearchingTrips = !hadItineraries,
+                        tripSearchError = null,
+                        hasSearched = true,
+                        searchResults = emptyList()
+                    )
+                }
             }
             try {
                 val filter = TripPlanFilter(
@@ -585,7 +597,7 @@ class TripPlannerViewModel(
         }
     }
 
-    private fun triggerTripSearchIfReady(debounceMs: Long = 300L) {
+    private fun triggerTripSearchIfReady(debounceMs: Long = 300L, isUserInitiated: Boolean = true) {
         val orig = _uiState.value.origin
         val dest = _uiState.value.destination
         if (orig != null && dest != null) {
@@ -597,7 +609,7 @@ class TripPlannerViewModel(
                 _uiState.update { it.copy(isSearchingTrips = true) }
                 return
             }
-            searchTrips(debounceMs)
+            searchTrips(debounceMs, isUserInitiated)
         }
     }
 
@@ -642,7 +654,7 @@ class TripPlannerViewModel(
 
         if (updated) {
             fallbackJob?.cancel()
-            triggerTripSearchIfReady(debounceMs = 300L)
+            triggerTripSearchIfReady(debounceMs = 300L, isUserInitiated = false)
         }
     }
 

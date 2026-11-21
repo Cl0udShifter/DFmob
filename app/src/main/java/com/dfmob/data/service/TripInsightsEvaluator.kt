@@ -11,74 +11,62 @@ object TripInsightsEvaluator {
             return itineraries
         }
 
-        // 1. Identificar o itinerario mais rapido (menor duracao total)
         val minDuration = itineraries.minOfOrNull { it.totalDurationMinutes } ?: return itineraries
-        val fastestIndex = itineraries.indexOfFirst { it.totalDurationMinutes == minDuration }
-        val fastest = itineraries[fastestIndex]
-
-        val results = itineraries.toMutableList()
-        val assignedIndices = mutableSetOf<Int>()
-
-        // Atribuir "Mais rapida" ao de menor tempo
-        results[fastestIndex] = fastest.copy(insight = TripInsight.FASTEST)
-        assignedIndices.add(fastestIndex)
-
-        // 2. Se a mais rapida possui transbordo, verificar se existe alternativa direta (sem baldeacao)
-        val fastestTransitLegs = fastest.legs.count { it.type == TripLegType.TRANSIT }
-        if (fastestTransitLegs > 1 || fastest.transfersCount > 0) {
-            val directCandidates = itineraries.mapIndexedNotNull { idx, itin ->
-                if (!assignedIndices.contains(idx)) {
-                    val transitCount = itin.legs.count { it.type == TripLegType.TRANSIT }
-                    if (transitCount == 1 && itin.transfersCount == 0) idx else null
-                } else null
-            }
-            if (directCandidates.isNotEmpty()) {
-                val bestDirectIdx = directCandidates.minByOrNull { itineraries[it].totalDurationMinutes }
-                if (bestDirectIdx != null) {
-                    results[bestDirectIdx] = results[bestDirectIdx].copy(insight = TripInsight.DIRECT)
-                    assignedIndices.add(bestDirectIdx)
-                }
-            }
-        }
-
-        // 3. Verificar se ha trajeto com significativamente menos caminhada
-        val leastWalkCandidates = itineraries.mapIndexedNotNull { idx, itin ->
-            if (!assignedIndices.contains(idx)) {
-                val walkDiff = fastest.walkDurationMinutes - itin.walkDurationMinutes
-                val distDiff = fastest.walkDistanceMeters - itin.walkDistanceMeters
-                if ((walkDiff >= 4 || distDiff >= 250.0) && itin.walkDurationMinutes <= 6) {
-                    Pair(idx, itin.walkDurationMinutes)
-                } else null
-            } else null
-        }
-        if (leastWalkCandidates.isNotEmpty()) {
-            val bestWalkIdx = leastWalkCandidates.minByOrNull { it.second }?.first
-            if (bestWalkIdx != null) {
-                results[bestWalkIdx] = results[bestWalkIdx].copy(insight = TripInsight.LEAST_WALKING)
-                assignedIndices.add(bestWalkIdx)
-            }
-        }
-
-        // 4. Verificar partida imediata (onibus saindo nos proximos 5 minutos)
+        val minWalkDuration = itineraries.minOfOrNull { it.walkDurationMinutes } ?: 0
+        val minWalkDistance = itineraries.minOfOrNull { it.walkDistanceMeters } ?: 0.0
         val now = System.currentTimeMillis()
-        for (i in results.indices) {
-            if (!assignedIndices.contains(i)) {
-                val itin = results[i]
-                val firstTransit = itin.legs.firstOrNull { it.type == TripLegType.TRANSIT }
-                val nextDep = firstTransit?.upcomingDepartures?.firstOrNull()
+
+        return itineraries.map { itin ->
+            val qualified = mutableListOf<TripInsight>()
+
+            // 1. Mais rapida (menor duracao total da pesquisa)
+            if (itin.totalDurationMinutes == minDuration) {
+                qualified.add(TripInsight.FASTEST)
+            }
+
+            // 2. Sem baldeacao (trajeto direto, 0 transferencias e no maximo 1 leg de transporte)
+            val transitLegsCount = itin.legs.count { it.type == TripLegType.TRANSIT }
+            if (transitLegsCount <= 1 && itin.transfersCount == 0) {
+                qualified.add(TripInsight.DIRECT)
+            }
+
+            // 3. Menos caminhada (menor caminhada do grupo ou caminhada total <= 4 min / <= 300m)
+            val hasMinWalk = (itin.walkDurationMinutes == minWalkDuration || itin.walkDistanceMeters <= minWalkDistance + 50.0) && itin.walkDurationMinutes <= 8
+            val hasVeryLowWalk = itin.walkDurationMinutes <= 4 || itin.walkDistanceMeters <= 300.0
+            if (hasMinWalk || hasVeryLowWalk) {
+                qualified.add(TripInsight.LEAST_WALKING)
+            }
+
+            // 4. Partida em breve (onibus com partida em ate 10 minutos)
+            val firstTransit = itin.legs.firstOrNull { it.type == TripLegType.TRANSIT }
+            var isDepartingSoon = false
+            if (firstTransit != null) {
+                val nextDep = firstTransit.upcomingDepartures.firstOrNull()
                 if (nextDep != null) {
-                    val minsAway = if (nextDep.targetEpochMs > now) {
+                    val minsAway = if (nextDep.targetEpochMs >= now - 30_000L) {
                         Math.round((nextDep.targetEpochMs - now) / 60000.0).toInt()
                     } else -1
-                    if (minsAway in 0..5) {
-                        results[i] = itin.copy(insight = TripInsight.DEPARTING_SOON)
-                        assignedIndices.add(i)
-                        break
+                    if (minsAway in 0..10) {
+                        isDepartingSoon = true
+                    }
+                }
+                if (!isDepartingSoon && firstTransit.startTimeUtc >= now - 30_000L) {
+                    val minsAway = Math.round((firstTransit.startTimeUtc - now) / 60000.0).toInt()
+                    if (minsAway in 0..10) {
+                        isDepartingSoon = true
                     }
                 }
             }
-        }
+            if (isDepartingSoon) {
+                qualified.add(TripInsight.DEPARTING_SOON)
+            }
 
-        return results
+            // Limitar a no maximo 2 dicas por card
+            val top2 = qualified.distinctBy { it.type }.take(2)
+            itin.copy(
+                insight = top2.firstOrNull(),
+                insights = top2
+            )
+        }
     }
 }

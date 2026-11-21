@@ -110,8 +110,12 @@ data class TripPlanItinerary(
     val legs: List<TripPlanLeg>,
     val estimatedFare: Double = 0.0,
     val isFareIntegrated: Boolean = false,
-    val insight: TripInsight? = null
+    val insight: TripInsight? = null,
+    val insights: List<TripInsight> = emptyList()
 ) {
+    val effectiveInsights: List<TripInsight>
+        get() = if (insights.isNotEmpty()) insights else listOfNotNull(insight)
+
     val formattedFare: String
         get() = if (estimatedFare <= 0.0) {
             "Gratuito"
