@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val SplashGreen = Color(0xFF0BA05B)
+private val TransitGreen = Color(0xFF0BA05B)
 
 @Composable
 fun SplashScreen(
@@ -46,7 +45,7 @@ fun SplashScreen(
 ) {
     val iconProgress = remember { Animatable(0f) }
     val textAlpha = remember { Animatable(0f) }
-    val textOffsetY = remember { Animatable(20f) }
+    val textOffsetY = remember { Animatable(18f) }
     val lineProgress = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
@@ -64,19 +63,19 @@ fun SplashScreen(
             launch {
                 textAlpha.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(durationMillis = 450, easing = LinearOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 400, easing = LinearOutSlowInEasing)
                 )
             }
             launch {
                 textOffsetY.animateTo(
                     targetValue = 0f,
-                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
                 )
             }
             launch {
                 lineProgress.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
                 )
             }
         }
@@ -89,7 +88,7 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(SplashGreen)
+            .background(Color.White)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -103,13 +102,13 @@ fun SplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Icone vetorial animado (Candidato 6 invertido)
+            // Icone vetorial animado (Candidato 6 com fundo branco e linhas verdes)
             VectorAnimatedIcon(
                 progress = iconProgress.value,
-                modifier = Modifier.size(136.dp)
+                modifier = Modifier.size(140.dp)
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
             // Nome DFmob com tipografia alinhada e surgimento suave
             Column(
@@ -123,15 +122,21 @@ fun SplashScreen(
                         text = "DF",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
-                        color = Color.White,
+                        color = TransitGreen,
                         letterSpacing = (-0.5).sp
                     )
                     Text(
                         text = "mob",
                         fontSize = 32.sp,
-                        fontWeight = FontWeight.Light,
-                        color = Color.White.copy(alpha = 0.95f),
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF0F172A),
                         letterSpacing = (-0.5).sp
+                    )
+                    Text(
+                        text = ".",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        color = TransitGreen
                     )
                 }
 
@@ -143,7 +148,7 @@ fun SplashScreen(
                     val drawW = fullW * lineProgress.value
                     if (drawW > 0f) {
                         drawLine(
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = TransitGreen.copy(alpha = 0.85f),
                             start = androidx.compose.ui.geometry.Offset((fullW - drawW) / 2f, size.height / 2f),
                             end = androidx.compose.ui.geometry.Offset((fullW + drawW) / 2f, size.height / 2f),
                             strokeWidth = 2.5f.dp.toPx(),
@@ -157,7 +162,8 @@ fun SplashScreen(
 }
 
 /**
- * Desenha os arcos e trilhos do Candidato 6 com efeito de preenchimento de linha (trim-path).
+ * Desenha os arcos e trilhos exatos do Candidato 6 com efeito de preenchimento de linha (trim-path).
+ * Utiliza pontas retas (StrokeCap.Butt) identicas ao icone oficial.
  */
 @Composable
 private fun VectorAnimatedIcon(
@@ -171,19 +177,18 @@ private fun VectorAnimatedIcon(
         val w = size.width
         val h = size.height
 
-        // Escala normalizada: largura do glifo 363, altura 255
-        // Ajustamos para ocupar cerca de 82% da largura do canvas
-        val scale = (w * 0.82f) / 363f
-        val strokeW = 18f * scale
+        // Proporcao normalizada do icone original: largura 365, altura 257
+        val scale = (w * 0.82f) / 365f
+        val strokeW = 19f * scale
         val strokeStyle = Stroke(
             width = strokeW,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round
+            cap = StrokeCap.Butt,
+            join = StrokeJoin.Miter
         )
 
-        // Deslocamento para centralizar perfeitamente no Canvas
-        val offsetX = (w - 363f * scale) / 2f
-        val offsetY = (h - 255f * scale) / 2f
+        // Centralizacao exata no Canvas
+        val offsetX = (w - 365f * scale) / 2f
+        val offsetY = (h - 257f * scale) / 2f
 
         fun drawTrimmedPath(path: Path, pathProgress: Float) {
             if (pathProgress <= 0.001f) return
@@ -192,71 +197,85 @@ private fun VectorAnimatedIcon(
             val length = pathMeasure.length
             if (length > 0f) {
                 pathMeasure.getSegment(0f, length * pathProgress.coerceIn(0f, 1f), subPath, true)
-                drawPath(path = subPath, color = Color.White, style = strokeStyle)
+                drawPath(path = subPath, color = TransitGreen, style = strokeStyle)
             }
         }
 
-        // Construcao dos 5 caminhos vetoriais do Candidato 6:
+        // Construcao dos trilhos do Candidato 6 fiel ao icone original:
 
-        // 1. D - Trilho externo (inicia no canto superior esquerdo, curva no arco de Niemeyer e fecha na base)
+        // 1. D - Trilho externo: barra superior reta, arco Niemeyer e barra inferior reta
         val pathDOuter = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 9f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 9f * scale)
+            moveTo(offsetX + 0f * scale, offsetY + 10f * scale)
+            lineTo(offsetX + 75f * scale, offsetY + 10f * scale)
             cubicTo(
-                offsetX + 195f * scale, offsetY + 9f * scale,
-                offsetX + 195f * scale, offsetY + 245f * scale,
-                offsetX + 70f * scale, offsetY + 245f * scale
+                offsetX + 200f * scale, offsetY + 10f * scale,
+                offsetX + 200f * scale, offsetY + 246f * scale,
+                offsetX + 75f * scale, offsetY + 246f * scale
             )
-            lineTo(offsetX + 0f * scale, offsetY + 245f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 246f * scale)
         }
 
         // 2. D - Trilho interno concentrico
         val pathDInner = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 53f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 53f * scale)
+            moveTo(offsetX + 0f * scale, offsetY + 54f * scale)
+            lineTo(offsetX + 70f * scale, offsetY + 54f * scale)
             cubicTo(
-                offsetX + 150f * scale, offsetY + 53f * scale,
-                offsetX + 150f * scale, offsetY + 201f * scale,
-                offsetX + 70f * scale, offsetY + 201f * scale
+                offsetX + 155f * scale, offsetY + 54f * scale,
+                offsetX + 155f * scale, offsetY + 202f * scale,
+                offsetX + 70f * scale, offsetY + 202f * scale
             )
-            lineTo(offsetX + 0f * scale, offsetY + 201f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 202f * scale)
         }
 
-        // 3. F - Haste vertical externa que sobe da base e curva a direita no topo
+        // 3. F - Haste externa Niemeyer: sobe da base pelo centro e curva no topo direito
         val pathFOuter = Path().apply {
-            moveTo(offsetX + 188f * scale, offsetY + 245f * scale)
-            lineTo(offsetX + 188f * scale, offsetY + 120f * scale)
+            moveTo(offsetX + 189.5f * scale, offsetY + 257f * scale)
             cubicTo(
-                offsetX + 188f * scale, offsetY + 9f * scale,
-                offsetX + 250f * scale, offsetY + 9f * scale,
-                offsetX + 363f * scale, offsetY + 9f * scale
+                offsetX + 168f * scale, offsetY + 185f * scale,
+                offsetX + 195f * scale, offsetY + 80f * scale,
+                offsetX + 260f * scale, offsetY + 10f * scale
+            )
+            lineTo(offsetX + 365f * scale, offsetY + 10f * scale)
+        }
+
+        // 4. F - Barra superior interna que curva para dentro do feixe vertical
+        val pathFTopInner = Path().apply {
+            moveTo(offsetX + 365f * scale, offsetY + 54f * scale)
+            lineTo(offsetX + 270f * scale, offsetY + 54f * scale)
+            cubicTo(
+                offsetX + 225f * scale, offsetY + 54f * scale,
+                offsetX + 215f * scale, offsetY + 110f * scale,
+                offsetX + 225f * scale, offsetY + 160f * scale
             )
         }
 
-        // 4. F - Haste vertical interna que sobe e curva na barra intermediaria
-        val pathFInner = Path().apply {
-            moveTo(offsetX + 233f * scale, offsetY + 245f * scale)
-            lineTo(offsetX + 233f * scale, offsetY + 175f * scale)
+        // 5. F - Trilhos intermediarios da barra central
+        val pathFMiddleOuter = Path().apply {
+            moveTo(offsetX + 365f * scale, offsetY + 138f * scale)
+            lineTo(offsetX + 275f * scale, offsetY + 138f * scale)
             cubicTo(
-                offsetX + 233f * scale, offsetY + 127f * scale,
-                offsetX + 275f * scale, offsetY + 127f * scale,
-                offsetX + 363f * scale, offsetY + 127f * scale
+                offsetX + 230f * scale, offsetY + 138f * scale,
+                offsetX + 220f * scale, offsetY + 175f * scale,
+                offsetX + 225f * scale, offsetY + 200f * scale
             )
         }
 
-        // 5. F - Barra superior interna e barra intermediaria inferior
-        val pathFBars = Path().apply {
-            moveTo(offsetX + 242f * scale, offsetY + 53f * scale)
-            lineTo(offsetX + 363f * scale, offsetY + 53f * scale)
-            moveTo(offsetX + 268f * scale, offsetY + 171f * scale)
-            lineTo(offsetX + 363f * scale, offsetY + 171f * scale)
+        val pathFMiddleInner = Path().apply {
+            moveTo(offsetX + 365f * scale, offsetY + 182f * scale)
+            lineTo(offsetX + 285f * scale, offsetY + 182f * scale)
+            cubicTo(
+                offsetX + 245f * scale, offsetY + 182f * scale,
+                offsetX + 234.5f * scale, offsetY + 215f * scale,
+                offsetX + 234.5f * scale, offsetY + 257f * scale
+            )
         }
 
-        // Desenha todas as linhas sincronizadas com o progresso
+        // Desenha todas as linhas sincronizadas com o preenchimento vetorial
         drawTrimmedPath(pathDOuter, progress)
         drawTrimmedPath(pathDInner, progress)
         drawTrimmedPath(pathFOuter, progress)
-        drawTrimmedPath(pathFInner, progress)
-        drawTrimmedPath(pathFBars, progress)
+        drawTrimmedPath(pathFTopInner, progress)
+        drawTrimmedPath(pathFMiddleOuter, progress)
+        drawTrimmedPath(pathFMiddleInner, progress)
     }
 }

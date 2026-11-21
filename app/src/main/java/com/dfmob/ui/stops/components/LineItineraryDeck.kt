@@ -89,7 +89,7 @@ fun LineItineraryDeck(
         }
     }
 
-    val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
+    val animSpec = tween<Dp>(durationMillis = 180, easing = FastOutSlowInEasing)
     val targetHeight = if (isExpanded) {
         if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp
     } else {
@@ -125,13 +125,23 @@ fun LineItineraryDeck(
     }
 
     val dragModifier = Modifier.pointerInput(Unit) {
-        detectVerticalDragGestures { _, dragAmount ->
-            if (dragAmount < -18f && !isExpanded) {
-                isExpanded = true
-            } else if (dragAmount > 18f && isExpanded) {
-                isExpanded = false
-            }
-        }
+        var dragAccumulator = 0f
+        detectVerticalDragGestures(
+            onDragStart = { dragAccumulator = 0f },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                dragAccumulator += dragAmount
+            },
+            onDragEnd = {
+                if (dragAccumulator < -20f && !isExpanded) {
+                    isExpanded = true
+                } else if (dragAccumulator > 20f && isExpanded) {
+                    isExpanded = false
+                }
+                dragAccumulator = 0f
+            },
+            onDragCancel = { dragAccumulator = 0f }
+        )
     }
 
     val listState = rememberLazyListState()
@@ -163,7 +173,7 @@ fun LineItineraryDeck(
                 ),
             color = surfaceBg,
             shape = deckShape,
-            shadowElevation = if (isDarkTheme) 16.dp else 8.dp
+            shadowElevation = if (isDarkTheme) 6.dp else 4.dp
         ) {
             Column(
                 modifier = Modifier

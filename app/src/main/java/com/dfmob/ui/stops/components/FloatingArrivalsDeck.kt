@@ -142,8 +142,8 @@ fun FloatingArrivalsDeck(
         }
     }
 
-    // Animacao ultra-responsiva (90ms com FastOutSlowInEasing) conforme solicitado
-    val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
+    // Animacao suave e responsiva (180ms com FastOutSlowInEasing)
+    val animSpec = tween<Dp>(durationMillis = 180, easing = FastOutSlowInEasing)
 
     val isDeckExpanded = isExpanded || selectedScheduleArrival != null
 
@@ -191,29 +191,29 @@ fun FloatingArrivalsDeck(
     val closeBtnBg = if (isDarkTheme) Color(0xFF23252C) else Color(0xFFEAECEF)
     val handleColor = if (isDarkTheme) Color(0xFF3F424E) else Color(0xFFD1D5DB)
 
-    // Gesto de puxar verticalmente para cima ou para baixo
-    var dragOffsetY by remember { mutableStateOf(0f) }
+    // Gesto de puxar verticalmente para cima ou para baixo sem recompor a cada pixel
     val dragModifier = Modifier.pointerInput(Unit) {
+        var dragAccumulator = 0f
         detectVerticalDragGestures(
-            onDragStart = { dragOffsetY = 0f },
+            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                dragOffsetY += dragAmount
+                dragAccumulator += dragAmount
             },
             onDragEnd = {
-                if (dragOffsetY < -25f) {
+                if (dragAccumulator < -25f) {
                     isExpanded = true
-                } else if (dragOffsetY > 25f) {
+                } else if (dragAccumulator > 25f) {
                     if (selectedScheduleArrival != null) {
                         selectedScheduleArrival = null
                     } else {
                         isExpanded = false
                     }
                 }
-                dragOffsetY = 0f
+                dragAccumulator = 0f
             },
             onDragCancel = {
-                dragOffsetY = 0f
+                dragAccumulator = 0f
             }
         )
     }
@@ -236,7 +236,7 @@ fun FloatingArrivalsDeck(
             .then(if (!isDeckExpanded) dragModifier else Modifier),
         color = deckBackground,
         shape = deckShape,
-        shadowElevation = if (isDarkTheme) 18.dp else 10.dp
+        shadowElevation = if (isDarkTheme) 6.dp else 4.dp
     ) {
         Column(
             modifier = Modifier
