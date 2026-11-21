@@ -1,6 +1,5 @@
 package com.dfmob.ui.tripplanner
 
-import android.app.TimePickerDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,6 +42,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.DirectionsSubway
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
@@ -58,8 +59,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -103,10 +102,13 @@ import com.dfmob.ui.components.CrowdingBadge
 import com.dfmob.ui.components.LiveWifiIcon
 import com.dfmob.ui.components.TripInsightBadge
 import com.dfmob.ui.theme.TransitGreen
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripPlannerScreen(
     onBack: () -> Unit,
@@ -134,6 +136,8 @@ fun TripPlannerScreen(
     var showSaveTripDialog by remember { mutableStateOf(false) }
     var tripCustomNameInput by remember { mutableStateOf("") }
     var showComparisonMap by remember { mutableStateOf(false) }
+    var isTimePickerSheetOpen by remember { mutableStateOf(false) }
+    val timePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     DisposableEffect(context) {
         viewModel.refreshUserLocation()
@@ -366,6 +370,19 @@ fun TripPlannerScreen(
                 )
             }
 
+            if (isTimePickerSheetOpen) {
+                TripTimePickerBottomSheet(
+                    sheetState = timePickerSheetState,
+                    initialMode = state.timeMode,
+                    initialTimeUtc = state.targetTimeUtc,
+                    onDismissRequest = { isTimePickerSheetOpen = false },
+                    onConfirm = { mode, targetTimeUtc ->
+                        isTimePickerSheetOpen = false
+                        viewModel.setTimeModeAndDateTime(mode, targetTimeUtc)
+                    }
+                )
+            }
+
             // MODULO 1: Origem e Destino com conexao vertical
             OriginDestinationCard(
                 originText = state.originQuery,
@@ -447,24 +464,7 @@ fun TripPlannerScreen(
                 timeMode = state.timeMode,
                 targetTimeUtc = state.targetTimeUtc,
                 preference = state.preference,
-                onTimeModeSelected = { mode ->
-                    if (mode == TripTimeMode.DEPART_NOW) {
-                        viewModel.setTimeMode(mode)
-                    } else {
-                        // Abre seletor de horario nativo
-                        val cal = Calendar.getInstance()
-                        cal.timeInMillis = state.targetTimeUtc
-                        TimePickerDialog(
-                            context,
-                            { _, hour, minute ->
-                                viewModel.setTimeModeAndCustomTime(mode, hour, minute)
-                            },
-                            cal.get(Calendar.HOUR_OF_DAY),
-                            cal.get(Calendar.MINUTE),
-                            true
-                        ).show()
-                    }
-                },
+                onOpenTimePicker = { isTimePickerSheetOpen = true },
                 onAddMinutes = { viewModel.addTimeMinutes(15) },
                 onSubtractMinutes = { viewModel.addTimeMinutes(-15) },
                 onTogglePreference = { viewModel.togglePreference(it) }
@@ -914,19 +914,38 @@ private fun TimeAndPreferencesRow(
     timeMode: TripTimeMode,
     targetTimeUtc: Long,
     preference: TripPreference,
-    onTimeModeSelected: (TripTimeMode) -> Unit,
+    onOpenTimePicker: () -> Unit,
     onAddMinutes: () -> Unit,
     onSubtractMinutes: () -> Unit,
     onTogglePreference: (TripPreference) -> Unit
 ) {
-    var isDropdownOpen by remember { mutableStateOf(false) }
     val now = System.currentTimeMillis()
     val canSubtract = targetTimeUtc >= now + (15 * 60 * 1000L)
 
-    val timeLabel = when (timeMode) {
-        TripTimeMode.DEPART_NOW -> "Sair agora"
-        TripTimeMode.DEPART_AT -> "Partida às ${formatEpochMsToHHMM(targetTimeUtc)}"
-        TripTimeMode.ARRIVE_BY -> "Chegada até ${formatEpochMsToHHMM(targetTimeUtc)}"
+    val timeLabel = remember(timeMode, targetTimeUtc) {
+        if (timeMode == TripTimeMode.DEPART_NOW) {
+            "Sair agora"
+        } else {
+            val calTarget = Calendar.getInstance().apply { timeInMillis = targetTimeUtc }
+            val calNow = Calendar.getInstance()
+            val sameYear = calTarget.get(Calendar.YEAR) == calNow.get(Calendar.YEAR)
+            val dayTarget = calTarget.get(Calendar.DAY_OF_YEAR)
+            val dayNow = calNow.get(Calendar.DAY_OF_YEAR)
+            val timeStr = formatEpochMsToHHMM(targetTimeUtc)
+            val dateSuffix = when {
+                sameYear && dayTarget == dayNow -> ""
+                sameYear && dayTarget == dayNow + 1 -> " (Amanhã)"
+                else -> {
+                    val df = SimpleDateFormat("dd/MM", Locale.getDefault())
+                    " (${df.format(Date(targetTimeUtc))})"
+                }
+            }
+            when (timeMode) {
+                TripTimeMode.DEPART_NOW -> "Sair agora"
+                TripTimeMode.DEPART_AT -> "Partida $timeStr$dateSuffix"
+                TripTimeMode.ARRIVE_BY -> "Chegada $timeStr$dateSuffix"
+            }
+        }
     }
 
     Row(
@@ -936,70 +955,41 @@ private fun TimeAndPreferencesRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Dropdown Seletor de Modo de Horario
-        Box {
-            Surface(
-                onClick = { isDropdownOpen = true },
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (timeMode != TripTimeMode.DEPART_NOW) TransitGreen else Color.Transparent
-                )
+        // Seletor de Modo de Horário (Abre BottomSheet Material 3)
+        Surface(
+            onClick = onOpenTimePicker,
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (timeMode != TripTimeMode.DEPART_NOW) TransitGreen else Color.Transparent
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AccessTime,
-                        contentDescription = null,
-                        tint = if (timeMode != TripTimeMode.DEPART_NOW) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = timeLabel,
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            DropdownMenu(
-                expanded = isDropdownOpen,
-                onDismissRequest = { isDropdownOpen = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Sair agora", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) },
-                    onClick = {
-                        isDropdownOpen = false
-                        onTimeModeSelected(TripTimeMode.DEPART_NOW)
-                    }
+                Icon(
+                    imageVector = Icons.Rounded.AccessTime,
+                    contentDescription = null,
+                    tint = if (timeMode != TripTimeMode.DEPART_NOW) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
-                DropdownMenuItem(
-                    text = { Text("Definir horário de saída", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) },
-                    onClick = {
-                        isDropdownOpen = false
-                        onTimeModeSelected(TripTimeMode.DEPART_AT)
-                    }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = timeLabel,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                DropdownMenuItem(
-                    text = { Text("Definir horário de chegada", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) },
-                    onClick = {
-                        isDropdownOpen = false
-                        onTimeModeSelected(TripTimeMode.ARRIVE_BY)
-                    }
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

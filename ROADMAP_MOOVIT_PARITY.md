@@ -91,7 +91,7 @@ No arquivo descompilado `com.moovit.feature.tripplan.ui.content.misc.a`, o Moovi
 
 ---
 
-## 4. Que Horas Devo Sair? (`ADVANCED_TIME_PICKER`)
+## 4. Que Horas Devo Sair? (`ADVANCED_TIME_PICKER`) [CONCLUÍDO]
 
 ### 4.1 Descrição e Comportamento no Moovit
 * Implementado no pacote `TripPlanTimePickerPackage`.

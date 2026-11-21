@@ -456,6 +456,22 @@ class TripPlannerViewModel(
         triggerTripSearchIfReady()
     }
 
+    fun setTimeModeAndDateTime(mode: TripTimeMode, targetTimeMillis: Long) {
+        val now = System.currentTimeMillis()
+        val finalTime = if (mode == TripTimeMode.DEPART_NOW) {
+            now
+        } else {
+            if (mode == TripTimeMode.DEPART_AT && targetTimeMillis < now) now else targetTimeMillis
+        }
+        _uiState.update {
+            it.copy(
+                timeMode = mode,
+                targetTimeUtc = finalTime
+            )
+        }
+        triggerTripSearchIfReady()
+    }
+
     fun setTimeModeAndCustomTime(mode: TripTimeMode, hourOfDay: Int, minute: Int) {
         val cal = Calendar.getInstance()
         cal.timeInMillis = _uiState.value.targetTimeUtc
