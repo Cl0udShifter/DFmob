@@ -89,23 +89,31 @@ O aplicativo integra a malha completa de ônibus gerenciada pela SEMOB-DF e as d
 - Banco de dados local SQLite integrado com FTS5 (Full-Text Search), permitindo buscar números, destinos ou nomes de paradas sem gastar dados móveis.
 - Informações completas de tarifas oficiais do DF (R$ 2,70, R$ 3,80 e R$ 5,50), além de operadores e sentidos.
 
-### 3. Planejador de Viagens Multimodal
+### 3. Planejador de Viagens Multimodal e Inteligente
 - Cálculo de rotas combinando caminhadas, múltiplas linhas de ônibus e metrô.
-- Suporte a filtros de viagem: menor tempo, menos trocas de condução ou menor caminhada.
+- Dicas inteligentes de rota (Trip Insights): badges contextuais destacando a opção mais rápida, menor caminhada, melhor trajeto sem baldeação ou com partidas frequentes.
+- Comparação simultânea de rotas no mapa: visualização de itinerários alternativos com traçados em cores distintas para fácil comparação visual.
+- Planejamento avançado de horários ("Que Horas Devo Sair?"): defina horário exato de partida ou chegada com atalhos rápidos (+15 min, +30 min, +1h).
+- Filtros de preferência de trajeto (Melhor trajeto, Menos caminhada, Menos baldeações) e seleção de modais de transporte (Ônibus e Metrô).
 - Cálculo de integração tarifária do Bilhete Único do Distrito Federal, indicando se a baldeação está coberta pela integração.
 
-### 4. Alarme Inteligente de Desembarque
+### 4. Indicador de Nível de Lotação (Crowding Prediction)
+- Estimativa do nível de ocupação do veículo (Assentos disponíveis, Apenas em pé, Lotado).
+- Modelo heurístico calibrado para os deslocamentos do DF, considerando horários de pico (manhã e fim de tarde) entre as Regiões Administrativas e a área central de Brasília.
+
+### 5. Alarme Inteligente de Desembarque
 - Monitoramento contínuo da distância até o ponto de descida durante a viagem.
 - Escolha da antecedência do alerta (1 parada / 250m, 2 paradas / 400m ou 3 paradas / 600m).
 - Emissão de vibração háptica contínua e sinal sonoro configurado no canal de notificações prioritárias para garantir que o passageiro não perca sua parada.
 
-### 5. Avisos Operacionais e Ocorrências
+### 6. Avisos Operacionais e Ocorrências
 - Feed de avisos da malha viária do DF (obras no EPTG, manutenções em faixas exclusivas, desvios e eventos).
 - Mapeamento direto das linhas impactadas por cada interdição.
 
-### 6. Atualizador Integrado Direto pelo App
-- Módulo nativo na tela de configurações conectado diretamente aos releases do GitHub.
-- Download em segundo plano com barra de progresso visual e acionamento seguro do instalador de pacotes do Android via FileProvider.
+### 7. Personalização e Atualizações
+- Escolha da tela inicial padrão do aplicativo (Início, Paradas & Mapa, Linhas ou Planejar Viagem).
+- Novo ícone minimalista adaptativo sem sombras com suporte a tema monocromático (Material You).
+- Atualizador integrado direto pelo app via GitHub Releases, com download em segundo plano e instalação segura.
 
 ---
 
