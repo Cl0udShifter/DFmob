@@ -74,7 +74,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val diagnosticsService = remember { ApiDiagnosticsService() }
+    val diagnosticsService = remember { ApiDiagnosticsService(context) }
     val updateManager = remember { AppUpdateManager(context) }
     val currentVersion = remember { updateManager.getCurrentVersion() }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }

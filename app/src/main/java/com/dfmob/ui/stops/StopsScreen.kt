@@ -45,9 +45,11 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Traffic
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
+import com.dfmob.data.traffic.TrafficEndpointManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -110,6 +112,8 @@ fun StopsScreen(
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val focusManager = LocalFocusManager.current
     val repository = remember { StopsRepository(context) }
+    val trafficManager = remember { TrafficEndpointManager(context) }
+    val isTrafficEnabled by trafficManager.isTrafficEnabled.collectAsState()
     val favoritesRepo = favoritesRepository ?: remember { FavoritesRepository(context) }
     val favoriteStops by favoritesRepo.favoriteStops.collectAsState()
     val favoriteLines by favoritesRepo.favoriteLines.collectAsState()
@@ -333,6 +337,7 @@ fun StopsScreen(
                 recenterTrigger = recenterTrigger,
                 enableAutoCenterOnGps = initialLineNumber.isNullOrBlank() && activeRouteState == null && focusLocation == null,
                 isDarkTheme = isDarkTheme,
+                isTrafficEnabled = isTrafficEnabled,
                 onStopSelected = { stop ->
                     if (activeRouteState != null) {
                         coroutineScope.launch {
@@ -540,37 +545,68 @@ fun StopsScreen(
                 }
             }
 
-            // 3. Botao Flutuante de Centralizar na Localizacao Atual
-            Box(
+            // 3. Botoes Flutuantes de Acoes no Mapa (Transito e Centralizar GPS)
+            Column(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp)
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(if (isDarkTheme) Color(0xE6181A20) else Color(0xF2FFFFFF))
-                    .border(1.dp, searchBarBorder, CircleShape)
-                    .clickable {
-                        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                        if (hasFine || hasCoarse) {
-                            recenterTrigger = System.currentTimeMillis()
-                        } else {
-                            locationPermissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
-                                )
-                            )
-                        }
-                    },
-                contentAlignment = Alignment.Center
+                    .padding(end = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MyLocation,
-                    contentDescription = "Centralizar mapa",
-                    tint = iconAccent,
-                    modifier = Modifier.size(20.dp)
-                )
+                // Alternar Camada de Transito em Tempo Real
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (isDarkTheme) Color(0xE6181A20) else Color(0xF2FFFFFF))
+                        .border(
+                            1.dp,
+                            if (isTrafficEnabled) iconAccent.copy(alpha = 0.6f) else searchBarBorder,
+                            CircleShape
+                        )
+                        .clickable {
+                            trafficManager.setTrafficEnabled(!isTrafficEnabled)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Traffic,
+                        contentDescription = "Alternar camada de trânsito",
+                        tint = if (isTrafficEnabled) iconAccent else (if (isDarkTheme) Color(0xFF888B96) else Color(0xFF6B7280)),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Centralizar na Localizacao Atual
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (isDarkTheme) Color(0xE6181A20) else Color(0xF2FFFFFF))
+                        .border(1.dp, searchBarBorder, CircleShape)
+                        .clickable {
+                            val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                            if (hasFine || hasCoarse) {
+                                recenterTrigger = System.currentTimeMillis()
+                            } else {
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MyLocation,
+                        contentDescription = "Centralizar mapa",
+                        tint = iconAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
 
             // 4. Painel Flutuante: Itinerario da Linha com Rota e Telemetria ou Chegadas da Parada

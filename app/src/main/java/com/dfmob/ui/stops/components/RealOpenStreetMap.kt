@@ -36,18 +36,22 @@ import com.dfmob.BuildConfig
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.LineRouteState
 import com.dfmob.data.model.TransitStop
+import com.dfmob.data.traffic.TrafficEndpointManager
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +79,22 @@ private class StadiaTileSource(
 private val STADIA_SMOOTH = StadiaTileSource("StadiaSmoothHD", "alidade_smooth")
 private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark")
 
+// Camada de fluxo e congestionamento de trânsito em tempo real
+private class GoogleTrafficTileSource(
+    private val trafficManager: TrafficEndpointManager
+) : XYTileSource(
+    "GoogleTraffic",
+    0, 20, 256, ".png",
+    arrayOf("https://mt1.google.com/vt?")
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val x = MapTileIndex.getX(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        val z = MapTileIndex.getZoom(pMapTileIndex)
+        return trafficManager.getTileUrl(x, y, z)
+    }
+}
+
 /**
  * Cache em memoria dos 4 BitmapDrawables reutilizaveis para evitar alocacoes a 60 FPS.
  */
@@ -95,12 +115,23 @@ fun RealOpenStreetMap(
     activeRoute: LineRouteState? = null,
     enableAutoCenterOnGps: Boolean = true,
     isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
+    isTrafficEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val pinCache = remember(context) { StopPinCache(context) }
+    val trafficManager = remember(context) { TrafficEndpointManager(context) }
+    val trafficTileSource = remember(trafficManager) { GoogleTrafficTileSource(trafficManager) }
+    val trafficProvider = remember(context, trafficTileSource) { MapTileProviderBasic(context, trafficTileSource) }
+    val trafficOverlay = remember(trafficProvider, context) {
+        TilesOverlay(trafficProvider, context).apply {
+            loadingBackgroundColor = android.graphics.Color.TRANSPARENT
+            loadingLineColor = android.graphics.Color.TRANSPARENT
+            isEnabled = isTrafficEnabled
+        }
+    }
     val routePolyline = remember { Polyline() }
     val directionOverlay = remember { RouteDirectionOverlay(context) }
     val stopsFolder = remember { FolderOverlay() }
@@ -196,8 +227,27 @@ fun RealOpenStreetMap(
         }
     }
 
-    // Adiciona os overlays em ordem hierarquica: Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
+    DisposableEffect(trafficProvider) {
+        onDispose {
+            trafficProvider.detach()
+        }
+    }
+
+    LaunchedEffect(isTrafficEnabled) {
+        trafficOverlay.isEnabled = isTrafficEnabled
+        mapView.postInvalidate()
+    }
+
+    // Adiciona os overlays em ordem hierarquica: Transito -> Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
     LaunchedEffect(mapView) {
+        if (!mapView.overlays.contains(trafficOverlay)) {
+            val routeIdx = mapView.overlays.indexOf(routePolyline)
+            if (routeIdx >= 0) {
+                mapView.overlays.add(routeIdx, trafficOverlay)
+            } else {
+                mapView.overlays.add(0, trafficOverlay)
+            }
+        }
         if (!mapView.overlays.contains(routePolyline)) {
             mapView.overlays.add(routePolyline)
         }
