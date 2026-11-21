@@ -22,9 +22,12 @@ import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -1324,8 +1327,6 @@ private fun ActiveNavigationDeck(
     onLineSelectedToBoard: (TripTransitLineOption) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val animSpec = tween<Dp>(durationMillis = 90, easing = FastOutSlowInEasing)
-
     val isWaitForTransit = stage is NavigationStage.WaitForTransit
 
     val targetHeight = if (isWaitForTransit && isExpanded) {
@@ -1338,48 +1339,77 @@ private fun ActiveNavigationDeck(
         115.dp
     }
 
-    val animatedHeight by animateDpAsState(targetValue = targetHeight, animationSpec = animSpec, label = "deckH")
-    val animatedPaddingH by animateDpAsState(targetValue = if (isWaitForTransit && isExpanded) 0.dp else 14.dp, animationSpec = animSpec, label = "deckPadH")
-    val animatedPaddingB by animateDpAsState(targetValue = if (isWaitForTransit && isExpanded) 0.dp else 12.dp, animationSpec = animSpec, label = "deckPadB")
-    val animatedRadiusBottom by animateDpAsState(targetValue = if (isWaitForTransit && isExpanded) 0.dp else 22.dp, animationSpec = animSpec, label = "deckRadB")
+    val minH = if (isWaitForTransit) 200.dp else targetHeight
+    val maxTravelDp = (targetHeight - minH).coerceAtLeast(1.dp)
+    val density = LocalDensity.current
+    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
+
+    val coroutineScope = rememberCoroutineScope()
+    val expandProgress = remember { Animatable(if (isWaitForTransit && isExpanded) 1f else 0f) }
+
+    LaunchedEffect(isExpanded, isWaitForTransit) {
+        expandProgress.animateTo(
+            targetValue = if (isWaitForTransit && isExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val currentFraction = expandProgress.value
+    val currentHeight = if (isWaitForTransit) minH + (maxTravelDp * currentFraction) else targetHeight
+    val currentPadH = if (isWaitForTransit) 14.dp * (1f - currentFraction) else 14.dp
+    val currentPadB = if (isWaitForTransit) 12.dp * (1f - currentFraction) else 12.dp
+    val currentRadiusB = if (isWaitForTransit) 22.dp * (1f - currentFraction) else 22.dp
 
     val deckShape = RoundedCornerShape(
         topStart = 24.dp,
         topEnd = 24.dp,
-        bottomStart = animatedRadiusBottom,
-        bottomEnd = animatedRadiusBottom
+        bottomStart = currentRadiusB,
+        bottomEnd = currentRadiusB
     )
 
     val currentIsExpanded by androidx.compose.runtime.rememberUpdatedState(isExpanded)
     val currentOnToggleExpand by androidx.compose.runtime.rememberUpdatedState(onToggleExpand)
 
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    val dragModifier = Modifier.pointerInput(isWaitForTransit) {
+    // Gesto de puxar em tempo real acompanhando o dedo a 120 FPS
+    val dragModifier = Modifier.pointerInput(isWaitForTransit, maxTravelPx) {
         if (!isWaitForTransit) return@pointerInput
         detectVerticalDragGestures(
-            onDragStart = { dragOffsetY = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                dragOffsetY += dragAmount
+                if (maxTravelPx > 0f) {
+                    val delta = -dragAmount / maxTravelPx
+                    coroutineScope.launch {
+                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
+                    }
+                }
             },
             onDragEnd = {
-                if (dragOffsetY < -20f && !currentIsExpanded) {
-                    currentOnToggleExpand()
-                } else if (dragOffsetY > 20f && currentIsExpanded) {
+                val shouldExpand = expandProgress.value > 0.45f
+                if (shouldExpand != currentIsExpanded) {
                     currentOnToggleExpand()
                 }
-                dragOffsetY = 0f
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (shouldExpand) 1f else 0f,
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                    )
+                }
             },
             onDragCancel = {
-                dragOffsetY = 0f
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (currentIsExpanded) 1f else 0f,
+                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
+                    )
+                }
             }
         )
     }
 
     Surface(
         modifier = modifier
-            .padding(horizontal = animatedPaddingH, vertical = animatedPaddingB)
-            .height(animatedHeight)
+            .padding(horizontal = currentPadH, vertical = currentPadB)
+            .height(currentHeight)
             .then(if (isWaitForTransit && !isExpanded) dragModifier else Modifier),
         shape = deckShape,
         color = MaterialTheme.colorScheme.surface,

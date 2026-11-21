@@ -163,7 +163,8 @@ fun SplashScreen(
 
 /**
  * Desenha os arcos e trilhos exatos do Candidato 6 com efeito de preenchimento de linha (trim-path).
- * Utiliza pontas retas (StrokeCap.Butt) identicas ao icone oficial.
+ * Reproduz com fidelidade matematica o elo S central conectando o D ao F, os trilhos concentricos
+ * e as hastes verticais da fita de transito de Brasilia.
  */
 @Composable
 private fun VectorAnimatedIcon(
@@ -177,9 +178,9 @@ private fun VectorAnimatedIcon(
         val w = size.width
         val h = size.height
 
-        // Proporcao normalizada do icone original: largura 365, altura 257
-        val scale = (w * 0.82f) / 365f
-        val strokeW = 19f * scale
+        // Proporcao fiel do icone oficial Candidato 6: largura 365, altura 257
+        val scale = (w * 0.88f) / 365f
+        val strokeW = 22f * scale
         val strokeStyle = Stroke(
             width = strokeW,
             cap = StrokeCap.Butt,
@@ -201,79 +202,88 @@ private fun VectorAnimatedIcon(
             }
         }
 
-        // Construcao dos trilhos do Candidato 6 fiel ao icone original:
-
-        // 1. D - Trilho externo: barra superior reta, arco Niemeyer e barra inferior reta
-        val pathDOuter = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 10f * scale)
-            lineTo(offsetX + 75f * scale, offsetY + 10f * scale)
+        // 1. D - Haste e curva superior externa descendo em arco fluido para o centro
+        val pathDTopOuter = Path().apply {
+            moveTo(offsetX + 0f * scale, offsetY + 10.5f * scale)
+            lineTo(offsetX + 70f * scale, offsetY + 10.5f * scale)
             cubicTo(
-                offsetX + 200f * scale, offsetY + 10f * scale,
-                offsetX + 200f * scale, offsetY + 246f * scale,
-                offsetX + 75f * scale, offsetY + 246f * scale
+                offsetX + 135f * scale, offsetY + 10.5f * scale,
+                offsetX + 165f * scale, offsetY + 30f * scale,
+                offsetX + 175f * scale, offsetY + 66f * scale
             )
-            lineTo(offsetX + 0f * scale, offsetY + 246f * scale)
         }
 
-        // 2. D - Trilho interno concentrico
+        // 2. D - Trilho interno concentrico (circula suavemente pelo centro do D)
         val pathDInner = Path().apply {
-            moveTo(offsetX + 0f * scale, offsetY + 54f * scale)
-            lineTo(offsetX + 70f * scale, offsetY + 54f * scale)
+            moveTo(offsetX + 0f * scale, offsetY + 54.5f * scale)
+            lineTo(offsetX + 70f * scale, offsetY + 54.5f * scale)
             cubicTo(
-                offsetX + 155f * scale, offsetY + 54f * scale,
-                offsetX + 155f * scale, offsetY + 202f * scale,
-                offsetX + 70f * scale, offsetY + 202f * scale
+                offsetX + 145f * scale, offsetY + 54.5f * scale,
+                offsetX + 154f * scale, offsetY + 95f * scale,
+                offsetX + 154f * scale, offsetY + 128.5f * scale
             )
-            lineTo(offsetX + 0f * scale, offsetY + 202f * scale)
+            cubicTo(
+                offsetX + 154f * scale, offsetY + 162f * scale,
+                offsetX + 145f * scale, offsetY + 202.5f * scale,
+                offsetX + 70f * scale, offsetY + 202.5f * scale
+            )
+            lineTo(offsetX + 0f * scale, offsetY + 202.5f * scale)
         }
 
-        // 3. F - Haste externa Niemeyer: sobe da base pelo centro e curva no topo direito
-        val pathFOuter = Path().apply {
-            moveTo(offsetX + 189.5f * scale, offsetY + 257f * scale)
+        // 3. Elo Central / Curva S Niemeyer: conecta a base do D ao topo do F em arco continuo
+        val pathSCurveRibbon = Path().apply {
+            moveTo(offsetX + 0f * scale, offsetY + 246.5f * scale)
+            lineTo(offsetX + 70f * scale, offsetY + 246.5f * scale)
             cubicTo(
-                offsetX + 168f * scale, offsetY + 185f * scale,
-                offsetX + 195f * scale, offsetY + 80f * scale,
-                offsetX + 260f * scale, offsetY + 10f * scale
+                offsetX + 170f * scale, offsetY + 246.5f * scale,
+                offsetX + 178f * scale, offsetY + 200f * scale,
+                offsetX + 185f * scale, offsetY + 135f * scale
             )
-            lineTo(offsetX + 365f * scale, offsetY + 10f * scale)
+            cubicTo(
+                offsetX + 192f * scale, offsetY + 70f * scale,
+                offsetX + 200f * scale, offsetY + 10.5f * scale,
+                offsetX + 295f * scale, offsetY + 10.5f * scale
+            )
+            lineTo(offsetX + 365f * scale, offsetY + 10.5f * scale)
         }
 
-        // 4. F - Barra superior interna que curva para dentro do feixe vertical
+        // 4. F - Barra superior interna que curva acompanhando o elo central
         val pathFTopInner = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 54f * scale)
-            lineTo(offsetX + 270f * scale, offsetY + 54f * scale)
+            moveTo(offsetX + 365f * scale, offsetY + 54.5f * scale)
+            lineTo(offsetX + 295f * scale, offsetY + 54.5f * scale)
             cubicTo(
-                offsetX + 225f * scale, offsetY + 54f * scale,
-                offsetX + 215f * scale, offsetY + 110f * scale,
-                offsetX + 225f * scale, offsetY + 160f * scale
+                offsetX + 245f * scale, offsetY + 54.5f * scale,
+                offsetX + 235f * scale, offsetY + 75f * scale,
+                offsetX + 233f * scale, offsetY + 120f * scale
             )
         }
 
-        // 5. F - Trilhos intermediarios da barra central
+        // 5. F - Barra central externa que curva em 90 graus descendo ate a base
         val pathFMiddleOuter = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 138f * scale)
-            lineTo(offsetX + 275f * scale, offsetY + 138f * scale)
+            moveTo(offsetX + 365f * scale, offsetY + 129f * scale)
+            lineTo(offsetX + 295f * scale, offsetY + 129f * scale)
             cubicTo(
-                offsetX + 230f * scale, offsetY + 138f * scale,
-                offsetX + 220f * scale, offsetY + 175f * scale,
-                offsetX + 225f * scale, offsetY + 200f * scale
+                offsetX + 225f * scale, offsetY + 129f * scale,
+                offsetX + 189f * scale, offsetY + 175f * scale,
+                offsetX + 189f * scale, offsetY + 257f * scale
             )
         }
 
+        // 6. F - Barra central interna que curva em 90 graus descendo ate a base
         val pathFMiddleInner = Path().apply {
-            moveTo(offsetX + 365f * scale, offsetY + 182f * scale)
-            lineTo(offsetX + 285f * scale, offsetY + 182f * scale)
+            moveTo(offsetX + 365f * scale, offsetY + 173f * scale)
+            lineTo(offsetX + 295f * scale, offsetY + 173f * scale)
             cubicTo(
-                offsetX + 245f * scale, offsetY + 182f * scale,
-                offsetX + 234.5f * scale, offsetY + 215f * scale,
-                offsetX + 234.5f * scale, offsetY + 257f * scale
+                offsetX + 265f * scale, offsetY + 173f * scale,
+                offsetX + 233f * scale, offsetY + 200f * scale,
+                offsetX + 233f * scale, offsetY + 257f * scale
             )
         }
 
-        // Desenha todas as linhas sincronizadas com o preenchimento vetorial
-        drawTrimmedPath(pathDOuter, progress)
+        // Desenha todas as 6 linhas em preenchimento vetorial sincronizado
+        drawTrimmedPath(pathDTopOuter, progress)
         drawTrimmedPath(pathDInner, progress)
-        drawTrimmedPath(pathFOuter, progress)
+        drawTrimmedPath(pathSCurveRibbon, progress)
         drawTrimmedPath(pathFTopInner, progress)
         drawTrimmedPath(pathFMiddleOuter, progress)
         drawTrimmedPath(pathFMiddleInner, progress)

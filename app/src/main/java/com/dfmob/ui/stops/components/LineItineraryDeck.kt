@@ -1,8 +1,11 @@
 package com.dfmob.ui.stops.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -89,25 +92,34 @@ fun LineItineraryDeck(
         }
     }
 
-    val animSpec = tween<Dp>(durationMillis = 180, easing = FastOutSlowInEasing)
     val targetHeight = if (isExpanded) {
         if (maxScreenHeight > 200.dp) maxScreenHeight * 0.75f else 540.dp
     } else {
         340.dp
     }
-    val animatedHeight by animateDpAsState(targetValue = targetHeight, animationSpec = animSpec, label = "LineDeckHeight")
 
-    val targetCorner = if (isExpanded) 20.dp else 24.dp
-    val animatedCorner by animateDpAsState(targetValue = targetCorner, animationSpec = animSpec, label = "LineDeckCorner")
+    val maxTravelDp = (targetHeight - 340.dp).coerceAtLeast(1.dp)
+    val density = LocalDensity.current
+    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
 
-    val targetPadH = if (isExpanded) 0.dp else 14.dp
-    val animatedPadH by animateDpAsState(targetValue = targetPadH, animationSpec = animSpec, label = "LineDeckPadH")
+    val coroutineScope = rememberCoroutineScope()
+    val expandProgress = remember { Animatable(if (isExpanded) 1f else 0f) }
 
+    LaunchedEffect(isExpanded) {
+        expandProgress.animateTo(
+            targetValue = if (isExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val currentFraction = expandProgress.value
+    val currentHeight = 340.dp + (maxTravelDp * currentFraction)
+    val currentPadH = 14.dp * (1f - currentFraction)
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val targetPadBottom = if (isExpanded) 0.dp else 12.dp + navBarBottom
-    val animatedPadBottom by animateDpAsState(targetValue = targetPadBottom, animationSpec = animSpec, label = "LineDeckPadB")
+    val currentPadBottom = (12.dp + navBarBottom) * (1f - currentFraction)
+    val currentCorner = 24.dp * (1f - currentFraction)
 
-    val surfaceBg = if (isDarkTheme) Color(0xF514151B) else Color(0xF8FFFFFF)
+    val surfaceBg = if (isDarkTheme) Color(0xFF14151B) else Color(0xFFFFFFFF)
     val borderColor = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
     val handleColor = if (isDarkTheme) Color(0xFF454854) else Color(0xFFD2D5DC)
     val actionBtnBg = if (isDarkTheme) Color(0xFF22242B) else Color(0xFFF0F2F5)
@@ -118,29 +130,43 @@ fun LineItineraryDeck(
         TransitGreen
     }
 
-    val deckShape = if (isExpanded) {
-        RoundedCornerShape(topStart = animatedCorner, topEnd = animatedCorner, bottomStart = 0.dp, bottomEnd = 0.dp)
-    } else {
-        RoundedCornerShape(animatedCorner)
-    }
+    val deckShape = RoundedCornerShape(
+        topStart = 24.dp,
+        topEnd = 24.dp,
+        bottomStart = currentCorner,
+        bottomEnd = currentCorner
+    )
 
-    val dragModifier = Modifier.pointerInput(Unit) {
-        var dragAccumulator = 0f
+    // Gesto de puxar verticalmente em tempo real acompanhando o dedo a 120 FPS
+    val dragModifier = Modifier.pointerInput(maxTravelPx) {
         detectVerticalDragGestures(
-            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                dragAccumulator += dragAmount
+                if (maxTravelPx > 0f) {
+                    val delta = -dragAmount / maxTravelPx
+                    coroutineScope.launch {
+                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
+                    }
+                }
             },
             onDragEnd = {
-                if (dragAccumulator < -20f && !isExpanded) {
-                    isExpanded = true
-                } else if (dragAccumulator > 20f && isExpanded) {
-                    isExpanded = false
+                val shouldExpand = expandProgress.value > 0.45f
+                isExpanded = shouldExpand
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (shouldExpand) 1f else 0f,
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                    )
                 }
-                dragAccumulator = 0f
             },
-            onDragCancel = { dragAccumulator = 0f }
+            onDragCancel = {
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (isExpanded) 1f else 0f,
+                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
+                    )
+                }
+            }
         )
     }
 
@@ -158,17 +184,17 @@ fun LineItineraryDeck(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = animatedPadH)
-            .padding(bottom = animatedPadBottom)
+            .padding(horizontal = currentPadH)
+            .padding(bottom = currentPadBottom)
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(animatedHeight)
+                .height(currentHeight)
                 .clip(deckShape)
                 .border(
-                    width = if (isExpanded) 0.dp else 1.dp,
-                    color = if (isExpanded) Color.Transparent else borderColor,
+                    width = if (currentFraction >= 0.99f) 0.dp else 1.dp * (1f - currentFraction),
+                    color = if (currentFraction >= 0.99f) Color.Transparent else borderColor.copy(alpha = (1f - currentFraction).coerceIn(0f, 1f)),
                     shape = deckShape
                 ),
             color = surfaceBg,

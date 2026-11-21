@@ -54,6 +54,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -142,9 +146,6 @@ fun FloatingArrivalsDeck(
         }
     }
 
-    // Animacao suave e responsiva (180ms com FastOutSlowInEasing)
-    val animSpec = tween<Dp>(durationMillis = 180, easing = FastOutSlowInEasing)
-
     val isDeckExpanded = isExpanded || selectedScheduleArrival != null
 
     val targetHeight = if (isDeckExpanded) {
@@ -153,67 +154,75 @@ fun FloatingArrivalsDeck(
         320.dp
     }
 
-    val animatedHeight by animateDpAsState(
-        targetValue = targetHeight,
-        animationSpec = animSpec,
-        label = "deckHeight"
-    )
+    val maxTravelDp = (targetHeight - 320.dp).coerceAtLeast(1.dp)
+    val density = LocalDensity.current
+    val maxTravelPx = remember(maxTravelDp, density) { with(density) { maxTravelDp.toPx() } }
 
-    val animatedHorizontalPadding by animateDpAsState(
-        targetValue = if (isDeckExpanded) 0.dp else 14.dp,
-        animationSpec = animSpec,
-        label = "deckPaddingH"
-    )
+    val coroutineScope = rememberCoroutineScope()
+    val expandProgress = remember { Animatable(if (isDeckExpanded) 1f else 0f) }
 
+    LaunchedEffect(isDeckExpanded) {
+        expandProgress.animateTo(
+            targetValue = if (isDeckExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        )
+    }
+
+    val currentFraction = expandProgress.value
+    val currentHeight = 320.dp + (maxTravelDp * currentFraction)
+    val currentPadH = 14.dp * (1f - currentFraction)
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    val animatedBottomPadding by animateDpAsState(
-        targetValue = if (isDeckExpanded) 0.dp else 12.dp + navBarBottom,
-        animationSpec = animSpec,
-        label = "deckPaddingB"
-    )
-
-    val animatedBottomRadius by animateDpAsState(
-        targetValue = if (isDeckExpanded) 0.dp else 24.dp,
-        animationSpec = animSpec,
-        label = "deckCornerBottom"
-    )
+    val currentPadB = (12.dp + navBarBottom) * (1f - currentFraction)
+    val currentRadiusB = 24.dp * (1f - currentFraction)
 
     val deckShape = RoundedCornerShape(
         topStart = 24.dp,
         topEnd = 24.dp,
-        bottomStart = animatedBottomRadius,
-        bottomEnd = animatedBottomRadius
+        bottomStart = currentRadiusB,
+        bottomEnd = currentRadiusB
     )
 
-    val deckBackground = if (isDarkTheme) Color(0xF2141519) else Color(0xF8FFFFFF)
+    val deckBackground = if (isDarkTheme) Color(0xFF141519) else Color(0xFFFFFFFF)
     val deckBorder = if (isDarkTheme) Color(0xFF282A33) else Color(0xFFE2E4EB)
     val closeBtnBg = if (isDarkTheme) Color(0xFF23252C) else Color(0xFFEAECEF)
     val handleColor = if (isDarkTheme) Color(0xFF3F424E) else Color(0xFFD1D5DB)
 
-    // Gesto de puxar verticalmente para cima ou para baixo sem recompor a cada pixel
-    val dragModifier = Modifier.pointerInput(Unit) {
-        var dragAccumulator = 0f
+    // Gesto de puxar verticalmente em tempo real acompanhando o dedo a 120 FPS
+    val dragModifier = Modifier.pointerInput(maxTravelPx) {
         detectVerticalDragGestures(
-            onDragStart = { dragAccumulator = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                dragAccumulator += dragAmount
-            },
-            onDragEnd = {
-                if (dragAccumulator < -25f) {
-                    isExpanded = true
-                } else if (dragAccumulator > 25f) {
-                    if (selectedScheduleArrival != null) {
-                        selectedScheduleArrival = null
-                    } else {
-                        isExpanded = false
+                if (maxTravelPx > 0f) {
+                    val delta = -dragAmount / maxTravelPx
+                    coroutineScope.launch {
+                        expandProgress.snapTo((expandProgress.value + delta).coerceIn(0f, 1f))
                     }
                 }
-                dragAccumulator = 0f
+            },
+            onDragEnd = {
+                val shouldExpand = expandProgress.value > 0.45f
+                if (shouldExpand) {
+                    isExpanded = true
+                } else {
+                    if (selectedScheduleArrival != null) {
+                        selectedScheduleArrival = null
+                    }
+                    isExpanded = false
+                }
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (shouldExpand) 1f else 0f,
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                    )
+                }
             },
             onDragCancel = {
-                dragAccumulator = 0f
+                coroutineScope.launch {
+                    expandProgress.animateTo(
+                        targetValue = if (isDeckExpanded) 1f else 0f,
+                        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)
+                    )
+                }
             }
         )
     }
@@ -221,16 +230,16 @@ fun FloatingArrivalsDeck(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(animatedHeight)
+            .height(currentHeight)
             .padding(
-                start = animatedHorizontalPadding,
-                end = animatedHorizontalPadding,
-                bottom = animatedBottomPadding
+                start = currentPadH,
+                end = currentPadH,
+                bottom = currentPadB
             )
             .clip(deckShape)
             .border(
-                width = if (isDeckExpanded) 0.dp else 1.dp,
-                color = if (isDeckExpanded) Color.Transparent else deckBorder,
+                width = if (currentFraction >= 0.99f) 0.dp else 1.dp * (1f - currentFraction),
+                color = if (currentFraction >= 0.99f) Color.Transparent else deckBorder.copy(alpha = (1f - currentFraction).coerceIn(0f, 1f)),
                 shape = deckShape
             )
             .then(if (!isDeckExpanded) dragModifier else Modifier),
