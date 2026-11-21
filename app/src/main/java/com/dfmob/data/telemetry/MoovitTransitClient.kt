@@ -395,6 +395,8 @@ object MoovitTransitClient {
                 tokener.back()
                 val obj = JSONObject(tokener)
                 val lineRec = obj.optJSONObject("3")?.optJSONObject("rec") ?: continue
+                val respLineId = lineRec.optJSONObject("1")?.optInt("i32", 0) ?: lineRec.optInt("1", 0)
+                if (respLineId != 0 && respLineId != lineId) continue
                 val arrLst = lineRec.optJSONObject("2")?.optJSONArray("lst") ?: continue
 
                 if (arrLst.length() > 2) {

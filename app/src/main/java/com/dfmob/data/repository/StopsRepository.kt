@@ -773,7 +773,7 @@ class StopsRepository(private val context: Context) {
                 stops = stops
             )
             if (moovitVehicles.isNotEmpty()) {
-                return@withContext moovitVehicles
+                return@withContext moovitVehicles.filter { it.directionId == null || it.directionId == directionId }
             }
         }
         try {
@@ -782,7 +782,7 @@ class StopsRepository(private val context: Context) {
                 if (v.directionId != null) {
                     v.directionId == directionId
                 } else {
-                    true
+                    isVehicleHeadingInRouteDirection(v.latE6, v.lonE6, v.bearing, stops)
                 }
             }.map { v ->
                 LiveVehicleMarker(
@@ -792,12 +792,47 @@ class StopsRepository(private val context: Context) {
                     lonE6 = v.lonE6,
                     speedKmh = v.speedKmh,
                     bearing = v.bearing,
-                    directionId = v.directionId
+                    directionId = directionId
                 )
             }
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun isVehicleHeadingInRouteDirection(
+        busLatE6: Int,
+        busLonE6: Int,
+        busBearing: Float,
+        stops: List<TransitStop>
+    ): Boolean {
+        if (stops.size < 2) return true
+        val closestIdx = stops.indices.minByOrNull {
+            calculateDistanceMeters(busLatE6, busLonE6, stops[it].latE6, stops[it].lonE6)
+        } ?: return true
+
+        val minDist = calculateDistanceMeters(busLatE6, busLonE6, stops[closestIdx].latE6, stops[closestIdx].lonE6)
+        if (minDist > 1200.0) return false
+
+        if (busBearing <= 0f) return true
+
+        val p1 = if (closestIdx < stops.lastIndex) stops[closestIdx] else stops[closestIdx - 1]
+        val p2 = if (closestIdx < stops.lastIndex) stops[closestIdx + 1] else stops[closestIdx]
+        val segBearing = calculateBearingDeg(p1.latitude, p1.longitude, p2.latitude, p2.longitude)
+
+        val diff = Math.abs(busBearing - segBearing) % 360
+        val angleDiff = if (diff > 180) 360 - diff else diff
+        return angleDiff <= 100
+    }
+
+    private fun calculateBearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val phi1 = Math.toRadians(lat1)
+        val phi2 = Math.toRadians(lat2)
+        val deltaLambda = Math.toRadians(lon2 - lon1)
+        val y = Math.sin(deltaLambda) * Math.cos(phi2)
+        val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda)
+        val theta = Math.atan2(y, x)
+        return ((Math.toDegrees(theta) + 360) % 360).toFloat()
     }
 
     suspend fun fetchArrivalForLineAtStop(lineId: Int, stop: TransitStop): StopArrival? = withContext(Dispatchers.IO) {
@@ -1035,48 +1070,52 @@ class StopsRepository(private val context: Context) {
     suspend fun getUpcomingDeparturesForStopAndLines(
         stopId: Int,
         lineIds: List<Int>,
-        fallbackScheduledUtc: Long
+        fallbackScheduledUtc: Long,
+        isForNow: Boolean = true
     ): List<com.dfmob.data.model.TripDepartureItem> = withContext(Dispatchers.IO) {
         val results = mutableListOf<com.dfmob.data.model.TripDepartureItem>()
         val lineIdSet = lineIds.toSet()
         val nowMs = System.currentTimeMillis()
         val tz = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
 
-        // 1. Tenta obter do endpoint de partidas em tempo real do Moovit
-        try {
-            val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(stopId)
-            val matchedLines = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
+        // 1. Tenta obter do endpoint de partidas em tempo real do Moovit APENAS se a consulta for para agora
+        if (isForNow) {
+            try {
+                val moovitArrivals = MoovitTransitClient.fetchArrivalsForStop(stopId)
+                val matchedLines = moovitArrivals.filter { lineIdSet.contains(it.lineId) }
 
-            for (lArr in matchedLines) {
-                val valid = lArr.arrivals.filter {
-                    val target = it.rtEtdUTC ?: it.staticEtdUTC
-                    target >= nowMs - 60_000L
-                }
-                for (arr in valid) {
-                    val isRealTime = arr.rtEtdUTC != null
-                    val target = arr.rtEtdUTC ?: arr.staticEtdUTC
-                    val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
-                    val formatted = if (isRealTime) {
-                        if (mins <= 1) "Já" else "$mins min"
-                    } else {
-                        formatEpochMsToHHMM(target, tz)
+                for (lArr in matchedLines) {
+                    val valid = lArr.arrivals.filter {
+                        val target = it.rtEtdUTC ?: it.staticEtdUTC
+                        target >= nowMs - 60_000L
                     }
-                    results.add(
-                        com.dfmob.data.model.TripDepartureItem(
-                            lineNumber = "",
-                            timeFormatted = formatted,
-                            isRealtime = isRealTime,
-                            targetEpochMs = target,
-                            lineId = lArr.lineId
+                    for (arr in valid) {
+                        val isRealTime = arr.rtEtdUTC != null
+                        val target = arr.rtEtdUTC ?: arr.staticEtdUTC
+                        val mins = maxOf(0, Math.round((target - nowMs) / 60000.0).toInt())
+                        val formatted = if (isRealTime) {
+                            if (mins <= 1) "Já" else "$mins min"
+                        } else {
+                            formatEpochMsToHHMM(target, tz)
+                        }
+                        results.add(
+                            com.dfmob.data.model.TripDepartureItem(
+                                lineNumber = "",
+                                timeFormatted = formatted,
+                                isRealtime = isRealTime,
+                                targetEpochMs = target,
+                                lineId = lArr.lineId
+                            )
                         )
-                    )
+                    }
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
 
         // 2. Consulta os horarios programados no banco local SQLite para as linhas que nao tiveram retorno
         val cal = Calendar.getInstance(tz)
-        cal.timeInMillis = nowMs
+        val queryBaseMs = if (!isForNow && fallbackScheduledUtc > 0) fallbackScheduledUtc else nowMs
+        cal.timeInMillis = queryBaseMs
         val curSec = cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)
         for (lid in lineIds) {
             val countForLine = results.count { it.lineId == lid }
@@ -1091,7 +1130,7 @@ class StopsRepository(private val context: Context) {
                             lineNumber = "",
                             timeFormatted = timeStr,
                             isRealtime = false,
-                            targetEpochMs = nowMs + ((sec - curSec) * 1000L),
+                            targetEpochMs = queryBaseMs + ((sec - curSec) * 1000L),
                             lineId = lid
                         )
                     )
@@ -1121,7 +1160,8 @@ class StopsRepository(private val context: Context) {
     }
 
     suspend fun enrichItinerariesWithDepartures(
-        itineraries: List<com.dfmob.data.model.TripPlanItinerary>
+        itineraries: List<com.dfmob.data.model.TripPlanItinerary>,
+        isForNow: Boolean = true
     ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
         val stopDeparturesCache = mutableMapOf<Pair<Int, String>, List<com.dfmob.data.model.TripDepartureItem>>()
 
@@ -1134,7 +1174,12 @@ class StopsRepository(private val context: Context) {
                     val lineIds = leg.lines.map { it.lineId }
                     val cacheKey = Pair(leg.departureStopId, lineIds.sorted().joinToString(","))
                     val deps = stopDeparturesCache.getOrPut(cacheKey) {
-                        getUpcomingDeparturesForStopAndLines(leg.departureStopId, lineIds, leg.startTimeUtc)
+                        getUpcomingDeparturesForStopAndLines(
+                            stopId = leg.departureStopId,
+                            lineIds = lineIds,
+                            fallbackScheduledUtc = leg.startTimeUtc,
+                            isForNow = isForNow
+                        )
                     }
                     leg.copy(upcomingDepartures = deps)
                 } else {
@@ -1151,8 +1196,12 @@ class StopsRepository(private val context: Context) {
         filter: com.dfmob.data.model.TripPlanFilter
     ): List<com.dfmob.data.model.TripPlanItinerary> = withContext(Dispatchers.IO) {
         DFFareCalculator.loadPricesIfNeeded(context)
+        val now = System.currentTimeMillis()
+        val isForNow = (filter.mode == com.dfmob.data.model.TripTimeMode.DEPART_NOW) ||
+                (filter.mode == com.dfmob.data.model.TripTimeMode.DEPART_AT && Math.abs(filter.targetTimeUtc - now) <= 30 * 60 * 1000L)
+
         val rawItineraries = MoovitTransitClient.searchTripPlan(from, to, filter, dbHelper)
-        val enriched = enrichItinerariesWithDepartures(rawItineraries)
+        val enriched = enrichItinerariesWithDepartures(rawItineraries, isForNow = isForNow)
         enriched.map { itin ->
             val (fare, isIntegrated) = DFFareCalculator.calculateItineraryFare(itin)
             itin.copy(estimatedFare = fare, isFareIntegrated = isIntegrated)

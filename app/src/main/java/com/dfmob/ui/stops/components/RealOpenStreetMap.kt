@@ -315,8 +315,10 @@ fun RealOpenStreetMap(
     }
 
     // Atualizacao dos Veiculos Reais em Tempo Real com animacao de deslizamento suave (glide)
-    LaunchedEffect(activeRoute?.liveVehicles) {
-        val vehicles = activeRoute?.liveVehicles ?: emptyList()
+    LaunchedEffect(activeRoute?.liveVehicles, activeRoute?.activeDirectionId) {
+        val currentDirId = activeRoute?.activeDirectionId
+        val allVehicles = activeRoute?.liveVehicles ?: emptyList()
+        val vehicles = allVehicles.filter { it.directionId == null || it.directionId == currentDirId }
         val currentIds = vehicles.map { it.vehicleId }.toSet()
 
         // 1. Remove marcadores de veiculos que nao estao mais ativos
@@ -376,12 +378,24 @@ fun RealOpenStreetMap(
         mapView.invalidate()
     }
 
-    // Limpa veiculos e cancela animacoes se rota for fechada
-    LaunchedEffect(activeRoute == null) {
+    // Limpa veiculos e cancela animacoes se rota for fechada ou sentido for alternado
+    LaunchedEffect(activeRoute == null, activeRoute?.activeLineId, activeRoute?.activeDirectionId) {
         if (activeRoute == null) {
             vehicleAnimators.values.forEach { it.cancel() }
             vehicleAnimators.clear()
             vehicleMarkers.clear()
+            vehiclesFolder.items.clear()
+            mapView.invalidate()
+        } else {
+            // Ao alternar o sentido, remove imediatamente todos os marcadores do sentido anterior
+            val iterator = vehicleMarkers.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                vehicleAnimators[entry.key]?.cancel()
+                vehicleAnimators.remove(entry.key)
+                vehiclesFolder.remove(entry.value)
+                iterator.remove()
+            }
             vehiclesFolder.items.clear()
             mapView.invalidate()
         }

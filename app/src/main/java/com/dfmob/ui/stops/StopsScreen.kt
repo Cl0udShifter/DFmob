@@ -274,7 +274,7 @@ fun StopsScreen(
     }
 
     // Telemetria continua da Rota da Linha: atualiza posicoes de veiculos e previsao da parada selecionada a cada 15s
-    LaunchedEffect(activeRouteState?.activeLineId, activeRouteState?.selectedStop?.stopId, resumeTrigger) {
+    LaunchedEffect(activeRouteState?.activeLineId, activeRouteState?.activeDirectionId, activeRouteState?.selectedStop?.stopId, resumeTrigger) {
         val route = activeRouteState ?: return@LaunchedEffect
         val activeLineId = route.activeLineId
         val activeDirId = route.activeDirectionId
@@ -611,7 +611,8 @@ fun StopsScreen(
                             activeRouteState = fastSwitched
                             coroutineScope.launch {
                                 val live = repository.enrichRouteStateWithLiveTelemetry(fastSwitched)
-                                if (activeRouteState?.activeLineId == fastSwitched.activeLineId) {
+                                if (activeRouteState?.activeLineId == fastSwitched.activeLineId &&
+                                    activeRouteState?.activeDirectionId == fastSwitched.activeDirectionId) {
                                     activeRouteState = live
                                 }
                             }

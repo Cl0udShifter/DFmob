@@ -37,12 +37,12 @@ object TripInsightsEvaluator {
                 qualified.add(TripInsight.LEAST_WALKING)
             }
 
-            // 4. Partida em breve (onibus com partida em ate 10 minutos)
+            // 4. Partida em breve (onibus com partida em tempo real em ate 10 minutos ou inicio da viagem nos proximos 10 min)
             val firstTransit = itin.legs.firstOrNull { it.type == TripLegType.TRANSIT }
             var isDepartingSoon = false
             if (firstTransit != null) {
                 val nextDep = firstTransit.upcomingDepartures.firstOrNull()
-                if (nextDep != null) {
+                if (nextDep != null && nextDep.isRealtime) {
                     val minsAway = if (nextDep.targetEpochMs >= now - 30_000L) {
                         Math.round((nextDep.targetEpochMs - now) / 60000.0).toInt()
                     } else -1
@@ -50,11 +50,8 @@ object TripInsightsEvaluator {
                         isDepartingSoon = true
                     }
                 }
-                if (!isDepartingSoon && firstTransit.startTimeUtc >= now - 30_000L) {
-                    val minsAway = Math.round((firstTransit.startTimeUtc - now) / 60000.0).toInt()
-                    if (minsAway in 0..10) {
-                        isDepartingSoon = true
-                    }
+                if (!isDepartingSoon && firstTransit.startTimeUtc in (now - 30_000L)..(now + 10 * 60 * 1000L)) {
+                    isDepartingSoon = true
                 }
             }
             if (isDepartingSoon) {

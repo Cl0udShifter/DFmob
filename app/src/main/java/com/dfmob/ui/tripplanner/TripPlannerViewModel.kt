@@ -578,8 +578,10 @@ class TripPlannerViewModel(
                         tripSearchError = if (evaluatedResults.isEmpty()) "Nenhum trajeto encontrado para este horário." else null
                     )
                 }
-                if (evaluatedResults.isNotEmpty()) {
+                if (evaluatedResults.isNotEmpty() && isSearchForNow()) {
                     startLiveDeparturesTicker()
+                } else {
+                    liveDeparturesJob?.cancel()
                 }
             } catch (e: CancellationException) {
                 // Cancelamento normal de corrotina (mudanca de horario ou novo filtro)
@@ -596,15 +598,25 @@ class TripPlannerViewModel(
         }
     }
 
+    private fun isSearchForNow(): Boolean {
+        val now = System.currentTimeMillis()
+        val mode = _uiState.value.timeMode
+        val target = _uiState.value.targetTimeUtc
+        return mode == TripTimeMode.DEPART_NOW ||
+                (mode == TripTimeMode.DEPART_AT && Math.abs(target - now) <= 30 * 60 * 1000L)
+    }
+
     private fun startLiveDeparturesTicker() {
         liveDeparturesJob?.cancel()
+        if (!isSearchForNow()) return
         liveDeparturesJob = viewModelScope.launch {
             while (isActive) {
                 delay(15_000)
+                if (!isSearchForNow()) break
                 val currentItineraries = _uiState.value.itineraries
                 if (currentItineraries.isNotEmpty()) {
                     try {
-                        val updated = repository.enrichItinerariesWithDepartures(currentItineraries)
+                        val updated = repository.enrichItinerariesWithDepartures(currentItineraries, isForNow = true)
                         val evaluated = TripInsightsEvaluator.evaluate(updated)
                         if (evaluated != currentItineraries) {
                             _uiState.update { it.copy(itineraries = evaluated) }

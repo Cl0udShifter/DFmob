@@ -60,4 +60,26 @@ class TripPlannerTimeTest {
         val subtractedTime = addedTime - (15 * 60 * 1000L)
         assertEquals(baseTime, subtractedTime)
     }
+
+    @Test
+    fun testIsSearchForNowLogic() {
+        fun isSearchForNow(mode: TripTimeMode, targetTimeUtc: Long, now: Long): Boolean {
+            return mode == TripTimeMode.DEPART_NOW ||
+                    (mode == TripTimeMode.DEPART_AT && Math.abs(targetTimeUtc - now) <= 30 * 60 * 1000L)
+        }
+
+        val now = 1700000000000L
+        // 1. Partir agora sempre deve ser considerado "para agora"
+        assertTrue(isSearchForNow(TripTimeMode.DEPART_NOW, now + 100_000L, now))
+
+        // 2. Partir às com horário próximo (10 min à frente) deve ser "para agora"
+        assertTrue(isSearchForNow(TripTimeMode.DEPART_AT, now + (10 * 60 * 1000L), now))
+
+        // 3. Partir às para amanhã (+24h) NÃO deve ser considerado "para agora"
+        val tomorrow = now + (24 * 60 * 60 * 1000L)
+        org.junit.Assert.assertFalse(isSearchForNow(TripTimeMode.DEPART_AT, tomorrow, now))
+
+        // 4. Chegar até para amanhã NÃO deve ser considerado "para agora"
+        org.junit.Assert.assertFalse(isSearchForNow(TripTimeMode.ARRIVE_BY, tomorrow, now))
+    }
 }

@@ -122,4 +122,57 @@ class TripInsightsEvaluatorTest {
         assertEquals(2, result[0].insights.size)
         assertTrue(result[0].insights.size <= 2)
     }
+
+    @Test
+    fun testFutureItineraryDoesNotReceiveDepartingSoon() {
+        val now = System.currentTimeMillis()
+        val tomorrow = now + (24 * 60 * 60 * 1000L)
+        val legStart = tomorrow + (5 * 60_000L)
+        val legs = listOf(
+            TripPlanLeg(
+                type = TripLegType.WALK,
+                startTimeUtc = tomorrow,
+                endTimeUtc = legStart,
+                durationMinutes = 5,
+                distanceMeters = 300.0
+            ),
+            TripPlanLeg(
+                type = TripLegType.TRANSIT,
+                startTimeUtc = legStart,
+                endTimeUtc = legStart + (30 * 60_000L),
+                durationMinutes = 30,
+                distanceMeters = 5000.0,
+                lines = emptyList(),
+                upcomingDepartures = listOf(
+                    TripDepartureItem(
+                        lineNumber = "0.100",
+                        timeFormatted = "14:30",
+                        isRealtime = false,
+                        targetEpochMs = legStart
+                    )
+                )
+            )
+        )
+        val futureItin = TripPlanItinerary(
+            guid = "future-itin",
+            totalDurationMinutes = 35,
+            startTimeUtc = tomorrow,
+            endTimeUtc = legStart + (30 * 60_000L),
+            walkDurationMinutes = 5,
+            walkDistanceMeters = 300.0,
+            transfersCount = 0,
+            legs = legs
+        )
+
+        val anotherFutureItin = futureItin.copy(
+            guid = "future-itin-2",
+            totalDurationMinutes = 45,
+            legs = legs
+        )
+
+        val result = TripInsightsEvaluator.evaluate(listOf(futureItin, anotherFutureItin))
+        val futureInsights = result[0].insights
+        assertTrue("Viagens futuras não devem receber a tag Partida em breve",
+            futureInsights.none { it.type == TripInsightType.DEPARTING_SOON })
+    }
 }
