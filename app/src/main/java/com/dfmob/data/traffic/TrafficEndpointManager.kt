@@ -12,20 +12,20 @@ import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 class TrafficEndpointManager(context: Context) {
-    private val oldPrefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs", Context.MODE_PRIVATE)
-    private val prefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs_v2", Context.MODE_PRIVATE)
+    private val oldPrefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs_v2", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("dfmob_traffic_prefs_v3", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_ENDPOINT_INDEX = "active_endpoint_index"
         private const val KEY_TRAFFIC_ENABLED = "traffic_layer_enabled"
 
-        // Modelos de endpoints com camada h,traffic (vias e trânsito com canal alfa transparente)
+        // Modelos de endpoints com camada h,traffic e supressão de POIs comerciais e estações via apistyle
         val ENDPOINT_CANDIDATES = listOf(
-            "https://mt%d.google.com/vt/lyrs=h,traffic&x=%d&y=%d&z=%d",
-            "https://mt%d.google.com/vt?lyrs=h,traffic&x=%d&y=%d&z=%d",
-            "https://mt%d.google.com/vt/lyrs=h,traffic|smartmaps&x=%d&y=%d&z=%d",
-            "https://mt%d.google.com/vt/lyrs=h@221097413,traffic&x=%d&y=%d&z=%d",
-            "https://www.google.com/maps/vt/lyrs=h,traffic&x=%d&y=%d&z=%d"
+            "https://mt%d.google.com/vt/lyrs=h,traffic&x=%d&y=%d&z=%d&apistyle=s.t:2|p.v:off|s.t:4|p.v:off",
+            "https://mt%d.google.com/vt?lyrs=h,traffic&x=%d&y=%d&z=%d&apistyle=s.t:2|p.v:off|s.t:4|p.v:off",
+            "https://mt%d.google.com/vt/lyrs=h,traffic|smartmaps&x=%d&y=%d&z=%d&apistyle=s.t:2|p.v:off|s.t:4|p.v:off",
+            "https://mt%d.google.com/vt/lyrs=h@221097413,traffic&x=%d&y=%d&z=%d&apistyle=s.t:2|p.v:off|s.t:4|p.v:off",
+            "https://www.google.com/maps/vt/lyrs=h,traffic&x=%d&y=%d&z=%d&apistyle=s.t:2|p.v:off|s.t:4|p.v:off"
         )
     }
 

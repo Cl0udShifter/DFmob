@@ -14,6 +14,7 @@ class TrafficEndpointManagerTest {
         assertTrue(candidates.isNotEmpty())
         for (c in candidates) {
             assertTrue(c.contains("traffic"))
+            assertTrue(c.contains("apistyle"))
         }
     }
 

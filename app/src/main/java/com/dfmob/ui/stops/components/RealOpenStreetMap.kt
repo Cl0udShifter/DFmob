@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -59,6 +60,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 // Basemaps minimalistas Stadia Maps no estilo Transit App com injecao segura de API key via BuildConfig
 private class StadiaTileSource(
@@ -79,11 +81,15 @@ private class StadiaTileSource(
 private val STADIA_SMOOTH = StadiaTileSource("StadiaSmoothHD", "alidade_smooth")
 private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark")
 
-// Camada de fluxo e congestionamento de trânsito em tempo real
+private val EMPTY_TRANSPARENT_BITMAP by lazy {
+    Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+}
+
+// Camada inteligente de fluxo e congestionamento de trânsito em tempo real
 private class GoogleTrafficTileSource(
     private val trafficManager: TrafficEndpointManager
 ) : XYTileSource(
-    "GoogleLiveTrafficV2",
+    "GoogleCongestionTrafficV3",
     0, 20, 256, ".png",
     arrayOf("https://mt1.google.com/vt/")
 ) {
@@ -92,6 +98,66 @@ private class GoogleTrafficTileSource(
         val y = MapTileIndex.getY(pMapTileIndex)
         val z = MapTileIndex.getZoom(pMapTileIndex)
         return trafficManager.getTileUrl(x, y, z)
+    }
+
+    override fun getDrawable(aFilePath: String): Drawable? {
+        val raw = super.getDrawable(aFilePath) ?: return null
+        return filterCongestionDrawable(raw)
+    }
+
+    override fun getDrawable(aTileInputStream: InputStream): Drawable? {
+        val raw = super.getDrawable(aTileInputStream) ?: return null
+        return filterCongestionDrawable(raw)
+    }
+
+    private fun filterCongestionDrawable(drawable: Drawable): Drawable {
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return drawable
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width <= 0 || height <= 0) return drawable
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        var hasCongestion = false
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val a = (p ushr 24) and 0xFF
+            if (a < 30) {
+                pixels[i] = 0
+                continue
+            }
+            val r = (p ushr 16) and 0xFF
+            val g = (p ushr 8) and 0xFF
+            val b = p and 0xFF
+
+            // Descarte de quase-tons de cinza (bordas de pistas, asfalto e textos residuais)
+            val maxC = maxOf(r, maxOf(g, b))
+            val minC = minOf(r, minOf(g, b))
+            if (maxC - minC < 35) {
+                pixels[i] = 0
+                continue
+            }
+
+            // Vermelho / Vermelho Escuro / Bordo (Congestionamento severo e parada)
+            val isRedOrBurgundy = r > 150 && g < 110 && b < 110 && r > (g * 1.4f)
+
+            // Amarelo / Laranja (Lentidao moderada e retencao)
+            val isYellowOrOrange = r > 180 && g > 100 && b < 100 && r > (b * 1.8f)
+
+            if (isRedOrBurgundy || isYellowOrOrange) {
+                hasCongestion = true
+            } else {
+                pixels[i] = 0
+            }
+        }
+
+        if (!hasCongestion) {
+            return BitmapDrawable(null, EMPTY_TRANSPARENT_BITMAP)
+        }
+
+        val outputBmp = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        return BitmapDrawable(null, outputBmp)
     }
 }
 
