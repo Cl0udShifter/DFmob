@@ -100,6 +100,7 @@ import com.dfmob.data.repository.RecentSearchesRepository
 import com.dfmob.data.repository.StopsRepository
 import com.dfmob.ui.components.CrowdingBadge
 import com.dfmob.ui.components.LiveWifiIcon
+import com.dfmob.ui.components.TripInsightBadge
 import com.dfmob.ui.theme.TransitGreen
 import java.util.Calendar
 import java.util.Locale
@@ -1068,6 +1069,15 @@ private fun TripItineraryCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            if (itinerary.insight != null) {
+                TripInsightBadge(
+                    insight = itinerary.insight,
+                    isDarkTheme = isDarkTheme
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
             // Linha superior: Duracao total e Janela de Horario
             Row(
                 modifier = Modifier.fillMaxWidth(),

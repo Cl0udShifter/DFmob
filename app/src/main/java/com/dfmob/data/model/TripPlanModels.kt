@@ -79,6 +79,26 @@ data class TripPlanLeg(
     val intermediateStopPoints: List<Pair<Double, Double>> = emptyList()
 )
 
+enum class TripInsightType {
+    FASTEST,
+    DIRECT,
+    LEAST_WALKING,
+    DEPARTING_SOON
+}
+
+data class TripInsight(
+    val type: TripInsightType,
+    val label: String,
+    val shortLabel: String
+) {
+    companion object {
+        val FASTEST = TripInsight(TripInsightType.FASTEST, "Mais rápida", "Mais rápida")
+        val DIRECT = TripInsight(TripInsightType.DIRECT, "Sem baldeação", "Direta")
+        val LEAST_WALKING = TripInsight(TripInsightType.LEAST_WALKING, "Menos caminhada", "Pouco a pé")
+        val DEPARTING_SOON = TripInsight(TripInsightType.DEPARTING_SOON, "Partida em breve", "Em breve")
+    }
+}
+
 data class TripPlanItinerary(
     val guid: String,
     val totalDurationMinutes: Int,
@@ -89,7 +109,8 @@ data class TripPlanItinerary(
     val transfersCount: Int,
     val legs: List<TripPlanLeg>,
     val estimatedFare: Double = 0.0,
-    val isFareIntegrated: Boolean = false
+    val isFareIntegrated: Boolean = false,
+    val insight: TripInsight? = null
 ) {
     val formattedFare: String
         get() = if (estimatedFare <= 0.0) {

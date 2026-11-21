@@ -15,6 +15,7 @@ import com.dfmob.data.model.TripPlanLocation
 import com.dfmob.data.model.TripPreference
 import com.dfmob.data.model.TripTimeMode
 import com.dfmob.data.repository.StopsRepository
+import com.dfmob.data.service.TripInsightsEvaluator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -82,13 +83,13 @@ class TripPlannerViewModel(
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         try {
             if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000L, 10f, locationListener)
             }
             if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000L, 2f, locationListener)
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 15f, locationListener)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 1000L, 1f, locationListener)
+                lm.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 5000L, 10f, locationListener)
             }
         } catch (_: SecurityException) {}
     }
@@ -525,9 +526,10 @@ class TripPlannerViewModel(
             if (debounceMs > 0) {
                 delay(debounceMs)
             }
+            val hadItineraries = _uiState.value.itineraries.isNotEmpty()
             _uiState.update {
                 it.copy(
-                    isSearchingTrips = true,
+                    isSearchingTrips = !hadItineraries,
                     tripSearchError = null,
                     hasSearched = true,
                     searchResults = emptyList()
@@ -540,14 +542,15 @@ class TripPlannerViewModel(
                     preference = _uiState.value.preference
                 )
                 val results = repository.searchTripPlan(origin, destination, filter)
+                val evaluatedResults = TripInsightsEvaluator.evaluate(results)
                 _uiState.update {
                     it.copy(
-                        itineraries = results,
+                        itineraries = evaluatedResults,
                         isSearchingTrips = false,
-                        tripSearchError = if (results.isEmpty()) "Nenhum trajeto encontrado para este horário." else null
+                        tripSearchError = if (evaluatedResults.isEmpty()) "Nenhum trajeto encontrado para este horário." else null
                     )
                 }
-                if (results.isNotEmpty()) {
+                if (evaluatedResults.isNotEmpty()) {
                     startLiveDeparturesTicker()
                 }
             } catch (e: CancellationException) {
@@ -574,7 +577,8 @@ class TripPlannerViewModel(
                 if (currentItineraries.isNotEmpty()) {
                     try {
                         val updated = repository.enrichItinerariesWithDepartures(currentItineraries)
-                        _uiState.update { it.copy(itineraries = updated) }
+                        val evaluated = TripInsightsEvaluator.evaluate(updated)
+                        _uiState.update { it.copy(itineraries = evaluated) }
                     } catch (_: Exception) {}
                 }
             }
@@ -614,7 +618,7 @@ class TripPlannerViewModel(
                 currentOrigin.latitude, currentOrigin.longitude,
                 loc.latitude, loc.longitude, dist
             )
-            if (isUnset || dist[0] > 10f) {
+            if (isUnset || dist[0] > 150f) {
                 val newOrigin = currentOrigin.copy(latE6 = latE6, lonE6 = lonE6)
                 _uiState.update { it.copy(origin = newOrigin) }
                 updated = true
@@ -629,7 +633,7 @@ class TripPlannerViewModel(
                 currentDest.latitude, currentDest.longitude,
                 loc.latitude, loc.longitude, dist
             )
-            if (isUnset || dist[0] > 10f) {
+            if (isUnset || dist[0] > 150f) {
                 val newDest = currentDest.copy(latE6 = latE6, lonE6 = lonE6)
                 _uiState.update { it.copy(destination = newDest) }
                 updated = true
@@ -638,7 +642,7 @@ class TripPlannerViewModel(
 
         if (updated) {
             fallbackJob?.cancel()
-            triggerTripSearchIfReady(debounceMs = 150L)
+            triggerTripSearchIfReady(debounceMs = 300L)
         }
     }
 
