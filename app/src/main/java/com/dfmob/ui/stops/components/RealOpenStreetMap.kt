@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -37,22 +36,18 @@ import com.dfmob.BuildConfig
 import com.dfmob.data.model.DFLocation
 import com.dfmob.data.model.LineRouteState
 import com.dfmob.data.model.TransitStop
-import com.dfmob.data.traffic.TrafficEndpointManager
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +55,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.InputStream
 
 // Basemaps minimalistas Stadia Maps no estilo Transit App com injecao segura de API key via BuildConfig
 private class StadiaTileSource(
@@ -80,86 +74,6 @@ private class StadiaTileSource(
 
 private val STADIA_SMOOTH = StadiaTileSource("StadiaSmoothHD", "alidade_smooth")
 private val STADIA_DARK = StadiaTileSource("StadiaDarkHD", "alidade_smooth_dark")
-
-private val EMPTY_TRANSPARENT_BITMAP by lazy {
-    Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-}
-
-// Camada inteligente de fluxo e congestionamento de trânsito em tempo real
-private class GoogleTrafficTileSource(
-    private val trafficManager: TrafficEndpointManager
-) : XYTileSource(
-    "GoogleCongestionTrafficV3",
-    0, 20, 256, ".png",
-    arrayOf("https://mt1.google.com/vt/")
-) {
-    override fun getTileURLString(pMapTileIndex: Long): String {
-        val x = MapTileIndex.getX(pMapTileIndex)
-        val y = MapTileIndex.getY(pMapTileIndex)
-        val z = MapTileIndex.getZoom(pMapTileIndex)
-        return trafficManager.getTileUrl(x, y, z)
-    }
-
-    override fun getDrawable(aFilePath: String): Drawable? {
-        val raw = super.getDrawable(aFilePath) ?: return null
-        return filterCongestionDrawable(raw)
-    }
-
-    override fun getDrawable(aTileInputStream: InputStream): Drawable? {
-        val raw = super.getDrawable(aTileInputStream) ?: return null
-        return filterCongestionDrawable(raw)
-    }
-
-    private fun filterCongestionDrawable(drawable: Drawable): Drawable {
-        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return drawable
-        val width = bitmap.width
-        val height = bitmap.height
-        if (width <= 0 || height <= 0) return drawable
-
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-
-        var hasCongestion = false
-        for (i in pixels.indices) {
-            val p = pixels[i]
-            val a = (p ushr 24) and 0xFF
-            if (a < 30) {
-                pixels[i] = 0
-                continue
-            }
-            val r = (p ushr 16) and 0xFF
-            val g = (p ushr 8) and 0xFF
-            val b = p and 0xFF
-
-            // Descarte de quase-tons de cinza (bordas de pistas, asfalto e textos residuais)
-            val maxC = maxOf(r, maxOf(g, b))
-            val minC = minOf(r, minOf(g, b))
-            if (maxC - minC < 35) {
-                pixels[i] = 0
-                continue
-            }
-
-            // Vermelho / Vermelho Escuro / Bordo (Congestionamento severo e parada)
-            val isRedOrBurgundy = r > 150 && g < 110 && b < 110 && r > (g * 1.4f)
-
-            // Amarelo / Laranja (Lentidao moderada e retencao)
-            val isYellowOrOrange = r > 180 && g > 100 && b < 100 && r > (b * 1.8f)
-
-            if (isRedOrBurgundy || isYellowOrOrange) {
-                hasCongestion = true
-            } else {
-                pixels[i] = 0
-            }
-        }
-
-        if (!hasCongestion) {
-            return BitmapDrawable(null, EMPTY_TRANSPARENT_BITMAP)
-        }
-
-        val outputBmp = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-        return BitmapDrawable(null, outputBmp)
-    }
-}
 
 /**
  * Cache em memoria dos 4 BitmapDrawables reutilizaveis para evitar alocacoes a 60 FPS.
@@ -181,23 +95,12 @@ fun RealOpenStreetMap(
     activeRoute: LineRouteState? = null,
     enableAutoCenterOnGps: Boolean = true,
     isDarkTheme: Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f,
-    isTrafficEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val pinCache = remember(context) { StopPinCache(context) }
-    val trafficManager = remember(context) { TrafficEndpointManager(context) }
-    val trafficTileSource = remember(trafficManager) { GoogleTrafficTileSource(trafficManager) }
-    val trafficProvider = remember(context, trafficTileSource) { MapTileProviderBasic(context, trafficTileSource) }
-    val trafficOverlay = remember(trafficProvider, context) {
-        TilesOverlay(trafficProvider, context).apply {
-            loadingBackgroundColor = android.graphics.Color.TRANSPARENT
-            loadingLineColor = android.graphics.Color.TRANSPARENT
-            isEnabled = isTrafficEnabled
-        }
-    }
     val routePolyline = remember { Polyline() }
     val directionOverlay = remember { RouteDirectionOverlay(context) }
     val stopsFolder = remember { FolderOverlay() }
@@ -293,27 +196,8 @@ fun RealOpenStreetMap(
         }
     }
 
-    DisposableEffect(trafficProvider) {
-        onDispose {
-            trafficProvider.detach()
-        }
-    }
-
-    LaunchedEffect(isTrafficEnabled) {
-        trafficOverlay.isEnabled = isTrafficEnabled
-        mapView.postInvalidate()
-    }
-
-    // Adiciona os overlays em ordem hierarquica: Transito -> Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
+    // Adiciona os overlays em ordem hierarquica: Polylines -> Setas Direcao -> Paradas -> Veiculos -> Localizacao Usuario
     LaunchedEffect(mapView) {
-        if (!mapView.overlays.contains(trafficOverlay)) {
-            val routeIdx = mapView.overlays.indexOf(routePolyline)
-            if (routeIdx >= 0) {
-                mapView.overlays.add(routeIdx, trafficOverlay)
-            } else {
-                mapView.overlays.add(0, trafficOverlay)
-            }
-        }
         if (!mapView.overlays.contains(routePolyline)) {
             mapView.overlays.add(routePolyline)
         }

@@ -14,7 +14,7 @@ Documento de especificação técnica das novas funcionalidades identificadas na
 | 4. Que Horas Devo Sair? | `ADVANCED_TIME_PICKER` | 1:1 total | Parâmetros Thrift `timeType` e `timeUtc` da API Moovit |
 | 5. Preferências de Rota | `TRIP_PLAN_ADVANCED_ROUTE` | 1:1 total | Mapeamento direto de enums Thrift `MVTripPlanPref` |
 | 6. Defina Sua Tela Inicial | `DEFAULT_TAB` | 1:1 funcional | SharedPreferences / DataStore local |
-| 7. Ver Trânsito no Mapa | `TRAFFIC_ON_MAP` | 1:1 visual e de cobertura | Overlay de fluxo em tempo real (Google Traffic) com auto-recuperação de endpoint |
+| 7. Ver Trânsito no Mapa | `TRAFFIC_ON_MAP` | Descartado | Descartado para manter o mapa do DFmob limpo, focado em transporte público e sem poluição visual externa |
 
 ---
 
@@ -153,7 +153,7 @@ No arquivo descompilado `com.moovit.feature.tripplan.ui.content.misc.a`, o Moovi
 
 ---
 
-## 7. Ver Trânsito no Mapa (`TRAFFIC_ON_MAP`) [CONCLUÍDO]
+## 7. Ver Trânsito no Mapa (`TRAFFIC_ON_MAP`) [DESCARTADO]
 
 ### 6.1 Descrição e Comportamento no Moovit
 * O Moovit ativa a camada de tráfego sobre o Google Maps (`GoogleMap.setTrafficEnabled(true)`).
