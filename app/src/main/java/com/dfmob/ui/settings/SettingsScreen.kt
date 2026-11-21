@@ -1,7 +1,6 @@
 package com.dfmob.ui.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -604,14 +603,8 @@ private fun ThemeOptionButton(
     fontSize: TextUnit = 13.sp,
     onClick: () -> Unit
 ) {
-    val bgColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
-        label = "themeBg"
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (isSelected) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "themeText"
-    )
+    val bgColor = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent
+    val textColor = if (isSelected) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         modifier = modifier
@@ -693,18 +686,9 @@ private fun NotificationMilestoneChip(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val bgColor by animateColorAsState(
-        targetValue = if (isEnabled) TransitGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        label = "chipBg"
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-        label = "chipBorder"
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        label = "chipText"
-    )
+    val bgColor = if (isEnabled) TransitGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    val borderColor = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val textColor = if (isEnabled) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
 
     Box(
         modifier = modifier
