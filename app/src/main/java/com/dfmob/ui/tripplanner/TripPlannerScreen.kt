@@ -545,7 +545,9 @@ fun TripPlannerScreen(
                     }
 
                     state.itineraries.isNotEmpty() -> {
-                        val sortedItineraries = remember(state.itineraries) { state.itineraries.sortedBy { it.totalDurationMinutes } }
+                        val sortedItineraries = remember(state.itineraries) {
+                            state.itineraries.sortedBy { it.totalDurationMinutes }
+                        }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -598,8 +600,12 @@ fun TripPlannerScreen(
                                 }
                             }
 
-                            // Ordenado do que leva menos tempo ate o que leva mais tempo (com key para scroll a 120 FPS sem stutters)
-                            items(sortedItineraries, key = { it.guid }) { itinerary ->
+                            // Ordenado do que leva menos tempo ate o que leva mais tempo (com key e contentType para reciclagem suave)
+                            items(
+                                items = sortedItineraries,
+                                key = { it.guid },
+                                contentType = { "itinerary_card" }
+                            ) { itinerary ->
                                 TripItineraryCard(
                                     itinerary = itinerary,
                                     onClick = { viewModel.selectItinerary(itinerary) }
@@ -1117,9 +1123,9 @@ private fun TripItineraryCard(
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
         ),
-        shadowElevation = 2.dp,
+        shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -1228,16 +1234,15 @@ private fun TripItineraryCard(
                 }
             }
 
-            // Linha do trajeto visual em faixa continua sem scroll aninhado (elimina micro-stutters)
+            // Linha do trajeto visual em faixa continua com scroll horizontal
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
             ) {
-                val displayLegs = visibleLegs.take(4)
-                val remainingLegs = visibleLegs.size - displayLegs.size
-
-                displayLegs.forEachIndexed { index, leg ->
+                visibleLegs.forEachIndexed { index, leg ->
                     when (leg.type) {
                         TripLegType.WALK, TripLegType.TRANSFER_WALK -> {
                             Row(
@@ -1268,7 +1273,7 @@ private fun TripItineraryCard(
                         TripLegType.TRANSIT, TripLegType.WAIT -> {
                             // Agrupa linhas alternativas que servem para este mesmo trecho
                             val lines = leg.lines
-                            val maxBadges = 3
+                            val maxBadges = 4
                             val displayLines = lines.take(maxBadges)
                             val remaining = lines.size - maxBadges
 
@@ -1331,7 +1336,7 @@ private fun TripItineraryCard(
                         }
                     }
 
-                    if (index < displayLegs.size - 1) {
+                    if (index < visibleLegs.size - 1) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
                             contentDescription = null,
@@ -1340,27 +1345,18 @@ private fun TripItineraryCard(
                         )
                     }
                 }
-
-                if (remainingLegs > 0) {
-                    Text(
-                        text = "+$remainingLegs etapas",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
-            // Linha dedicada aos proximos horarios de onibus da primeira perna (sem scroll aninhado)
+            // Linha dedicada aos proximos horarios de onibus da primeira perna
             val firstTransitLeg = itinerary.legs.firstOrNull { it.type == TripLegType.TRANSIT }
             if (firstTransitLeg != null && firstTransitLeg.upcomingDepartures.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.AccessTime,
@@ -1376,7 +1372,7 @@ private fun TripItineraryCard(
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    firstTransitLeg.upcomingDepartures.take(4).forEach { dep ->
+                    firstTransitLeg.upcomingDepartures.take(5).forEach { dep ->
                         if (dep.isRealtime) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1473,10 +1469,15 @@ private fun formatDuration(minutes: Int): String {
     }
 }
 
+private val brasiliaTimeZone = TimeZone.getTimeZone("America/Sao_Paulo")
+private val brasiliaCalendar = ThreadLocal.withInitial { Calendar.getInstance(brasiliaTimeZone) }
+
 private fun formatEpochMsToHHMM(epochMs: Long): String {
-    val cal = Calendar.getInstance(TimeZone.getTimeZone("America/Sao_Paulo"))
+    val cal = brasiliaCalendar.get() ?: Calendar.getInstance(brasiliaTimeZone)
     cal.timeInMillis = epochMs
     val h = cal.get(Calendar.HOUR_OF_DAY)
     val m = cal.get(Calendar.MINUTE)
-    return String.format(Locale.ROOT, "%02d:%02d", h, m)
+    val hStr = if (h < 10) "0$h" else "$h"
+    val mStr = if (m < 10) "0$m" else "$m"
+    return "$hStr:$mStr"
 }

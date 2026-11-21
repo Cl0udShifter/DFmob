@@ -29,6 +29,7 @@ import com.dfmob.ui.alerts.AlertsScreen
 import com.dfmob.ui.home.HomeScreen
 import com.dfmob.ui.lines.LinesScreen
 import com.dfmob.ui.settings.SettingsScreen
+import com.dfmob.ui.splash.SplashScreen
 import com.dfmob.ui.stops.StopsScreen
 import com.dfmob.ui.tripplanner.TripPlannerScreen
 import com.dfmob.ui.theme.DFmobTheme
@@ -159,6 +160,9 @@ class MainActivity : ComponentActivity() {
                 var targetOriginLocationForTripPlanner by remember { mutableStateOf<com.dfmob.data.model.TripPlanLocation?>(null) }
                 var targetDestinationLocationForTripPlanner by remember { mutableStateOf<com.dfmob.data.model.TripPlanLocation?>(null) }
                 var stopsOpenedFromLines by rememberSaveable { mutableStateOf(false) }
+                var showSplash by rememberSaveable {
+                    mutableStateOf(intent.getStringExtra(EXTRA_NAVIGATE_TO) == null)
+                }
 
                 LaunchedEffect(pendingScreen) {
                     pendingScreen?.let {
@@ -196,108 +200,116 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Crossfade(targetState = currentScreen, label = "ScreenTransition") { screen ->
-                    when (screen) {
-                        AppScreen.HOME -> HomeScreen(
-                            favoritesRepository = favoritesRepository,
-                            recentSearchesRepository = recentSearchesRepository,
-                            onNavigateToLines = { currentScreen = AppScreen.LINES },
-                            onNavigateToStops = {
-                                targetLineNumberForStops = null
-                                targetLineIdForStops = null
-                                stopsOpenedFromLines = false
-                                currentScreen = AppScreen.STOPS
-                            },
-                            onNavigateToLineRoute = { lineNum, lineId ->
-                                targetLineNumberForStops = lineNum
-                                targetLineIdForStops = lineId
-                                stopsOpenedFromLines = false
-                                currentScreen = AppScreen.STOPS
-                            },
-                            onNavigateToTripPlanner = { dest ->
-                                targetDestinationForTripPlanner = dest
-                                targetOriginLocationForTripPlanner = null
-                                targetDestinationLocationForTripPlanner = null
-                                currentScreen = AppScreen.TRIP_PLANNER
-                            },
-                            onNavigateToTripPlannerWithTrip = { trip ->
-                                targetOriginLocationForTripPlanner = trip.origin
-                                targetDestinationLocationForTripPlanner = trip.destination
-                                targetDestinationForTripPlanner = null
-                                currentScreen = AppScreen.TRIP_PLANNER
-                            },
-                            onNavigateToActiveTrip = {
-                                targetDestinationForTripPlanner = null
-                                targetOriginLocationForTripPlanner = null
-                                targetDestinationLocationForTripPlanner = null
-                                resumeActiveTrip = true
-                                currentScreen = AppScreen.TRIP_PLANNER
-                            },
-                            onNavigateToAlerts = {
-                                currentScreen = AppScreen.ALERTS
-                            },
-                            onNavigateToSettings = {
-                                currentScreen = AppScreen.SETTINGS
+                Crossfade(targetState = showSplash, label = "SplashTransition") { isSplash ->
+                    if (isSplash) {
+                        SplashScreen(
+                            onFinished = { showSplash = false }
+                        )
+                    } else {
+                        Crossfade(targetState = currentScreen, label = "ScreenTransition") { screen ->
+                            when (screen) {
+                                AppScreen.HOME -> HomeScreen(
+                                    favoritesRepository = favoritesRepository,
+                                    recentSearchesRepository = recentSearchesRepository,
+                                    onNavigateToLines = { currentScreen = AppScreen.LINES },
+                                    onNavigateToStops = {
+                                        targetLineNumberForStops = null
+                                        targetLineIdForStops = null
+                                        stopsOpenedFromLines = false
+                                        currentScreen = AppScreen.STOPS
+                                    },
+                                    onNavigateToLineRoute = { lineNum, lineId ->
+                                        targetLineNumberForStops = lineNum
+                                        targetLineIdForStops = lineId
+                                        stopsOpenedFromLines = false
+                                        currentScreen = AppScreen.STOPS
+                                    },
+                                    onNavigateToTripPlanner = { dest ->
+                                        targetDestinationForTripPlanner = dest
+                                        targetOriginLocationForTripPlanner = null
+                                        targetDestinationLocationForTripPlanner = null
+                                        currentScreen = AppScreen.TRIP_PLANNER
+                                    },
+                                    onNavigateToTripPlannerWithTrip = { trip ->
+                                        targetOriginLocationForTripPlanner = trip.origin
+                                        targetDestinationLocationForTripPlanner = trip.destination
+                                        targetDestinationForTripPlanner = null
+                                        currentScreen = AppScreen.TRIP_PLANNER
+                                    },
+                                    onNavigateToActiveTrip = {
+                                        targetDestinationForTripPlanner = null
+                                        targetOriginLocationForTripPlanner = null
+                                        targetDestinationLocationForTripPlanner = null
+                                        resumeActiveTrip = true
+                                        currentScreen = AppScreen.TRIP_PLANNER
+                                    },
+                                    onNavigateToAlerts = {
+                                        currentScreen = AppScreen.ALERTS
+                                    },
+                                    onNavigateToSettings = {
+                                        currentScreen = AppScreen.SETTINGS
+                                    }
+                                )
+                                AppScreen.LINES -> LinesScreen(
+                                    favoritesRepository = favoritesRepository,
+                                    onBack = { currentScreen = AppScreen.HOME },
+                                    onLineClick = { line ->
+                                        targetLineNumberForStops = line.lineNumber
+                                        targetLineIdForStops = null
+                                        stopsOpenedFromLines = true
+                                        currentScreen = AppScreen.STOPS
+                                    }
+                                )
+                                AppScreen.STOPS -> StopsScreen(
+                                    favoritesRepository = favoritesRepository,
+                                    initialLineNumber = targetLineNumberForStops,
+                                    initialLineId = targetLineIdForStops,
+                                    initialStopId = targetStopIdForStops,
+                                    initialDestination = targetDestinationForStops,
+                                    fromLinesScreen = stopsOpenedFromLines,
+                                    onBack = {
+                                        val returnToLines = stopsOpenedFromLines
+                                        targetLineNumberForStops = null
+                                        targetLineIdForStops = null
+                                        targetStopIdForStops = null
+                                        targetDestinationForStops = null
+                                        stopsOpenedFromLines = false
+                                        currentScreen = if (returnToLines) AppScreen.LINES else AppScreen.HOME
+                                    }
+                                )
+                                AppScreen.TRIP_PLANNER -> TripPlannerScreen(
+                                    initialDestination = targetDestinationForTripPlanner,
+                                    initialOriginLocation = targetOriginLocationForTripPlanner,
+                                    initialDestinationLocation = targetDestinationLocationForTripPlanner,
+                                    resumeActiveTrip = resumeActiveTrip,
+                                    onActiveTripResumed = { resumeActiveTrip = false },
+                                    favoritesRepository = favoritesRepository,
+                                    recentSearchesRepository = recentSearchesRepository,
+                                    onBack = {
+                                        resumeActiveTrip = false
+                                        targetDestinationForTripPlanner = null
+                                        targetOriginLocationForTripPlanner = null
+                                        targetDestinationLocationForTripPlanner = null
+                                        currentScreen = AppScreen.HOME
+                                    }
+                                )
+                                AppScreen.ALERTS -> AlertsScreen(
+                                    onBack = { currentScreen = AppScreen.HOME },
+                                    onLineClick = { lineNum, lineId ->
+                                        targetLineNumberForStops = lineNum
+                                        targetLineIdForStops = lineId
+                                        stopsOpenedFromLines = false
+                                        currentScreen = AppScreen.STOPS
+                                    }
+                                )
+                                AppScreen.SETTINGS -> SettingsScreen(
+                                    themePreferences = themePreferences,
+                                    currentThemeMode = themeMode,
+                                    notificationPreferences = notificationPreferences,
+                                    onBack = { currentScreen = AppScreen.HOME }
+                                )
                             }
-                        )
-                        AppScreen.LINES -> LinesScreen(
-                            favoritesRepository = favoritesRepository,
-                            onBack = { currentScreen = AppScreen.HOME },
-                            onLineClick = { line ->
-                                targetLineNumberForStops = line.lineNumber
-                                targetLineIdForStops = null
-                                stopsOpenedFromLines = true
-                                currentScreen = AppScreen.STOPS
-                            }
-                        )
-                        AppScreen.STOPS -> StopsScreen(
-                            favoritesRepository = favoritesRepository,
-                            initialLineNumber = targetLineNumberForStops,
-                            initialLineId = targetLineIdForStops,
-                            initialStopId = targetStopIdForStops,
-                            initialDestination = targetDestinationForStops,
-                            fromLinesScreen = stopsOpenedFromLines,
-                            onBack = {
-                                val returnToLines = stopsOpenedFromLines
-                                targetLineNumberForStops = null
-                                targetLineIdForStops = null
-                                targetStopIdForStops = null
-                                targetDestinationForStops = null
-                                stopsOpenedFromLines = false
-                                currentScreen = if (returnToLines) AppScreen.LINES else AppScreen.HOME
-                            }
-                        )
-                        AppScreen.TRIP_PLANNER -> TripPlannerScreen(
-                            initialDestination = targetDestinationForTripPlanner,
-                            initialOriginLocation = targetOriginLocationForTripPlanner,
-                            initialDestinationLocation = targetDestinationLocationForTripPlanner,
-                            resumeActiveTrip = resumeActiveTrip,
-                            onActiveTripResumed = { resumeActiveTrip = false },
-                            favoritesRepository = favoritesRepository,
-                            recentSearchesRepository = recentSearchesRepository,
-                            onBack = {
-                                resumeActiveTrip = false
-                                targetDestinationForTripPlanner = null
-                                targetOriginLocationForTripPlanner = null
-                                targetDestinationLocationForTripPlanner = null
-                                currentScreen = AppScreen.HOME
-                            }
-                        )
-                        AppScreen.ALERTS -> AlertsScreen(
-                            onBack = { currentScreen = AppScreen.HOME },
-                            onLineClick = { lineNum, lineId ->
-                                targetLineNumberForStops = lineNum
-                                targetLineIdForStops = lineId
-                                stopsOpenedFromLines = false
-                                currentScreen = AppScreen.STOPS
-                            }
-                        )
-                        AppScreen.SETTINGS -> SettingsScreen(
-                            themePreferences = themePreferences,
-                            currentThemeMode = themeMode,
-                            notificationPreferences = notificationPreferences,
-                            onBack = { currentScreen = AppScreen.HOME }
-                        )
+                        }
                     }
                 }
             }
