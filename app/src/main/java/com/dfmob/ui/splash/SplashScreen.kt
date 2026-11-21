@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
@@ -162,9 +164,13 @@ fun SplashScreen(
 }
 
 /**
- * Desenha o traçado contínuo e elegante da Variante 2 (estilo Transit App).
- * O loop do D e o elo S do F se preenchem em sincronia fluida com pontas arredondadas,
- * seguidos pela barra média e a cauda inferior do F.
+ * Desenha o traçado contínuo e exato da Variante 2 (estilo Transit App).
+ * Reproduz com fidelidade milimétrica a geometria oficial:
+ * 1. Laço principal do D e fita superior ascendendo para a barra do F
+ * 2. Curva inferior do D subindo para o elo central
+ * 3. Barra horizontal média do F
+ * 4. Cauda inferior do F
+ * Todas com degradê de trânsito esmeralda vivo (#00D26A -> #00783E).
  */
 @Composable
 private fun VectorAnimatedIcon(
@@ -178,9 +184,9 @@ private fun VectorAnimatedIcon(
         val w = size.width
         val h = size.height
 
-        // Proporção fiel do ícone oficial Variante 2: largura 360, altura 245
-        val scale = (w * 0.88f) / 360f
-        val strokeW = 38f * scale
+        // Proporção matemática fiel do glifo oficial Variante 2: largura 485, altura 330
+        val scale = (w * 0.90f) / 485f
+        val strokeW = 56f * scale
         val strokeStyle = Stroke(
             width = strokeW,
             cap = StrokeCap.Round,
@@ -188,8 +194,19 @@ private fun VectorAnimatedIcon(
         )
 
         // Centralização exata no Canvas
-        val offsetX = (w - 360f * scale) / 2f
-        val offsetY = (h - 245f * scale) / 2f
+        val offsetX = (w - 485f * scale) / 2f
+        val offsetY = (h - 330f * scale) / 2f
+
+        // Degradê oficial de trânsito (#00D26A -> #00783E)
+        val gradientBrush = Brush.linearGradient(
+            colors = listOf(
+                Color(0xFF00D26A),
+                Color(0xFF05B064),
+                Color(0xFF00783E)
+            ),
+            start = Offset(offsetX, offsetY),
+            end = Offset(offsetX + 485f * scale, offsetY + 330f * scale)
+        )
 
         fun drawTrimmedPath(path: Path, pathProgress: Float) {
             if (pathProgress <= 0.001f) return
@@ -198,67 +215,65 @@ private fun VectorAnimatedIcon(
             val length = pathMeasure.length
             if (length > 0f) {
                 pathMeasure.getSegment(0f, length * pathProgress.coerceIn(0f, 1f), subPath, true)
-                drawPath(path = subPath, color = TransitGreen, style = strokeStyle)
+                drawPath(path = subPath, brush = gradientBrush, style = strokeStyle)
             }
         }
 
-        // 1. Loop contínuo do D (haste vertical, curvas suaves e arco direito fechando o D)
-        val pathDLoop = Path().apply {
-            moveTo(offsetX + 20f * scale, offsetY + 55f * scale)
+        // 1. Laço contínuo do D subindo a haste e curvando na fita superior do F
+        val pathDMain = Path().apply {
+            moveTo(offsetX + 81f * scale, offsetY + 304f * scale)
             cubicTo(
-                offsetX + 20f * scale, offsetY + 20f * scale,
-                offsetX + 25f * scale, offsetY + 20f * scale,
-                offsetX + 55f * scale, offsetY + 20f * scale
+                offsetX + 46f * scale, offsetY + 304f * scale,
+                offsetX + 26f * scale, offsetY + 304f * scale,
+                offsetX + 26f * scale, offsetY + 266f * scale
             )
-            lineTo(offsetX + 130f * scale, offsetY + 20f * scale)
+            lineTo(offsetX + 26f * scale, offsetY + 63f * scale)
             cubicTo(
-                offsetX + 180f * scale, offsetY + 20f * scale,
-                offsetX + 180f * scale, offsetY + 225f * scale,
-                offsetX + 130f * scale, offsetY + 225f * scale
+                offsetX + 26f * scale, offsetY + 25f * scale,
+                offsetX + 46f * scale, offsetY + 25f * scale,
+                offsetX + 81f * scale, offsetY + 25f * scale
             )
-            lineTo(offsetX + 55f * scale, offsetY + 225f * scale)
+            lineTo(offsetX + 151f * scale, offsetY + 25f * scale)
             cubicTo(
-                offsetX + 25f * scale, offsetY + 225f * scale,
-                offsetX + 20f * scale, offsetY + 225f * scale,
-                offsetX + 20f * scale, offsetY + 190f * scale
+                offsetX + 206f * scale, offsetY + 25f * scale,
+                offsetX + 273f * scale, offsetY + 48f * scale,
+                offsetX + 273f * scale, offsetY + 88f * scale
             )
-            close()
+            cubicTo(
+                offsetX + 273f * scale, offsetY + 43f * scale,
+                offsetX + 296f * scale, offsetY + 25f * scale,
+                offsetX + 341f * scale, offsetY + 25f * scale
+            )
+            lineTo(offsetX + 459f * scale, offsetY + 25f * scale)
         }
 
-        // 2. Elo S contínuo: sobe da base do D, cruza o centro e desdobra na barra superior do F
-        val pathSCurveRibbon = Path().apply {
-            moveTo(offsetX + 130f * scale, offsetY + 225f * scale)
+        // 2. Curva inferior do D subindo pelo elo central
+        val pathDBottomCurve = Path().apply {
+            moveTo(offsetX + 81f * scale, offsetY + 304f * scale)
+            lineTo(offsetX + 161f * scale, offsetY + 304f * scale)
             cubicTo(
-                offsetX + 175f * scale, offsetY + 210f * scale,
-                offsetX + 185f * scale, offsetY + 130f * scale,
-                offsetX + 205f * scale, offsetY + 70f * scale
+                offsetX + 216f * scale, offsetY + 304f * scale,
+                offsetX + 273f * scale, offsetY + 248f * scale,
+                offsetX + 273f * scale, offsetY + 163f * scale
             )
-            cubicTo(
-                offsetX + 220f * scale, offsetY + 20f * scale,
-                offsetX + 260f * scale, offsetY + 20f * scale,
-                offsetX + 345f * scale, offsetY + 20f * scale
-            )
+            lineTo(offsetX + 273f * scale, offsetY + 88f * scale)
         }
 
-        // 3. F - Barra média horizontal com ponta arredondada
+        // 3. F - Barra média horizontal com pontas arredondadas
         val pathFMiddle = Path().apply {
-            moveTo(offsetX + 240f * scale, offsetY + 122f * scale)
-            lineTo(offsetX + 325f * scale, offsetY + 122f * scale)
+            moveTo(offsetX + 339f * scale, offsetY + 165f * scale)
+            lineTo(offsetX + 426f * scale, offsetY + 165f * scale)
         }
 
-        // 4. F - Cauda inferior curva descendo suavemente com ponta arredondada
+        // 4. F - Cauda inferior vertical com ponta arredondada
         val pathFTail = Path().apply {
-            moveTo(offsetX + 195f * scale, offsetY + 160f * scale)
-            cubicTo(
-                offsetX + 195f * scale, offsetY + 185f * scale,
-                offsetX + 205f * scale, offsetY + 205f * scale,
-                offsetX + 205f * scale, offsetY + 235f * scale
-            )
+            moveTo(offsetX + 273f * scale, offsetY + 261f * scale)
+            lineTo(offsetX + 273f * scale, offsetY + 305f * scale)
         }
 
         // Animação sincronizada das linhas
-        drawTrimmedPath(pathDLoop, progress)
-        drawTrimmedPath(pathSCurveRibbon, progress)
+        drawTrimmedPath(pathDMain, progress)
+        drawTrimmedPath(pathDBottomCurve, progress)
         val branchProgress = (progress * 1.35f - 0.35f).coerceIn(0f, 1f)
         drawTrimmedPath(pathFMiddle, branchProgress)
         drawTrimmedPath(pathFTail, branchProgress)
