@@ -411,7 +411,7 @@ fun TripItineraryDetailView(
         markersFolder.items.clear()
 
         val allPoints = mutableListOf<GeoPoint>()
-        val transitDirectionPoints = mutableListOf<GeoPoint>()
+        val transitSections = mutableListOf<RouteDirectionOverlay.ColoredRouteSection>()
 
         itinerary.legs.forEach { leg ->
             val polylineStr = leg.polylineEncoded
@@ -419,8 +419,16 @@ fun TripItineraryDetailView(
                 val decoded = PolylineDecoder.decode(polylineStr)
                 val geoPoints = decoded.map { GeoPoint(it.first, it.second) }
                 allPoints.addAll(geoPoints)
+
+                val colorHex = leg.lines.firstOrNull()?.colorHex ?: "#00A859"
+                val parsedColor = try {
+                    android.graphics.Color.parseColor(colorHex)
+                } catch (_: Exception) {
+                    android.graphics.Color.parseColor("#00A859")
+                }
+
                 if (leg.type == TripLegType.TRANSIT) {
-                    transitDirectionPoints.addAll(geoPoints)
+                    transitSections.add(RouteDirectionOverlay.ColoredRouteSection(geoPoints, parsedColor))
                 }
 
                 val line = Polyline(mapView).apply {
@@ -434,12 +442,6 @@ fun TripItineraryDetailView(
                             pathEffect = DashPathEffect(floatArrayOf(14f, 14f), 0f)
                         }
                     } else {
-                        val colorHex = leg.lines.firstOrNull()?.colorHex ?: "#00A859"
-                        val parsedColor = try {
-                            android.graphics.Color.parseColor(colorHex)
-                        } catch (_: Exception) {
-                            android.graphics.Color.parseColor("#00A859")
-                        }
                         outlinePaint.apply {
                             color = parsedColor
                             strokeWidth = 14f
@@ -451,11 +453,7 @@ fun TripItineraryDetailView(
                 polylinesFolder.add(line)
             }
         }
-        val firstTransitLeg = itinerary.legs.firstOrNull { it.type == TripLegType.TRANSIT }
-        val transitColor = firstTransitLeg?.lines?.firstOrNull()?.colorHex?.let {
-            try { android.graphics.Color.parseColor(it) } catch (_: Exception) { null }
-        } ?: android.graphics.Color.parseColor("#00A859")
-        directionOverlay.setPoints(transitDirectionPoints, transitColor)
+        directionOverlay.setSections(transitSections)
 
         // Marcador de Origem
         if (origin != null) {

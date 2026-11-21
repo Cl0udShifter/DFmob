@@ -30,9 +30,15 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
 
     private val density = context.resources.displayMetrics.density
 
+    data class ColoredRouteSection(
+        val points: List<GeoPoint>,
+        val color: Int
+    )
+
     private data class StaticArrow(
         val geoPoint: GeoPoint,
-        val angleDeg: Float
+        val angleDeg: Float,
+        val color: Int
     )
 
     @Volatile
@@ -86,7 +92,76 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
         }
     }
 
+    fun setSections(sections: List<ColoredRouteSection>) {
+        if (sections.isEmpty()) {
+            staticArrows = emptyList()
+            return
+        }
+
+        val stepMeters = 350.0
+        val arrows = ArrayList<StaticArrow>()
+
+        for (section in sections) {
+            val points = section.points
+            if (points.size < 2) continue
+
+            val sectionColor = section.color
+            var accumulated = 0.0
+            var nextTarget = 150.0
+            val arrowsBefore = arrows.size
+
+            for (i in 0 until points.size - 1) {
+                val pA = points[i]
+                val pB = points[i + 1]
+                val segDist = pA.distanceToAsDouble(pB)
+                if (segDist <= 0.001) continue
+
+                val dLat = pB.latitude - pA.latitude
+                val dLon = pB.longitude - pA.longitude
+                val cosLat = cos(Math.toRadians(pA.latitude))
+                val angleDeg = Math.toDegrees(atan2(-dLat, dLon * cosLat)).toFloat()
+
+                while (accumulated + segDist >= nextTarget) {
+                    val fraction = (nextTarget - accumulated) / segDist
+                    val arrowLat = pA.latitude + fraction * dLat
+                    val arrowLon = pA.longitude + fraction * dLon
+                    arrows.add(StaticArrow(GeoPoint(arrowLat, arrowLon), angleDeg, sectionColor))
+                    nextTarget += stepMeters
+                }
+
+                accumulated += segDist
+            }
+
+            // Se o trecho tiver pelo menos 80m e nenhuma seta coube no target de 150m, adiciona seta no meio
+            if (arrows.size == arrowsBefore && accumulated >= 80.0) {
+                var acc = 0.0
+                val targetMid = accumulated / 2.0
+                for (i in 0 until points.size - 1) {
+                    val pA = points[i]
+                    val pB = points[i + 1]
+                    val segDist = pA.distanceToAsDouble(pB)
+                    if (segDist <= 0.001) continue
+                    if (acc + segDist >= targetMid) {
+                        val fraction = (targetMid - acc) / segDist
+                        val dLat = pB.latitude - pA.latitude
+                        val dLon = pB.longitude - pA.longitude
+                        val cosLat = cos(Math.toRadians(pA.latitude))
+                        val angleDeg = Math.toDegrees(atan2(-dLat, dLon * cosLat)).toFloat()
+                        val arrowLat = pA.latitude + fraction * dLat
+                        val arrowLon = pA.longitude + fraction * dLon
+                        arrows.add(StaticArrow(GeoPoint(arrowLat, arrowLon), angleDeg, sectionColor))
+                        break
+                    }
+                    acc += segDist
+                }
+            }
+        }
+
+        this.staticArrows = arrows
+    }
+
     fun setPoints(newPoints: List<GeoPoint>, color: Int? = null) {
+        val targetColor = color ?: this.circleColor
         if (color != null) {
             setColor(color)
         }
@@ -94,35 +169,7 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
             staticArrows = emptyList()
             return
         }
-
-        val stepMeters = 350.0
-        val arrows = ArrayList<StaticArrow>()
-        var accumulated = 0.0
-        var nextTarget = 150.0
-
-        for (i in 0 until newPoints.size - 1) {
-            val pA = newPoints[i]
-            val pB = newPoints[i + 1]
-            val segDist = pA.distanceToAsDouble(pB)
-            if (segDist <= 0.001) continue
-
-            val dLat = pB.latitude - pA.latitude
-            val dLon = pB.longitude - pA.longitude
-            val cosLat = cos(Math.toRadians(pA.latitude))
-            val angleDeg = Math.toDegrees(atan2(-dLat, dLon * cosLat)).toFloat()
-
-            while (accumulated + segDist >= nextTarget) {
-                val fraction = (nextTarget - accumulated) / segDist
-                val arrowLat = pA.latitude + fraction * dLat
-                val arrowLon = pA.longitude + fraction * dLon
-                arrows.add(StaticArrow(GeoPoint(arrowLat, arrowLon), angleDeg))
-                nextTarget += stepMeters
-            }
-
-            accumulated += segDist
-        }
-
-        this.staticArrows = arrows
+        setSections(listOf(ColoredRouteSection(newPoints, targetColor)))
     }
 
     override fun draw(canvas: Canvas?, mapView: MapView?, shadow: Boolean) {
@@ -137,6 +184,8 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
         val height = mapView.height
         val mapOrientation = mapView.mapOrientation
 
+        var lastColor: Int? = null
+
         for (i in arrows.indices) {
             if (isHalf && (i % 2 != 0)) continue
 
@@ -147,6 +196,14 @@ class RouteDirectionOverlay(context: Context) : Overlay() {
             val py = screenPt.y
 
             if (px < -30 || px > width + 30 || py < -30 || py > height + 30) continue
+
+            if (lastColor == null || arrow.color != lastColor) {
+                lastColor = arrow.color
+                circleFillPaint.color = arrow.color
+                val isBright = ColorUtils.calculateLuminance(arrow.color) > 0.65
+                arrowPaint.color = if (isBright) Color.BLACK else Color.WHITE
+                circleBorderPaint.color = if (isBright) Color.parseColor("#40000000") else Color.WHITE
+            }
 
             canvas.save()
             canvas.translate(px.toFloat(), py.toFloat())
