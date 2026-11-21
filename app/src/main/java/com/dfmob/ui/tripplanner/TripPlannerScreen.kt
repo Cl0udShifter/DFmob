@@ -481,7 +481,7 @@ fun TripPlannerScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // MODULO 2: Filtros de Controle de Tempo (+15min, -15min, Menos Trocas, etc.)
+            // MODULO 2: Filtros de Controle de Tempo e Preferências
             TimeAndPreferencesRow(
                 timeMode = state.timeMode,
                 targetTimeUtc = state.targetTimeUtc,
@@ -491,23 +491,7 @@ fun TripPlannerScreen(
                 onOpenTimePicker = { isTimePickerSheetOpen = true },
                 onOpenPreferences = { isPreferencesSheetOpen = true },
                 onAddMinutes = { viewModel.addTimeMinutes(15) },
-                onSubtractMinutes = { viewModel.addTimeMinutes(-15) },
-                onTogglePreference = { viewModel.togglePreference(it) },
-                onToggleModal = { isBus ->
-                    if (isBus) {
-                        if (state.allowBus && !state.allowSubway) {
-                            Toast.makeText(context, "Ao menos um meio de transporte deve permanecer ativo", Toast.LENGTH_SHORT).show()
-                        } else {
-                            viewModel.setModalFilters(!state.allowBus, state.allowSubway)
-                        }
-                    } else {
-                        if (!state.allowBus && state.allowSubway) {
-                            Toast.makeText(context, "Ao menos um meio de transporte deve permanecer ativo", Toast.LENGTH_SHORT).show()
-                        } else {
-                            viewModel.setModalFilters(state.allowBus, !state.allowSubway)
-                        }
-                    }
-                }
+                onSubtractMinutes = { viewModel.addTimeMinutes(-15) }
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -978,9 +962,7 @@ private fun TimeAndPreferencesRow(
     onOpenTimePicker: () -> Unit,
     onOpenPreferences: () -> Unit,
     onAddMinutes: () -> Unit,
-    onSubtractMinutes: () -> Unit,
-    onTogglePreference: (TripPreference) -> Unit,
-    onToggleModal: (isBus: Boolean) -> Unit
+    onSubtractMinutes: () -> Unit
 ) {
     val now = System.currentTimeMillis()
     val canSubtract = targetTimeUtc >= now + (15 * 60 * 1000L)
@@ -1019,7 +1001,7 @@ private fun TimeAndPreferencesRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Seletor de Modo de Horário (Abre BottomSheet Material 3)
+        // 1. Seletor de Modo de Horário (Abre BottomSheet Material 3)
         Surface(
             onClick = onOpenTimePicker,
             shape = RoundedCornerShape(10.dp),
@@ -1058,63 +1040,7 @@ private fun TimeAndPreferencesRow(
             }
         }
 
-        // Botao +15min
-        Surface(
-            onClick = onAddMinutes,
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = "15m",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-
-        // Botao -15min (ativo apenas se ha 15min ou mais alem do agora)
-        if (canSubtract) {
-            Surface(
-                onClick = onSubtractMinutes,
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Remove,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "15m",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
-
-        // Botao Filtros e Preferencias (Abre BottomSheet com modais e criterios)
+        // 2. Botão Filtros e Preferências (Abre BottomSheet com modais e critérios)
         Surface(
             onClick = onOpenPreferences,
             shape = RoundedCornerShape(10.dp),
@@ -1154,111 +1080,59 @@ private fun TimeAndPreferencesRow(
             }
         }
 
-        // Chip Menos trocas
-        val isLeastTransfers = preference == TripPreference.LEAST_TRANSFERS
+        // 3. Botão +15min
         Surface(
-            onClick = { onTogglePreference(TripPreference.LEAST_TRANSFERS) },
+            onClick = onAddMinutes,
             shape = RoundedCornerShape(10.dp),
-            color = if (isLeastTransfers) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (isLeastTransfers) TransitGreen else Color.Transparent
-            )
-        ) {
-            Text(
-                text = "Menos trocas",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                ),
-                color = if (isLeastTransfers) TransitGreen else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-            )
-        }
-
-        // Chip Caminhar menos
-        val isLeastWalking = preference == TripPreference.LEAST_WALKING
-        Surface(
-            onClick = { onTogglePreference(TripPreference.LEAST_WALKING) },
-            shape = RoundedCornerShape(10.dp),
-            color = if (isLeastWalking) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (isLeastWalking) TransitGreen else Color.Transparent
-            )
-        ) {
-            Text(
-                text = "Caminhar menos",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                ),
-                color = if (isLeastWalking) TransitGreen else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-            )
-        }
-
-        // Chip Modal Ônibus
-        Surface(
-            onClick = { onToggleModal(true) },
-            shape = RoundedCornerShape(10.dp),
-            color = if (allowBus) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (allowBus) TransitGreen else Color.Transparent
-            )
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.DirectionsBus,
+                    imageVector = Icons.Rounded.Add,
                     contentDescription = null,
-                    tint = if (allowBus) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Ônibus",
+                    text = "15m",
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     ),
-                    color = if (allowBus) TransitGreen else MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
 
-        // Chip Modal Metrô
-        Surface(
-            onClick = { onToggleModal(false) },
-            shape = RoundedCornerShape(10.dp),
-            color = if (allowSubway) TransitGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (allowSubway) TransitGreen else Color.Transparent
-            )
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // 4. Botão -15min (ativo apenas se há 15min ou mais além do agora)
+        if (canSubtract) {
+            Surface(
+                onClick = onSubtractMinutes,
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.DirectionsSubway,
-                    contentDescription = null,
-                    tint = if (allowSubway) TransitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Metrô",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    color = if (allowSubway) TransitGreen else MaterialTheme.colorScheme.onSurface
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Remove,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "15m",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }
