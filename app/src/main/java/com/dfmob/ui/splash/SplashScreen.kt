@@ -25,9 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -39,7 +41,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TransitGreen = Color(0xFF0BA05B)
+private val TransitGreen = Color(0xFF20A84D)
 
 @Composable
 fun SplashScreen(
@@ -164,13 +166,12 @@ fun SplashScreen(
 }
 
 /**
- * Desenha o traçado contínuo e exato da Variante 2 (estilo Transit App).
- * Reproduz com fidelidade milimétrica a geometria oficial:
- * 1. Laço principal do D e fita superior ascendendo para a barra do F
- * 2. Curva inferior do D subindo para o elo central
- * 3. Barra horizontal média do F
- * 4. Cauda inferior do F
- * Todas com degradê de trânsito esmeralda vivo (#00D26A -> #00783E).
+ * Desenha o novo ícone oficial de rede de trânsito criado pelo usuário (IconKitchen).
+ * O ícone representa a malha de estações interligadas com nós e trilhos:
+ * 1. Traçado inicial das linhas de rota e contorno das estações (stroke draw-in)
+ * 2. Anéis das 3 estações centrais formados em sincronia
+ * 3. Preenchimento sólido e elegante com o degradê oficial verde (#2AC857 -> #168A41)
+ * sobre o fundo branco imaculado.
  */
 @Composable
 private fun VectorAnimatedIcon(
@@ -184,98 +185,143 @@ private fun VectorAnimatedIcon(
         val w = size.width
         val h = size.height
 
-        // Proporção matemática fiel do glifo oficial Variante 2: largura 485, altura 330
-        val scale = (w * 0.90f) / 485f
-        val strokeW = 56f * scale
+        // Proporção matemática do glifo oficial (largura 538, altura 596)
+        val scale = (h * 0.88f) / 596f
+        val strokeW = 4.dp.toPx()
         val strokeStyle = Stroke(
             width = strokeW,
             cap = StrokeCap.Round,
             join = StrokeJoin.Round
         )
 
-        // Centralização exata no Canvas
-        val offsetX = (w - 485f * scale) / 2f
-        val offsetY = (h - 330f * scale) / 2f
+        val offsetX = (w - 538f * scale) / 2f
+        val offsetY = (h - 596f * scale) / 2f
 
-        // Degradê oficial de trânsito (#00D26A -> #00783E)
+        // Degradê oficial de trânsito do ícone do usuário (#2AC857 -> #20A84D -> #168A41)
         val gradientBrush = Brush.linearGradient(
             colors = listOf(
-                Color(0xFF00D26A),
-                Color(0xFF05B064),
-                Color(0xFF00783E)
+                Color(0xFF2AC857),
+                Color(0xFF20A84D),
+                Color(0xFF168A41)
             ),
             start = Offset(offsetX, offsetY),
-            end = Offset(offsetX + 485f * scale, offsetY + 330f * scale)
+            end = Offset(offsetX, offsetY + 596f * scale)
         )
 
-        fun drawTrimmedPath(path: Path, pathProgress: Float) {
-            if (pathProgress <= 0.001f) return
+        // 1. Contorno geométrico dos 17 vértices da malha de trânsito
+        val outerPath = Path().apply {
+            moveTo(offsetX + 210f * scale, offsetY + 0f * scale)
+            lineTo(offsetX + 210f * scale, offsetY + 144f * scale)
+            lineTo(offsetX + 127f * scale, offsetY + 239f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 239f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 416f * scale)
+            lineTo(offsetX + 150f * scale, offsetY + 416f * scale)
+            lineTo(offsetX + 357f * scale, offsetY + 520f * scale)
+            lineTo(offsetX + 359f * scale, offsetY + 595f * scale)
+            lineTo(offsetX + 537f * scale, offsetY + 595f * scale)
+            lineTo(offsetX + 537f * scale, offsetY + 418f * scale)
+            lineTo(offsetX + 359f * scale, offsetY + 418f * scale)
+            lineTo(offsetX + 357f * scale, offsetY + 455f * scale)
+            lineTo(offsetX + 178f * scale, offsetY + 364f * scale)
+            lineTo(offsetX + 178f * scale, offsetY + 270f * scale)
+            lineTo(offsetX + 260f * scale, offsetY + 177f * scale)
+            lineTo(offsetX + 387f * scale, offsetY + 177f * scale)
+            lineTo(offsetX + 387f * scale, offsetY + 0f * scale)
+            close()
+        }
+
+        // 2. Glifo completo com os 3 furos de estação (EvenOdd para vazamento exato)
+        val fullGlyphPath = Path().apply {
+            fillType = PathFillType.EvenOdd
+            moveTo(offsetX + 210f * scale, offsetY + 0f * scale)
+            lineTo(offsetX + 210f * scale, offsetY + 144f * scale)
+            lineTo(offsetX + 127f * scale, offsetY + 239f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 239f * scale)
+            lineTo(offsetX + 0f * scale, offsetY + 416f * scale)
+            lineTo(offsetX + 150f * scale, offsetY + 416f * scale)
+            lineTo(offsetX + 357f * scale, offsetY + 520f * scale)
+            lineTo(offsetX + 359f * scale, offsetY + 595f * scale)
+            lineTo(offsetX + 537f * scale, offsetY + 595f * scale)
+            lineTo(offsetX + 537f * scale, offsetY + 418f * scale)
+            lineTo(offsetX + 359f * scale, offsetY + 418f * scale)
+            lineTo(offsetX + 357f * scale, offsetY + 455f * scale)
+            lineTo(offsetX + 178f * scale, offsetY + 364f * scale)
+            lineTo(offsetX + 178f * scale, offsetY + 270f * scale)
+            lineTo(offsetX + 260f * scale, offsetY + 177f * scale)
+            lineTo(offsetX + 387f * scale, offsetY + 177f * scale)
+            lineTo(offsetX + 387f * scale, offsetY + 0f * scale)
+            close()
+
+            // Estação superior (raio 30px)
+            addOval(
+                Rect(
+                    center = Offset(offsetX + 298.5f * scale, offsetY + 88.5f * scale),
+                    radius = 30f * scale
+                )
+            )
+            // Estação centro-esquerda (raio 30px)
+            addOval(
+                Rect(
+                    center = Offset(offsetX + 89.0f * scale, offsetY + 327.5f * scale),
+                    radius = 30f * scale
+                )
+            )
+            // Estação inferior-direita (raio 30px)
+            addOval(
+                Rect(
+                    center = Offset(offsetX + 448.0f * scale, offsetY + 506.5f * scale),
+                    radius = 30f * scale
+                )
+            )
+        }
+
+        // Fase 1: Desenho progressivo do contorno das linhas
+        val strokeProgress = (progress * 1.35f).coerceIn(0f, 1f)
+        if (strokeProgress > 0.001f) {
             subPath.reset()
-            pathMeasure.setPath(path, false)
+            pathMeasure.setPath(outerPath, false)
             val length = pathMeasure.length
             if (length > 0f) {
-                pathMeasure.getSegment(0f, length * pathProgress.coerceIn(0f, 1f), subPath, true)
+                pathMeasure.getSegment(0f, length * strokeProgress, subPath, true)
                 drawPath(path = subPath, brush = gradientBrush, style = strokeStyle)
+            }
+
+            // Anéis das 3 estações
+            val ringProgress = (progress * 1.5f - 0.2f).coerceIn(0f, 1f)
+            if (ringProgress > 0.001f) {
+                val r = 30f * scale
+                drawCircle(
+                    brush = gradientBrush,
+                    radius = r,
+                    center = Offset(offsetX + 298.5f * scale, offsetY + 88.5f * scale),
+                    style = strokeStyle,
+                    alpha = ringProgress
+                )
+                drawCircle(
+                    brush = gradientBrush,
+                    radius = r,
+                    center = Offset(offsetX + 89.0f * scale, offsetY + 327.5f * scale),
+                    style = strokeStyle,
+                    alpha = ringProgress
+                )
+                drawCircle(
+                    brush = gradientBrush,
+                    radius = r,
+                    center = Offset(offsetX + 448.0f * scale, offsetY + 506.5f * scale),
+                    style = strokeStyle,
+                    alpha = ringProgress
+                )
             }
         }
 
-        // 1. Laço contínuo do D subindo a haste e curvando na fita superior do F
-        val pathDMain = Path().apply {
-            moveTo(offsetX + 81f * scale, offsetY + 304f * scale)
-            cubicTo(
-                offsetX + 46f * scale, offsetY + 304f * scale,
-                offsetX + 26f * scale, offsetY + 304f * scale,
-                offsetX + 26f * scale, offsetY + 266f * scale
+        // Fase 2: Preenchimento sólido fluido da malha com o degradê verde
+        val fillAlpha = ((progress - 0.40f) / 0.60f).coerceIn(0f, 1f)
+        if (fillAlpha > 0f) {
+            drawPath(
+                path = fullGlyphPath,
+                brush = gradientBrush,
+                alpha = fillAlpha
             )
-            lineTo(offsetX + 26f * scale, offsetY + 63f * scale)
-            cubicTo(
-                offsetX + 26f * scale, offsetY + 25f * scale,
-                offsetX + 46f * scale, offsetY + 25f * scale,
-                offsetX + 81f * scale, offsetY + 25f * scale
-            )
-            lineTo(offsetX + 151f * scale, offsetY + 25f * scale)
-            cubicTo(
-                offsetX + 206f * scale, offsetY + 25f * scale,
-                offsetX + 273f * scale, offsetY + 48f * scale,
-                offsetX + 273f * scale, offsetY + 88f * scale
-            )
-            cubicTo(
-                offsetX + 273f * scale, offsetY + 43f * scale,
-                offsetX + 296f * scale, offsetY + 25f * scale,
-                offsetX + 341f * scale, offsetY + 25f * scale
-            )
-            lineTo(offsetX + 459f * scale, offsetY + 25f * scale)
         }
-
-        // 2. Curva inferior do D subindo pelo elo central
-        val pathDBottomCurve = Path().apply {
-            moveTo(offsetX + 81f * scale, offsetY + 304f * scale)
-            lineTo(offsetX + 161f * scale, offsetY + 304f * scale)
-            cubicTo(
-                offsetX + 216f * scale, offsetY + 304f * scale,
-                offsetX + 273f * scale, offsetY + 248f * scale,
-                offsetX + 273f * scale, offsetY + 163f * scale
-            )
-            lineTo(offsetX + 273f * scale, offsetY + 88f * scale)
-        }
-
-        // 3. F - Barra média horizontal com pontas arredondadas
-        val pathFMiddle = Path().apply {
-            moveTo(offsetX + 339f * scale, offsetY + 165f * scale)
-            lineTo(offsetX + 426f * scale, offsetY + 165f * scale)
-        }
-
-        // 4. F - Cauda inferior vertical com ponta arredondada
-        val pathFTail = Path().apply {
-            moveTo(offsetX + 273f * scale, offsetY + 261f * scale)
-            lineTo(offsetX + 273f * scale, offsetY + 305f * scale)
-        }
-
-        // Animação sincronizada das linhas
-        drawTrimmedPath(pathDMain, progress)
-        drawTrimmedPath(pathDBottomCurve, progress)
-        val branchProgress = (progress * 1.35f - 0.35f).coerceIn(0f, 1f)
-        drawTrimmedPath(pathFMiddle, branchProgress)
-        drawTrimmedPath(pathFTail, branchProgress)
     }
 }
