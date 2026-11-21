@@ -494,7 +494,7 @@ fun TripPlannerScreen(
                 onSubtractMinutes = { viewModel.addTimeMinutes(-15) }
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // MODULO 3: Resultados do Planejamento
             Box(
@@ -595,24 +595,13 @@ fun TripPlannerScreen(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Melhores rotas encontradas (${state.itineraries.size})",
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    if (state.itineraries.size >= 2) {
+                            if (state.itineraries.size >= 2) {
+                                item {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Surface(
                                             onClick = { showComparisonMap = true },
                                             shape = RoundedCornerShape(8.dp),
