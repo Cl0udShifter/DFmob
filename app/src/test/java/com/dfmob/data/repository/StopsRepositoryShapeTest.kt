@@ -8,14 +8,19 @@ import org.junit.Test
 
 class StopsRepositoryShapeTest {
 
-    private fun makeStop(id: Int, lat: Double, lon: Double): TransitStop {
+    private fun makeStop(
+        id: Int,
+        lat: Double,
+        lon: Double,
+        isMetro: Boolean = false
+    ): TransitStop {
         return TransitStop(
             stopId = id,
             stopName = "Parada $id",
             stopCode = "$id",
             latE6 = (lat * 1_000_000).toInt(),
             lonE6 = (lon * 1_000_000).toInt(),
-            isMetro = false,
+            isMetro = isMetro,
             platformCode = null
         )
     }
@@ -39,41 +44,49 @@ class StopsRepositoryShapeTest {
     }
 
     @Test
-    fun divergentShapeWithUncoveredStopsIsRejected() {
-        // Simulates line 0.341: 12 stops, 5 of which (~42%) are >1km off the outdated SEMOB shape
+    fun divergentSemobShapeIsPreservedAndDetectedAsMisaligned() {
+        // Simulates line 0.341: SEMOB shape is kept as the real route, while DB stops alignment returns false
         val stops = (0 until 7).map { i ->
             makeStop(i + 1, -15.80 + i * 0.002, -48.10)
         } + (7 until 12).map { i ->
-            makeStop(i + 1, -15.80 + i * 0.002, -48.05) // ~5km away from shape
+            makeStop(i + 1, -15.80 + i * 0.002, -48.05)
         }
-        val outdatedShape = (0 until 30).map { i ->
+        val semobShape = (0 until 30).map { i ->
             Pair(-15.80 + i * 0.002, -48.10)
         }
 
-        assertFalse(StopsRepository.isShapeAlignedWithStops(outdatedShape, stops))
+        assertFalse(StopsRepository.isShapeAlignedWithStops(semobShape, stops))
         val result = StopsRepository.matchShapeToDirection(
-            shapes = mapOf("CIRCULAR" to outdatedShape),
+            shapes = mapOf("CIRCULAR" to semobShape),
             stops = stops
         )
-        assertTrue(result.isEmpty())
+        assertEquals(semobShape, result)
     }
 
     @Test
-    fun shapeWithLongPhantomSegmentIsRejected() {
-        // All 10 stops are near the first half of the shape, while the second half (>60%) has no stops
-        val stops = (0 until 10).map { i ->
-            makeStop(i + 1, -15.80, -48.15 + i * 0.002)
-        }
-        val phantomShape = (0 until 60).map { i ->
-            Pair(-15.80, -48.15 + i * 0.003) // extends far east with zero stops
-        }
+    fun reconstructStopsAlongShapeOrdersRightSideAndFiltersMetroAndDuplicates() {
+        // Eastbound street at lat = -15.80, from lon = -48.10 to -48.04
+        val shape = (0..6).map { i -> Pair(-15.80, -48.10 + i * 0.01) }
 
-        assertFalse(StopsRepository.isShapeAlignedWithStops(phantomShape, stops))
-        val result = StopsRepository.matchShapeToDirection(
-            shapes = mapOf("IDA" to phantomShape),
-            stops = stops
+        // South of street (~28m) = right side of eastbound direction
+        val rightStop1 = makeStop(1, -15.80025, -48.09)
+        val rightStop2 = makeStop(2, -15.80025, -48.07)
+        // North of street (~35m) = opposite side (left of eastbound), should be filtered out
+        val oppositeSideStop = makeStop(3, -15.79968, -48.07)
+        // Metro station on the route, should be excluded for bus route reconstruction
+        val metroStop = makeStop(4, -15.80010, -48.06, isMetro = true)
+        // Clustered terminal bays at -48.05 within 15m of each other: keep only closest
+        val terminalBayNear = makeStop(5, -15.80005, -48.05)
+        val terminalBayFar = makeStop(6, -15.80020, -48.05)
+        // Far away stop (> 55m), should be excluded
+        val farStop = makeStop(7, -15.80200, -48.07)
+
+        val reconstructed = StopsRepository.reconstructStopsAlongShape(
+            shape = shape,
+            allStops = listOf(farStop, terminalBayFar, oppositeSideStop, rightStop2, metroStop, terminalBayNear, rightStop1)
         )
-        assertTrue(result.isEmpty())
+
+        assertEquals(listOf(1, 2, 5), reconstructed.map { it.stopId })
     }
 
     @Test
