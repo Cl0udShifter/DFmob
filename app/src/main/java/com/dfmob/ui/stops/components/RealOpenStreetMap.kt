@@ -419,10 +419,26 @@ fun RealOpenStreetMap(
                 val routeStops = activeRoute.stops
                 val currentSelectedStopId = activeRoute.selectedStop?.stopId
 
-                // Zoom out total (< 14.0): exibe estritamente a parada selecionada, mantendo o mapa limpo
-                // Zoom aproximado (>= 14.0): exibe as paradas da rota dentro do campo de visao da tela
-                val visibleRouteStops = if (currentZoom < 14.0) {
-                    routeStops.filter { it.stopId == currentSelectedStopId }
+                // Zoom out (< 13.5): exibe amostra distribuida ao longo da rota + inicio, fim e parada selecionada
+                // Zoom aproximado (>= 13.5): exibe todas as paradas da rota dentro do campo de visao da tela
+                val visibleRouteStops = if (currentZoom < 13.5) {
+                    val step = (routeStops.size / 20).coerceAtLeast(1)
+                    routeStops.filterIndexed { index, stop ->
+                        val isKeyStop = index == 0 ||
+                            index == routeStops.lastIndex ||
+                            stop.stopId == currentSelectedStopId ||
+                            index % step == 0
+                        if (!isKeyStop) return@filterIndexed false
+                        if (stop.stopId == currentSelectedStopId) return@filterIndexed true
+                        if (bounds != null && (bounds.latNorth - bounds.latSouth) > 0.0001) {
+                            if (stop.latitude < bounds.latSouth - 0.01 || stop.latitude > bounds.latNorth + 0.01 ||
+                                stop.longitude < bounds.lonWest - 0.01 || stop.longitude > bounds.lonEast + 0.01
+                            ) {
+                                return@filterIndexed false
+                            }
+                        }
+                        true
+                    }
                 } else {
                     routeStops.filter { stop ->
                         if (stop.stopId == currentSelectedStopId) return@filter true

@@ -471,17 +471,16 @@ class StopsRepository(private val context: Context) {
 
         val cachedShapes = telemetryService.getCachedShapes(detail.lineNumber)
         val initialShape = if (cachedShapes != null) matchShapeToDirection(cachedShapes, stops) else emptyList()
-        val fastStops = if (initialShape.isNotEmpty()) filterStopsAlongRoute(stops, initialShape, 300.0) else stops
 
         var initialStop: TransitStop? = null
         if (preferredStopId != null) {
-            initialStop = fastStops.firstOrNull { it.stopId == preferredStopId }
+            initialStop = stops.firstOrNull { it.stopId == preferredStopId }
         }
         if (initialStop == null && userLatE6 != null && userLonE6 != null) {
-            initialStop = fastStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+            initialStop = stops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
         }
         if (initialStop == null) {
-            initialStop = fastStops.firstOrNull()
+            initialStop = stops.firstOrNull()
         }
 
         val staticArrival = if (initialStop != null) {
@@ -499,7 +498,7 @@ class StopsRepository(private val context: Context) {
             isMetro = detail.isMetro,
             directions = dirOptions,
             currentDirectionIndex = chosenIndex,
-            stops = fastStops,
+            stops = stops,
             selectedStop = initialStop,
             liveVehicles = emptyList(),
             shapeCoordinates = initialShape,
@@ -537,23 +536,9 @@ class StopsRepository(private val context: Context) {
         val shapeCoords = sDeferred.await()
         val liveArrival = aDeferred.await()
 
-        val cleanStops = if (shapeCoords.isNotEmpty()) {
-            filterStopsAlongRoute(currentState.stops, shapeCoords, 300.0)
-        } else {
-            currentState.stops
-        }
-
-        val updatedSelectedStop = if (currentState.selectedStop != null && cleanStops.any { it.stopId == currentState.selectedStop.stopId }) {
-            currentState.selectedStop
-        } else {
-            cleanStops.firstOrNull()
-        }
-
         currentState.copy(
             liveVehicles = vehicles,
             shapeCoordinates = if (shapeCoords.isNotEmpty()) shapeCoords else currentState.shapeCoordinates,
-            stops = cleanStops,
-            selectedStop = updatedSelectedStop,
             selectedStopArrival = liveArrival ?: currentState.selectedStopArrival
         )
     }
@@ -570,14 +555,13 @@ class StopsRepository(private val context: Context) {
 
         val cachedShapes = telemetryService.getCachedShapes(currentState.lineNumber)
         val initialShape = if (cachedShapes != null) matchShapeToDirection(cachedShapes, newStops) else emptyList()
-        val fastStops = if (initialShape.isNotEmpty()) filterStopsAlongRoute(newStops, initialShape, 300.0) else newStops
 
         var newSelectedStop: TransitStop? = null
         if (userLatE6 != null && userLonE6 != null) {
-            newSelectedStop = fastStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
+            newSelectedStop = newStops.minByOrNull { calculateDistanceMeters(userLatE6, userLonE6, it.latE6, it.lonE6) }
         }
         if (newSelectedStop == null) {
-            newSelectedStop = fastStops.firstOrNull()
+            newSelectedStop = newStops.firstOrNull()
         }
 
         val staticArrival = if (newSelectedStop != null) {
@@ -586,7 +570,7 @@ class StopsRepository(private val context: Context) {
 
         return currentState.copy(
             currentDirectionIndex = safeIndex,
-            stops = fastStops,
+            stops = newStops,
             selectedStop = newSelectedStop,
             liveVehicles = emptyList(),
             shapeCoordinates = initialShape,
@@ -614,141 +598,6 @@ class StopsRepository(private val context: Context) {
     ): LineRouteState {
         val fast = changeLineRouteDirectionFast(currentState, newDirectionIndex, userLatE6, userLonE6)
         return enrichRouteStateWithLiveTelemetry(fast)
-    }
-
-    private fun filterStopsAlongRoute(
-        stops: List<TransitStop>,
-        shapeCoords: List<Pair<Double, Double>>,
-        maxDistanceMeters: Double = 300.0
-    ): List<TransitStop> {
-        if (shapeCoords.isEmpty() || stops.isEmpty()) return stops
-        val filtered = stops.filter { stop ->
-            var minD = Double.MAX_VALUE
-            for (pt in shapeCoords) {
-                val d = calculateDistanceMeters(
-                    stop.latE6,
-                    stop.lonE6,
-                    (pt.first * 1_000_000).toInt(),
-                    (pt.second * 1_000_000).toInt()
-                )
-                if (d < minD) {
-                    minD = d
-                    if (minD <= maxDistanceMeters) break
-                }
-            }
-            minD <= maxDistanceMeters
-        }
-        return if (filtered.isNotEmpty()) filtered else stops
-    }
-
-    private fun matchShapeToDirection(
-        shapes: Map<String, List<Pair<Double, Double>>>,
-        stops: List<TransitStop>
-    ): List<Pair<Double, Double>> {
-        if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
-
-        val firstStop = stops.first()
-        val lastStop = stops.last()
-        val isCircular = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, lastStop.latE6, lastStop.lonE6) < 800
-
-        // Se houver apenas 1 tracado disponivel na SEMOB:
-        if (shapes.size == 1) {
-            val single = shapes.values.first()
-            if (!isCircular && single.size >= 2) {
-                val fStart = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
-                val fEnd = calculateDistanceMeters(lastStop.latE6, lastStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
-                val rStart = calculateDistanceMeters(firstStop.latE6, firstStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
-                val rEnd = calculateDistanceMeters(lastStop.latE6, lastStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
-                if ((rStart + rEnd) < (fStart + fEnd) - 500) {
-                    return single.reversed()
-                }
-            }
-            return single
-        }
-
-        val ida = shapes.entries.firstOrNull { it.key.contains("IDA", ignoreCase = true) }?.value
-        val volta = shapes.entries.firstOrNull { it.key.contains("VOLTA", ignoreCase = true) }?.value
-        if (isCircular && ida != null && volta != null) {
-            return ida + volta
-        }
-
-        var bestShape: List<Pair<Double, Double>>? = null
-        var bestScore = -Double.MAX_VALUE
-
-        val step = (stops.size / 10).coerceAtLeast(1)
-        val sampleStops = stops.filterIndexed { index, _ -> index % step == 0 }
-
-        for ((_, pts) in shapes) {
-            if (pts.isEmpty()) continue
-
-            var nearCount = 0
-            for (s in stops) {
-                var minD = Double.MAX_VALUE
-                for (pt in pts) {
-                    val d = calculateDistanceMeters(
-                        s.latE6,
-                        s.lonE6,
-                        (pt.first * 1_000_000).toInt(),
-                        (pt.second * 1_000_000).toInt()
-                    )
-                    if (d < minD) {
-                        minD = d
-                        if (minD <= 350.0) break
-                    }
-                }
-                if (minD <= 350.0) nearCount++
-            }
-
-            val dStart = calculateDistanceMeters(
-                firstStop.latE6,
-                firstStop.lonE6,
-                (pts.first().first * 1_000_000).toInt(),
-                (pts.first().second * 1_000_000).toInt()
-            )
-            val dEnd = calculateDistanceMeters(
-                lastStop.latE6,
-                lastStop.lonE6,
-                (pts.last().first * 1_000_000).toInt(),
-                (pts.last().second * 1_000_000).toInt()
-            )
-            val endpointDist = dStart + dEnd
-
-            // Avalia monotonicidade da progressao das paradas ao longo dos pontos do shape
-            var monoInc = 0
-            var prevIdx = -1
-            for (s in sampleStops) {
-                var closestIdx = 0
-                var minD = Double.MAX_VALUE
-                for (k in pts.indices) {
-                    val pt = pts[k]
-                    val d = calculateDistanceMeters(
-                        s.latE6,
-                        s.lonE6,
-                        (pt.first * 1_000_000).toInt(),
-                        (pt.second * 1_000_000).toInt()
-                    )
-                    if (d < minD) {
-                        minD = d
-                        closestIdx = k
-                    }
-                }
-                if (prevIdx >= 0 && closestIdx >= prevIdx) {
-                    monoInc++
-                }
-                prevIdx = closestIdx
-            }
-            val totalPairs = (sampleStops.size - 1).coerceAtLeast(1)
-            val monoRatio = monoInc.toDouble() / totalPairs
-
-            val coverageRatio = nearCount.toDouble() / stops.size
-            val score = (coverageRatio * 1000.0) + (monoRatio * 500.0) - (endpointDist.coerceAtMost(20000.0) / 20.0)
-
-            if (score > bestScore) {
-                bestScore = score
-                bestShape = pts
-            }
-        }
-        return bestShape ?: shapes.values.firstOrNull() ?: emptyList()
     }
 
     fun getStaticArrivalForLineAtStop(lineId: Int, stop: TransitStop): StopArrival? {
@@ -1243,5 +1092,202 @@ class StopsRepository(private val context: Context) {
         val lat = String.format(Locale.ROOT, "%.5f", latE6 / 1_000_000.0)
         val lon = String.format(Locale.ROOT, "%.5f", lonE6 / 1_000_000.0)
         "Local no mapa ($lat, $lon)"
+    }
+
+    companion object {
+        /**
+         * Seleciona o tracado SEMOB que melhor corresponde as paradas do sentido atual
+         * e valida se o tracado externo nao diverge do itinerario real em banco.
+         * Quando o tracado diverge (ex: percurso desatualizado na SEMOB), retorna lista vazia
+         * para que o mapa trace a rota diretamente pela sequencia oficial de paradas.
+         */
+        internal fun matchShapeToDirection(
+            shapes: Map<String, List<Pair<Double, Double>>>,
+            stops: List<TransitStop>
+        ): List<Pair<Double, Double>> {
+            if (shapes.isEmpty() || stops.isEmpty()) return emptyList()
+
+            val firstStop = stops.first()
+            val lastStop = stops.last()
+            val isCircular = calcDistMeters(firstStop.latE6, firstStop.lonE6, lastStop.latE6, lastStop.lonE6) < 800
+
+            val candidate: List<Pair<Double, Double>> = if (shapes.size == 1) {
+                val single = shapes.values.first()
+                if (!isCircular && single.size >= 2) {
+                    val fStart = calcDistMeters(firstStop.latE6, firstStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
+                    val fEnd = calcDistMeters(lastStop.latE6, lastStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
+                    val rStart = calcDistMeters(firstStop.latE6, firstStop.lonE6, (single.last().first * 1_000_000).toInt(), (single.last().second * 1_000_000).toInt())
+                    val rEnd = calcDistMeters(lastStop.latE6, lastStop.lonE6, (single.first().first * 1_000_000).toInt(), (single.first().second * 1_000_000).toInt())
+                    if ((rStart + rEnd) < (fStart + fEnd) - 500) single.reversed() else single
+                } else {
+                    single
+                }
+            } else {
+                val ida = shapes.entries.firstOrNull { it.key.contains("IDA", ignoreCase = true) }?.value
+                val volta = shapes.entries.firstOrNull { it.key.contains("VOLTA", ignoreCase = true) }?.value
+                if (isCircular && ida != null && volta != null) {
+                    ida + volta
+                } else {
+                    selectBestShapeByCoverageAndOrder(shapes, stops, firstStop, lastStop)
+                }
+            }
+
+            return if (isShapeAlignedWithStops(candidate, stops)) candidate else emptyList()
+        }
+
+        private fun selectBestShapeByCoverageAndOrder(
+            shapes: Map<String, List<Pair<Double, Double>>>,
+            stops: List<TransitStop>,
+            firstStop: TransitStop,
+            lastStop: TransitStop
+        ): List<Pair<Double, Double>> {
+            var bestShape: List<Pair<Double, Double>>? = null
+            var bestScore = -Double.MAX_VALUE
+
+            val step = (stops.size / 10).coerceAtLeast(1)
+            val sampleStops = stops.filterIndexed { index, _ -> index % step == 0 }
+
+            for ((_, pts) in shapes) {
+                if (pts.isEmpty()) continue
+
+                var nearCount = 0
+                for (s in stops) {
+                    var minD = Double.MAX_VALUE
+                    for (pt in pts) {
+                        val d = calcDistMeters(
+                            s.latE6,
+                            s.lonE6,
+                            (pt.first * 1_000_000).toInt(),
+                            (pt.second * 1_000_000).toInt()
+                        )
+                        if (d < minD) {
+                            minD = d
+                            if (minD <= 350.0) break
+                        }
+                    }
+                    if (minD <= 350.0) nearCount++
+                }
+
+                val dStart = calcDistMeters(
+                    firstStop.latE6,
+                    firstStop.lonE6,
+                    (pts.first().first * 1_000_000).toInt(),
+                    (pts.first().second * 1_000_000).toInt()
+                )
+                val dEnd = calcDistMeters(
+                    lastStop.latE6,
+                    lastStop.lonE6,
+                    (pts.last().first * 1_000_000).toInt(),
+                    (pts.last().second * 1_000_000).toInt()
+                )
+                val endpointDist = dStart + dEnd
+
+                var monoInc = 0
+                var prevIdx = -1
+                for (s in sampleStops) {
+                    var closestIdx = 0
+                    var minD = Double.MAX_VALUE
+                    for (k in pts.indices) {
+                        val pt = pts[k]
+                        val d = calcDistMeters(
+                            s.latE6,
+                            s.lonE6,
+                            (pt.first * 1_000_000).toInt(),
+                            (pt.second * 1_000_000).toInt()
+                        )
+                        if (d < minD) {
+                            minD = d
+                            closestIdx = k
+                        }
+                    }
+                    if (prevIdx >= 0 && closestIdx >= prevIdx) {
+                        monoInc++
+                    }
+                    prevIdx = closestIdx
+                }
+                val totalPairs = (sampleStops.size - 1).coerceAtLeast(1)
+                val monoRatio = monoInc.toDouble() / totalPairs
+
+                val coverageRatio = nearCount.toDouble() / stops.size
+                val score = (coverageRatio * 1000.0) + (monoRatio * 500.0) - (endpointDist.coerceAtMost(20000.0) / 20.0)
+
+                if (score > bestScore) {
+                    bestScore = score
+                    bestShape = pts
+                }
+            }
+            return bestShape ?: shapes.values.firstOrNull() ?: emptyList()
+        }
+
+        /**
+         * Verifica se o tracado SEMOB cobre pelo menos 80% das paradas da linha (<= 450m)
+         * e se nao possui longos trechos sem nenhuma parada proxima (linhas nao-expressas).
+         */
+        internal fun isShapeAlignedWithStops(
+            shape: List<Pair<Double, Double>>,
+            stops: List<TransitStop>
+        ): Boolean {
+            if (shape.isEmpty() || stops.isEmpty()) return false
+
+            var coveredStops = 0
+            for (s in stops) {
+                var minD = Double.MAX_VALUE
+                for (pt in shape) {
+                    val d = calcDistMeters(
+                        s.latE6,
+                        s.lonE6,
+                        (pt.first * 1_000_000).toInt(),
+                        (pt.second * 1_000_000).toInt()
+                    )
+                    if (d < minD) {
+                        minD = d
+                        if (minD <= 450.0) break
+                    }
+                }
+                if (minD <= 450.0) coveredStops++
+            }
+            val stopCoverage = coveredStops.toDouble() / stops.size
+            if (stopCoverage < 0.80) return false
+
+            if (stops.size >= 10) {
+                val shapeStep = (shape.size / 100).coerceAtLeast(1)
+                var sampledCount = 0
+                var coveredShapePts = 0
+                var idx = 0
+                while (idx < shape.size) {
+                    val pt = shape[idx]
+                    val ptLatE6 = (pt.first * 1_000_000).toInt()
+                    val ptLonE6 = (pt.second * 1_000_000).toInt()
+                    var hasNearStop = false
+                    for (s in stops) {
+                        if (calcDistMeters(ptLatE6, ptLonE6, s.latE6, s.lonE6) <= 600.0) {
+                            hasNearStop = true
+                            break
+                        }
+                    }
+                    if (hasNearStop) coveredShapePts++
+                    sampledCount++
+                    idx += shapeStep
+                }
+                val shapeCoverage = if (sampledCount > 0) coveredShapePts.toDouble() / sampledCount else 0.0
+                if (shapeCoverage < 0.50) return false
+            }
+
+            return true
+        }
+
+        private fun calcDistMeters(lat1E6: Int, lon1E6: Int, lat2E6: Int, lon2E6: Int): Double {
+            val r = 6371000.0
+            val lat1 = Math.toRadians(lat1E6 / 1_000_000.0)
+            val lon1 = Math.toRadians(lon1E6 / 1_000_000.0)
+            val lat2 = Math.toRadians(lat2E6 / 1_000_000.0)
+            val lon2 = Math.toRadians(lon2E6 / 1_000_000.0)
+
+            val dLat = lat2 - lat1
+            val dLon = lon2 - lon1
+            val a = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
+            val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+            return r * c
+        }
     }
 }
